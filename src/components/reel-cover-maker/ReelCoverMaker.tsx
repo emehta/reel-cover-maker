@@ -1,10 +1,11 @@
 "use client";
 
-import { DownloadSimple, FrameCorners, Shuffle } from "@phosphor-icons/react";
+import { DownloadSimple, FrameCorners, Moon, Shuffle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
 import { loadDesign, saveDesign, type Design } from "@/components/reel-cover-maker/design";
+import { Dropdown } from "@/components/reel-cover-maker/Dropdown";
 import { PLAIN_FACES } from "@/components/reel-cover-maker/faces";
 import { facesFor, fontCss, fontsSnapshot, interTight, measurerFor, requestFonts, subscribeFonts } from "@/components/reel-cover-maker/fonts";
 import { FORMATS, formatById, type Format } from "@/components/reel-cover-maker/formats";
@@ -199,6 +200,7 @@ export default function ReelCoverMaker() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const stylesRef = useRef<HTMLDivElement>(null);
   const holdRef = useRef<HTMLDialogElement>(null);
   const prepared = useRef<{ key: string; file: File } | null>(null);
   /** What is on the canvas. */
@@ -266,6 +268,35 @@ export default function ReelCoverMaker() {
       clearBackdrop();
     };
   }, []);
+
+  // The styles are one row, scrolled sideways: a mouse's wheel, which only
+  // turns up and down, scrolls it too while it can go further, then lets
+  // the page have the wheel back.
+  useEffect(() => {
+    const row = stylesRef.current;
+    if (!row) return;
+    const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      const most = row.scrollWidth - row.clientWidth;
+      const step = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? row.clientWidth : 1);
+      if (most <= 0 || (step < 0 && row.scrollLeft <= 0) || (step > 0 && row.scrollLeft >= most - 1)) return;
+      event.preventDefault();
+      row.scrollLeft = Math.max(0, Math.min(most, row.scrollLeft + step));
+    };
+    row.addEventListener("wheel", onWheel, { passive: false });
+    return () => row.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // The chosen style kept in sight along its row, however it was chosen.
+  useEffect(() => {
+    const row = stylesRef.current;
+    const chosen = row?.querySelector<HTMLElement>("[data-chosen]");
+    if (!row || !chosen) return;
+    const r = row.getBoundingClientRect();
+    const c = chosen.getBoundingClientRect();
+    if (c.left < r.left) row.scrollBy({ left: c.left - r.left - 16 });
+    else if (c.right > r.right) row.scrollBy({ left: c.right - r.right + 16 });
+  }, [design.style]);
 
   // A computer is here to type; a phone's keyboard should wait to be asked for.
   useEffect(() => {
@@ -419,9 +450,9 @@ export default function ReelCoverMaker() {
                 Shuffle
               </button>
             </div>
-            <div className={styles.styles} role="radiogroup" aria-labelledby="rcm-style-label">
+            <div ref={stylesRef} className={styles.styles} role="radiogroup" aria-labelledby="rcm-style-label">
               {STYLES.map((style, i) => (
-                <label key={style.id} className={styles.style}>
+                <label key={style.id} className={styles.style} data-chosen={design.style === style.id || undefined}>
                   <input
                     type="radio"
                     name="rcm-style"
@@ -439,53 +470,27 @@ export default function ReelCoverMaker() {
           </div>
 
           {design.style === "stickery" && (
-            <div className={styles.field}>
-              <span className={styles.label} id="rcm-lettering-label">
-                Lettering
-              </span>
-              <div className={`${styles.segments} ${styles.two}`} role="radiogroup" aria-labelledby="rcm-lettering-label">
-                {LETTERINGS.filter((l) => l.chosen || l.id === design.lettering).map((l) => (
-                  <label key={l.id} className={styles.segment}>
-                    <input
-                      type="radio"
-                      name="rcm-lettering"
-                      className={styles.radio}
-                      checked={design.lettering === l.id}
-                      onChange={() => update({ lettering: l.id })}
-                    />
-                    {l.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {design.style === "stickery" && (
-            <div className={styles.field}>
-              <span className={styles.label} id="rcm-face-label">
-                Plain words
-              </span>
-              <div className={styles.faces} role="radiogroup" aria-labelledby="rcm-face-label">
-                {(["sans", "serif"] as const).map((kind) => (
-                  <div key={kind} className={styles.faceRow}>
-                    <span className={styles.faceKind}>{kind === "sans" ? "Sans" : "Serif"}</span>
-                    <div className={`${styles.segments} ${styles.two}`}>
-                      {PLAIN_FACES.filter((f) => f.kind === kind && (f.offered || f.id === design.plainFace)).map((f) => (
-                        <label key={f.id} className={styles.segment}>
-                          <input
-                            type="radio"
-                            name="rcm-face"
-                            className={styles.radio}
-                            checked={design.plainFace === f.id}
-                            onChange={() => update({ plainFace: f.id })}
-                          />
-                          {f.name}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className={styles.pickRow}>
+              <Dropdown
+                label="Lettering"
+                value={design.lettering}
+                options={LETTERINGS.filter((l) => l.chosen || l.id === design.lettering).map((l) => ({
+                  value: l.id,
+                  label: l.name,
+                  font: l.face ? fontCss(l.face, 19) : undefined,
+                }))}
+                onChange={(lettering) => update({ lettering })}
+              />
+              <Dropdown
+                label="Plain words"
+                value={design.plainFace}
+                options={PLAIN_FACES.filter((f) => f.offered || f.id === design.plainFace).map((f) => ({
+                  value: f.id,
+                  label: f.name,
+                  font: fontCss(f.id, 16),
+                }))}
+                onChange={(plainFace) => update({ plainFace })}
+              />
             </div>
           )}
 
@@ -526,26 +531,6 @@ export default function ReelCoverMaker() {
           </div>
 
           <div className={styles.field}>
-            <span className={styles.label} id="rcm-ground-label">
-              Background
-            </span>
-            <div className={`${styles.segments} ${styles.two}`} role="radiogroup" aria-labelledby="rcm-ground-label">
-              {(["light", "dark"] as const satisfies readonly Ground[]).map((ground) => (
-                <label key={ground} className={styles.segment}>
-                  <input
-                    type="radio"
-                    name="rcm-ground"
-                    className={styles.radio}
-                    checked={design.ground === ground}
-                    onChange={() => update({ ground })}
-                  />
-                  {ground === "light" ? "Light" : "Dark"}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.field}>
             <span className={styles.label} id="rcm-format-label">
               Size
             </span>
@@ -567,6 +552,23 @@ export default function ReelCoverMaker() {
         </div>
 
         <section className={styles.preview} aria-label="Preview">
+          <div className={styles.previewTop}>
+            <div className={`${styles.segments} ${styles.compact}`} role="radiogroup" aria-label="Background">
+              {(["light", "dark"] as const satisfies readonly Ground[]).map((ground) => (
+                <label key={ground} className={styles.segment}>
+                  <input
+                    type="radio"
+                    name="rcm-ground"
+                    className={styles.radio}
+                    checked={design.ground === ground}
+                    onChange={() => update({ ground })}
+                  />
+                  {ground === "light" ? <Sun size={15} weight="bold" aria-hidden="true" /> : <Moon size={15} weight="bold" aria-hidden="true" />}
+                  {ground === "light" ? "Light" : "Dark"}
+                </label>
+              ))}
+            </div>
+          </div>
           <div className={styles.stage}>
             <div className={styles.frame} style={frameStyle}>
               <canvas

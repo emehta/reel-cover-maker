@@ -270,7 +270,7 @@ export function drawLayers(ops: LiquidOp[], target: LiquidTarget, slot: string):
     queued.set(i ? `${slot}#${i}` : slot, {
       key,
       target,
-      paint: { chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, square: op.square, seed: op.seed },
+      paint: { chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, seed: op.seed },
     });
   });
   pump();

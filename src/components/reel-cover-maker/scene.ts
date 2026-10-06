@@ -12,35 +12,33 @@
 import { DEFAULT_PLAIN_FACE, type FaceId, type FunkyFaceId, type Measurer, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { formatById, type FormatId, type Rect } from "@/components/reel-cover-maker/formats";
 import { flow, type Block } from "@/components/reel-cover-maker/layout";
-import { collageLayout } from "@/components/reel-cover-maker/collage";
 import { boundsOf, pasteGlyph, type Chain, type PasteRecipe } from "@/components/reel-cover-maker/liquid";
 import { strokeMetrics } from "@/components/reel-cover-maker/strokes";
-import { liquidLayout, shrink, type LiquidLayout, type LiquidSpec } from "@/components/reel-cover-maker/liquid-layout";
+import { liquidLayout, shrink, type LiquidSpec } from "@/components/reel-cover-maker/liquid-layout";
 import type { Finish } from "@/components/reel-cover-maker/liquid-render";
 import { mixSeed, random, between, hashString } from "@/components/reel-cover-maker/noise";
 import { paletteFor, readableOn, type Ground, type Palette } from "@/components/reel-cover-maker/palettes";
 import { polygonBounds, steppedOutline, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { graphemes, parseTitle, type Paragraph } from "@/components/reel-cover-maker/title";
 
-export type StyleId = "pasty" | "pasty-flat" | "spread" | "stickery" | "editorial" | "echo" | "mono";
+export type StyleId = "stickery" | "pasty" | "pasty-flat" | "editorial" | "echo" | "mono";
 
 export interface Style {
   id: StyleId;
   name: string;
 }
 
-/** In the order the style picker shows them. */
+/** In the order the style picker shows them, the owner's of 7 Oct. Spread was taken out that day. */
 export const STYLES: readonly Style[] = [
+  { id: "stickery", name: "Stickery" },
   { id: "pasty", name: "Pasty" },
   { id: "pasty-flat", name: "Pasty Flat" },
-  { id: "spread", name: "Spread" },
-  { id: "stickery", name: "Stickery" },
   { id: "editorial", name: "Editorial" },
   { id: "echo", name: "Echo" },
   { id: "mono", name: "Mono" },
 ];
 
-export const DEFAULT_STYLE: StyleId = "pasty";
+export const DEFAULT_STYLE: StyleId = "stickery";
 
 export function isStyleId(value: unknown): value is StyleId {
   return STYLES.some((s) => s.id === value);
@@ -69,8 +67,6 @@ export interface LiquidOp {
   ground: string | null;
   /** How far apart two strokes may be and still pool together, in pixels of the picture. */
   pool: number;
-  /** Strokes' free ends cut square, as a knife leaves paste. */
-  square: boolean;
   seed: number;
   /** What the paste is, its colours aside, for a cache of made layers: a new colour is only light again. */
   key: string;
@@ -170,16 +166,12 @@ function union(rects: Rect[]): Rect {
   return { x: left, y: top, w: right - left, h: bottom - top };
 }
 
-/** A big serif, the emphasis in its italic and the accent, on paper grain. */
+/** A big serif on paper grain. */
 function editorial(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer) {
-  const block = flow(
-    paragraphs,
-    { box: safe, face: "serif", emphasisFace: "serif-italic", maxSize: 230, minSize: 40, leading: 0.98, align: "center" },
-    measurer,
-  );
+  const block = flow(paragraphs, { box: safe, face: "serif", emphasisFace: "serif", maxSize: 230, minSize: 40, leading: 0.98, align: "center" }, measurer);
   return {
     block,
-    ops: [{ kind: "grain", alpha: 0.075 } as Op, ...textOps(block, (e) => (e ? palette.accent : palette.ink))],
+    ops: [{ kind: "grain", alpha: 0.075 } as Op, ...textOps(block, () => palette.ink)],
     readable: block.bounds,
   };
 }
@@ -193,7 +185,7 @@ function echo(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: M
     { box, face: "wide", emphasisFace: "wide", maxSize: 210, minSize: 40, leading: 0.94, align: "center" },
     measurer,
   );
-  const main = textOps(block, (e) => (e ? palette.accent : palette.ink));
+  const main = textOps(block, () => palette.ink);
   const first = block.lines[0];
   const last = block.lines[block.lines.length - 1];
   const echoes: Op[] = [];
@@ -226,7 +218,7 @@ function mono(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: M
     {
       box: safe,
       face: "mono",
-      emphasisFace: "mono-bold",
+      emphasisFace: "mono",
       maxSize: 118,
       minSize: 30,
       leading: 1.34,
@@ -239,26 +231,7 @@ function mono(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: M
   );
   const ops: Op[] = [];
   const cap = measurer.metrics("mono").cap;
-  const marked = readableOn(palette.accent);
-  for (const line of block.lines) {
-    for (const s of line.segments) {
-      if (!s.emphasis) continue;
-      // Tall enough for the word's own ink, an accented capital included.
-      const ink = measurer.bounds(s.face, s.text);
-      const above = Math.max(cap + 0.24, ink.ascent + 0.06);
-      const below = Math.max(0.24, ink.descent + 0.06);
-      ops.push({
-        kind: "box",
-        x: s.x - pad * line.size * 0.6,
-        y: line.baseline - above * line.size,
-        w: s.width + 2 * pad * line.size * 0.6,
-        h: (above + below) * line.size,
-        radius: 0,
-        color: palette.accent,
-      });
-    }
-  }
-  ops.push(...textOps(block, (e) => (e ? marked : palette.ink)));
+  ops.push(...textOps(block, () => palette.ink));
   const last = block.lines[block.lines.length - 1];
   const end = last?.segments[last.segments.length - 1];
   if (last && end) {
@@ -306,16 +279,6 @@ interface LiquidStyle {
   clearMarks?: boolean;
   /** The least space between two words' paste, in em, where WORD_GAP is too little for letters that run together. */
   wordGap?: number;
-  /**
-   * Whether kerning may also draw letters and lines together, tucking one
-   * under another's arm; otherwise it only ever pushes apart, for a layout
-   * that spaces its letters exactly itself.
-   */
-  tuck?: boolean;
-  /** Ends cut square, as a knife leaves paste. */
-  square?: boolean;
-  /** A layout of its own in place of the poster's lines. */
-  layout?: (paragraphs: Paragraph[], box: Rect, style: LiquidStyle, recipe: PasteRecipe) => LiquidLayout;
 }
 
 /**
@@ -357,7 +320,7 @@ const PASTY: LiquidStyle = {
   merge: 0.2,
 };
 
-/** Pasty's lettering in Spread's paste: thick, matte, spread with a knife. */
+/** Pasty's lettering in thick, matte paste, spread with a knife. */
 const PASTY_MATTE: LiquidStyle = {
   ...PASTY,
   // Thicker: a knife lays paste down heavier than a nozzle squeezes it.
@@ -367,63 +330,14 @@ const PASTY_MATTE: LiquidStyle = {
 };
 
 /**
- * Thick paste spread with a knife: blocky capitals, their ends cut square,
- * packed into a square as a collage, every line run the full width.
- */
-const SPREAD: LiquidStyle = {
-  spec: {
-    fonts: [{ id: "sans", share: 1 }],
-    maxSize: 900,
-    minSize: 56,
-    gap: 0,
-    maxLines: 8,
-    stretch: 1,
-    tracking: 0,
-    inkGap: 0,
-    jitter: { scale: 0.08, angle: 0.035, rise: 0.02, squash: 0.08 },
-    upper: true,
-    salt: "spread",
-  },
-  recipe: () => ({
-    weight: 0.09,
-    pressure: 0.25,
-    bulb: 0,
-    wobble: 0.01,
-    smooth: 1,
-    bow: 0.012,
-    wave: 0.008,
-    drip: 0,
-    dripLength: [0, 0],
-    droplets: 0.08,
-  }),
-  finish: "matte",
-  pool: 0.3,
-  kern: 0.03,
-  tuck: false,
-  square: true,
-  layout: (paragraphs, box, style, recipe) =>
-    collageLayout(paragraphs, {
-      box,
-      font: style.spec.fonts[0].id,
-      weight: recipe.weight,
-      letterGap: 0.045,
-      lineGap: 0.05,
-      wordGap: 0.22,
-      condense: 0.8,
-      maxSize: style.spec.maxSize,
-      minSize: style.spec.minSize,
-      jitter: style.spec.jitter,
-      upper: true,
-      salt: style.spec.salt,
-    }),
-};
-
-/**
  * Stickery's funky lettering: a brush script typeface, as the owner's
  * reference stickers set "Want" and "What it is", or drawn paste: gooey,
  * melted letters, as they set "aren't" and "what".
  */
-export type LetteringId = "yesteryear" | "leckerli" | "damion" | "goo";
+export type LetteringId = "yesteryear" | "leckerli" | "damion" | PasteLetteringId;
+
+/** The letterings drawn in paste rather than set in a typeface. */
+type PasteLetteringId = "goo" | "goo-even";
 
 export interface Lettering {
   id: LetteringId;
@@ -453,17 +367,21 @@ export interface Lettering {
  */
 const SCRIPT_STEPS = { cell: 0.4, cellY: 0.22, pad: 0.25 };
 
+/** Main Sticker 2's steps: a fine staircase under the goo. */
+const GOO_STEPS = { cell: 0.3, cellY: 0.17, pad: 0.22 };
+
 /**
  * In the order the picker shows them: the owner's picks of 7 Oct, the three
  * scripts (Yesteryear, Leckerli One, and Damion, suggested for being like
- * Yesteryear) and the drawn Goo. Yellowtail was suggested with Damion and
- * not picked.
+ * Yesteryear) and the drawn Goo, as a teardrop and evened out. Yellowtail
+ * was suggested with Damion and not picked.
  */
 export const LETTERINGS: readonly Lettering[] = [
   { id: "yesteryear", name: "Yesteryear", face: "funky-yesteryear", chosen: true, plain: 0.6, steps: SCRIPT_STEPS },
   { id: "leckerli", name: "Leckerli One", face: "funky-leckerli", chosen: true, plain: 0.47, steps: SCRIPT_STEPS },
   { id: "damion", name: "Damion", face: "funky-damion", chosen: true, plain: 0.55, steps: SCRIPT_STEPS },
-  { id: "goo", name: "Goo", face: null, chosen: true, plain: 0.58, steps: { cell: 0.3, cellY: 0.17, pad: 0.22 } },
+  { id: "goo", name: "Goo Teardrop", face: null, chosen: true, plain: 0.58, steps: GOO_STEPS },
+  { id: "goo-even", name: "Goo Even", face: null, chosen: true, plain: 0.58, steps: GOO_STEPS },
 ];
 
 export const DEFAULT_LETTERING: LetteringId = "yesteryear";
@@ -484,60 +402,81 @@ const still = { bulb: 0, bow: 0, wave: 0, drip: 0, dripLength: [0, 0] as const, 
  * never the straight runs between them, and each swells and thins slowly
  * along its length (liquid.ts), so it is never choppy or blobbed at random.
  */
-const PASTE_LETTERINGS: Record<"goo", LiquidStyle> = {
-  // Wacky brush strokes, as Main Sticker 2's "aren't" and "what": light
-  // through the stroke, heavier at its ends, which swell slowly into
-  // balls (most of them); downstrokes swelling to their
-  // feet, letters run a good way into each other, ascenders a little over
-  // half again the x-height, short teardrop drips, and a word's last t
-  // swinging its high, rising crossbar out into an oval ball. Measured
-  // against the reference on 6 Oct by a critic, stroke by stroke.
-  goo: {
-    spec: {
-      fonts: [{ id: "goo", share: 1 }],
-      maxSize: 400,
-      minSize: 40,
-      gap: -0.04,
-      maxLines: 4,
-      stretch: 1,
-      tracking: -0.01,
-      inkGap: -0.01,
-      jitter: { scale: 0.05, angle: 0.12, rise: 0.05, squash: 0.06 },
-      upper: false,
-      slant: 0.27,
-      align: "left",
-      salt: "stickery",
-    },
-    recipe: () => ({
-      ...still,
-      weight: 0.064,
-      pressure: 0,
-      bulb: 0.55,
-      balls: 0.65,
-      bulbReach: 4,
-      wobble: 0,
-      smooth: 1,
-      spline: true,
-      bow: 0.02,
-      wave: 0,
-      pen: { kind: "pressure", thin: 0.62 },
-      xHeight: { at: 0.48, boost: 0, ascend: 1.55 },
-      swell: { neck: 0.75, amount: [0.45, 0.85], reach: 0.1 },
-      drip: 0.5,
-      dripLength: [0.06, 0.14],
-      dripShape: { neck: 0.8, drop: 2 },
-      crossbar: { length: 0.3, ball: 2.3 },
+/**
+ * Wacky brush strokes, as Main Sticker 2's "aren't" and "what": light
+ * through the stroke and heavier at its ends, which swell slowly into long
+ * teardrops; downstrokes swelling toward their feet, letters run a good
+ * way into each other, ascenders a little over half again the x-height,
+ * and a word's last t swinging its high, rising crossbar out into an oval
+ * drop that grows out of the bar as paste does. Measured against the
+ * reference on 6 Oct by a critic, stroke by stroke; the teardrop picked
+ * by the owner on 7 Oct over a ball, a melt, a brush and drips.
+ */
+const GOO: LiquidStyle = {
+  spec: {
+    fonts: [{ id: "goo", share: 1 }],
+    maxSize: 400,
+    minSize: 40,
+    gap: -0.04,
+    maxLines: 4,
+    stretch: 1,
+    tracking: -0.01,
+    inkGap: -0.01,
+    jitter: { scale: 0.05, angle: 0.12, rise: 0.05, squash: 0.06 },
+    upper: false,
+    slant: 0.27,
+    align: "left",
+    salt: "stickery",
+  },
+  recipe: () => ({
+    ...still,
+    weight: 0.064,
+    pressure: 0,
+    bulb: 0.4,
+    balls: 0.75,
+    bulbReach: 6,
+    wobble: 0,
+    smooth: 1,
+    spline: true,
+    bow: 0.02,
+    wave: 0,
+    pen: { kind: "pressure", thin: 0.62 },
+    xHeight: { at: 0.48, boost: 0, ascend: 1.55 },
+    swell: { neck: 0.75, amount: [0.45, 0.85], reach: 0.1 },
+    drip: 0.35,
+    dripLength: [0.06, 0.12],
+    dripShape: { neck: 0.8, drop: 1.5 },
+    crossbar: { length: 0.3, ball: 2, end: "teardrop" },
+  }),
+  finish: "flat",
+  // Joins filleted lightly, so a join is never a knot.
+  pool: 0.25,
+  // Nine pairs of letters in ten run into each other; words a full space apart, dots and marks kept clear.
+  kern: 0.006,
+  merge: 0.9,
+  overlap: 0.045,
+  clearMarks: true,
+  // Words further apart than WORD_GAP, or letters that run together read as one word ("whatitis").
+  wordGap: 0.32,
+};
+
+/** The drawn letterings: Goo's teardrop, and the same hand evened out. */
+const PASTE_LETTERINGS: Record<PasteLetteringId, LiquidStyle> = {
+  goo: GOO,
+  // Teardrop with nothing swelling where it should not: a foot always ends
+  // round, never in a ball; a stroke swells little toward its foot and
+  // never past about a third more than its weight, eased into, so no
+  // swellings stack into a lump; no drips; the joins filleted less.
+  "goo-even": {
+    ...GOO,
+    recipe: (letters) => ({
+      ...GOO.recipe(letters),
+      footBalls: 0,
+      maxWeight: 1.35,
+      swell: { neck: 0.8, amount: [0.15, 0.35], reach: 0.1 },
+      drip: 0,
     }),
-    finish: "flat",
-    // Joins filleted lightly, so a join is never a knot.
-    pool: 0.25,
-    // Nine pairs of letters in ten run into each other; words a full space apart, dots and marks kept clear.
-    kern: 0.006,
-    merge: 0.9,
-    overlap: 0.045,
-    clearMarks: true,
-    // Words further apart than WORD_GAP, or letters that run together read as one word ("whatitis").
-    wordGap: 0.32,
+    pool: 0.2,
   },
 };
 
@@ -635,7 +574,7 @@ function setLiquid(
   for (let attempt = 0; attempt < 6; attempt += 1) {
     // Letters kept apart by the paste's thickness and a gap, as a first guess the kerning then makes exact.
     const inkGap = style.spec.inkGap + 2 * recipe.weight;
-    const layout = style.layout ? style.layout(paragraphs, inner, style, recipe) : liquidLayout(paragraphs, { ...style.spec, inkGap, box: inner });
+    const layout = liquidLayout(paragraphs, { ...style.spec, inkGap, box: inner });
     if (!layout.glyphs.length && !layout.missing.length) return empty;
 
     // The strokes alone, to find where each line's ink starts, and so how
@@ -681,7 +620,7 @@ function setLiquid(
           need = Math.max(need, kernBy(shiftChains(pastes[j].chains, shift[j]), shiftChains(pastes[i].chains, lineShift), same ? gap : (style.wordGap ?? WORD_GAP) * g.sx));
         }
         // Never further left than a third of an em: a letter tucks, it does not pass its neighbour.
-        lineShift += !Number.isFinite(need) ? 0 : within && style.tuck !== false ? Math.max(need, -0.33 * g.sy) : Math.max(0, need);
+        lineShift += !Number.isFinite(need) ? 0 : within ? Math.max(need, -0.33 * g.sy) : Math.max(0, need);
         shift[i] = lineShift;
       });
     }
@@ -698,7 +637,7 @@ function setLiquid(
           const above = layout.glyphs.flatMap((g, i) => (g.line === previous ? shiftChains(pastes[i].chains, shift[i], drop.get(g.line) ?? 0) : []));
           const here = layout.glyphs.flatMap((g, i) => (g.line === line ? shiftChains(pastes[i].chains, shift[i], total) : []));
           const size = layout.sizes[line] ?? 0;
-          total += Math.max(dropBy(above, here, style.kern * size), style.tuck === false ? 0 : -0.33 * size);
+          total += Math.max(dropBy(above, here, style.kern * size), -0.33 * size);
         }
         drop.set(line, total);
       });
@@ -795,7 +734,7 @@ function setLiquid(
  * this, so it is never drawn where paste that has since moved used to be;
  * the colours themselves are left out, since they are only light.
  */
-export function pasteKey(chains: Chain[], colourOf: number[], tone: number[], finish: Finish, pool: number, square = false): string {
+export function pasteKey(chains: Chain[], colourOf: number[], tone: number[], finish: Finish, pool: number): string {
   let a = 0x811c9dc5;
   let b = 0x9e3779b9;
   const mix = (v: number) => {
@@ -815,7 +754,7 @@ export function pasteKey(chains: Chain[], colourOf: number[], tone: number[], fi
     mix((tone[i] ?? 1) * 1000);
   });
   mix(pool);
-  return `${finish}${square ? "#" : ""}|${chains.length}|${a.toString(36)}${b.toString(36)}`;
+  return `${finish}|${chains.length}|${a.toString(36)}${b.toString(36)}`;
 }
 
 /** A layer of paste from its parts, keyed by what it is. */
@@ -828,12 +767,11 @@ function pasteOp(
   finish: Finish,
   ground: string | null,
   pool: number,
-  square: boolean,
   glyphOf: number[] = [],
   lineOf: number[] = [],
 ): LiquidOp {
-  const key = pasteKey(chains, colourOf, tone, finish, pool, square);
-  return { kind: "liquid", chains, letters, glyphOf, lineOf, colours, colourOf, tone, finish, ground, pool, square, seed: hashString(key), key };
+  const key = pasteKey(chains, colourOf, tone, finish, pool);
+  return { kind: "liquid", chains, letters, glyphOf, lineOf, colours, colourOf, tone, finish, ground, pool, seed: hashString(key), key };
 }
 
 function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: string | null, withDroplets: boolean): LiquidOp {
@@ -848,7 +786,6 @@ function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: strin
     style.finish,
     ground,
     typical * style.pool,
-    style.square ?? false,
     set.glyphOf,
     set.lineOf,
   );
@@ -865,18 +802,6 @@ function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palet
   const set = setLiquid(paragraphs, safe, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
   return {
     ops: [liquidOp(set, style, [palette.ink, palette.accent], palette.bg, true), ...set.missing] as Op[],
-    readable: set.readable,
-  };
-}
-
-/** Thick, matte paste spread in blocky capitals, packed into a square. */
-function spread(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, seed: number) {
-  const side = Math.min(safe.w, safe.h);
-  const box = { x: safe.x + (safe.w - side) / 2, y: safe.y + (safe.h - side) / 2, w: side, h: side };
-  const style = shuffled(SPREAD, seed);
-  const set = setLiquid(paragraphs, box, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
-  return {
-    ops: [liquidOp(set, style, [palette.ink, palette.accent], palette.bg, true), ...set.missing, { kind: "grain", alpha: 0.035 } as Op],
     readable: set.readable,
   };
 }
@@ -1034,7 +959,7 @@ function stickery(
   const chosen = LETTERINGS.find((l) => l.id === lettering) ?? LETTERINGS[0];
   const plainShare = chosen.plain;
   const steps = chosen.steps;
-  const paste = funkyFace ? null : shuffled(PASTE_LETTERINGS[lettering as "goo"], seed);
+  const paste = funkyFace ? null : shuffled(PASTE_LETTERINGS[lettering as PasteLetteringId], seed);
   const salt = hashString(`stickery#${lettering}#${seed}#${paragraphs.map((p) => p.map((w) => w.map((s) => s.text).join("")).join(" ")).join("\n")}`);
 
   // The plain words a little under half the funky ones' size, their capitals as tall in every face.
@@ -1475,7 +1400,7 @@ function stickery(
   const typical = radii.length ? radii[Math.floor(radii.length / 2)] : 10;
   // Every drawn funky word on the cover is one layer, keyed by where it now is.
   const layer = chains.length && paste
-    ? [pasteOp(chains, chains.length, made.colours, made.colourOf, chains.map(() => 1), paste.finish, null, typical * paste.pool, false)]
+    ? [pasteOp(chains, chains.length, made.colours, made.colourOf, chains.map(() => 1), paste.finish, null, typical * paste.pool)]
     : [];
   return {
     ops: [...made.shapes.map((op) => moveOp(op, dx, dy)), ...made.texts.map((op) => moveOp(op, dx, dy)), ...layer],
@@ -1508,7 +1433,11 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const palette = paletteFor({ hue: input.hue, shade: input.shade, ground: input.ground });
   const seed = input.seed | 0;
   const { width, height, safe } = format;
-  const paragraphs = parseTitle(input.title);
+  // Stars mean something only to Stickery, where they pick the funky
+  // words; every other style sets a starred word as it sets the rest, in
+  // the same colour and face (the owner's ask of 7 Oct).
+  const typed = parseTitle(input.title);
+  const paragraphs = input.style === "stickery" ? typed : typed.map((p) => p.map((w) => w.map((seg) => ({ ...seg, emphasis: false }))));
   const canvas = { x: width * 0.03, y: height * 0.03, w: width * 0.94, h: height * 0.94 };
 
   const made: { ops: Op[]; readable: Rect; block?: Block } = (() => {
@@ -1517,8 +1446,6 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
         return pasty(paragraphs, safe, canvas, palette, measurer, false, seed);
       case "pasty-flat":
         return pasty(paragraphs, safe, canvas, palette, measurer, true, seed);
-      case "spread":
-        return spread(paragraphs, safe, canvas, palette, measurer, seed);
       case "stickery":
         return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE);
       case "echo":

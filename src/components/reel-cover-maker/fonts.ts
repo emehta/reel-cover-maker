@@ -31,9 +31,9 @@ import {
 import { CORE_FACE_IDS, type FaceId, type InkColumn, type Measurer } from "@/components/reel-cover-maker/faces";
 import { createFontGate, type FontGate } from "@/components/reel-cover-maker/font-gate";
 
-const instrumentSerif = Instrument_Serif({ weight: "400", style: ["normal", "italic"], subsets: ["latin"] });
+const instrumentSerif = Instrument_Serif({ weight: "400", subsets: ["latin"] });
 const archivoBlack = Archivo_Black({ weight: "400", subsets: ["latin"] });
-const spaceMono = Space_Mono({ weight: ["400", "700"], subsets: ["latin"] });
+const spaceMono = Space_Mono({ weight: "400", subsets: ["latin"] });
 
 /** Variable, so it sets Stickery's plain words and the maker's own controls at any weight. */
 export const interTight = Inter_Tight({ subsets: ["latin"], variable: "--rcm-font-ui" });
@@ -55,11 +55,9 @@ const damion = Damion({ weight: "400", subsets: ["latin"] });
 
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
   serif: { family: instrumentSerif.style.fontFamily, weight: 400, italic: false },
-  "serif-italic": { family: instrumentSerif.style.fontFamily, weight: 400, italic: true },
   sans: { family: interTight.style.fontFamily, weight: 600, italic: false },
   wide: { family: archivoBlack.style.fontFamily, weight: 400, italic: false },
   mono: { family: spaceMono.style.fontFamily, weight: 400, italic: false },
-  "mono-bold": { family: spaceMono.style.fontFamily, weight: 700, italic: false },
   "plain-outfit": { family: outfit.style.fontFamily, weight: 300, italic: false },
   "plain-jost": { family: jost.style.fontFamily, weight: 300, italic: false },
   "plain-fraunces": { family: fraunces.style.fontFamily, weight: 300, italic: false },

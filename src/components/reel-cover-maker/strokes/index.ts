@@ -11,15 +11,13 @@
 
 import { DRIP } from "@/components/reel-cover-maker/strokes/drip";
 import { GOO } from "@/components/reel-cover-maker/strokes/goo";
-import { SANS } from "@/components/reel-cover-maker/strokes/sans";
 import type { StrokeFontData } from "@/components/reel-cover-maker/strokes/types";
 
-export type StrokeFontId = "drip" | "goo" | "sans";
+export type StrokeFontId = "drip" | "goo";
 
 export const STROKE_FONTS: Record<StrokeFontId, StrokeFontData> = {
   drip: DRIP,
   goo: GOO,
-  sans: SANS,
 };
 
 export interface StrokeGlyph {

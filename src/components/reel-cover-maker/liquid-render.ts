@@ -10,8 +10,7 @@
  * - "gloss": a rounded tube of gel, as sauce from a bottle sits on a plate;
  * - "matte": thick paste spread with a knife, flat on top with a rounded
  *   shoulder, swept in broad swaths along each stroke with a ridge where
- *   the blade lifted, lumpy, its edge ragged; where the style asks, a
- *   stroke's free ends are cut square, as a knife leaves them;
+ *   the blade lifted, lumpy, its edge ragged;
  * - "flat": the shape alone.
  *
  * The field (distance, height, colour, tone) is what the worker makes, once
@@ -37,8 +36,6 @@ export interface LiquidPaint {
   finish: Finish;
   /** How far apart two strokes may be and still bridge, in pixels of the picture. */
   pool: number;
-  /** A stroke's ends cut square rather than round, as a knife leaves paste. */
-  square?: boolean;
   seed: number;
 }
 
@@ -217,40 +214,6 @@ export function liquidField(paint: LiquidPaint, target: LiquidTarget): LiquidFie
         }
       }
     }
-    // A knife's square end: each end of the stroke cut off flat half a
-    // radius past its last bead, where the paste is that end's own, never
-    // where another part of the stroke (an S's spine) passes near it.
-    // A closed stroke (an O) has no end to cut.
-    const closed = chain.length > 2 && Math.hypot(chain[0].x - chain[chain.length - 1].x, chain[0].y - chain[chain.length - 1].y) < chain[0].r;
-    if (paint.square && chain.length > 2 && !closed) {
-      for (const [e, before, inner] of [
-        [chain[0], chain[Math.min(chain.length - 1, 2)], chain[1]],
-        [chain[chain.length - 1], chain[Math.max(0, chain.length - 3)], chain[chain.length - 2]],
-      ] as const) {
-        const l = Math.hypot(e.x - before.x, e.y - before.y);
-        if (l < 1e-6) continue;
-        const tx = (e.x - before.x) / l;
-        const ty = (e.y - before.y) / l;
-        const reach = e.r * 2.4;
-        const cut = e.r * 0.45;
-        for (let y = Math.max(ty0, Math.floor(e.y - reach)); y < Math.min(ty1, Math.ceil(e.y + reach)); y += 1) {
-          const row = (y - ry) * rw - rx;
-          for (let x = Math.max(tx0, Math.floor(e.x - reach)); x < Math.min(tx1, Math.ceil(e.x + reach)); x += 1) {
-            const along = (x + 0.5 - e.x) * tx + (y + 0.5 - e.y) * ty;
-            if (along <= 0) continue;
-            const i = row + x;
-            const own = Math.max(capsuleDepth(x + 0.5, y + 0.5, inner, e), capsuleDepth(x + 0.5, y + 0.5, before, inner));
-            if (own < tileDepth[i] - 0.5) continue;
-            // A soft minimum, so the cut's edge is rounded as paste's is, not a bevel.
-            const a = tileDepth[i];
-            const b = cut - along;
-            const k = e.r * 0.35;
-            const h = Math.max(k - Math.abs(a - b), 0) / k;
-            tileDepth[i] = Math.min(a, b) - h * h * k * 0.25;
-          }
-        }
-      }
-    }
     // Into the whole, smoothly.
     for (let y = ty0; y < ty1; y += 1) {
       const row = (y - ry) * rw - rx;
@@ -280,6 +243,25 @@ export function liquidField(paint: LiquidPaint, target: LiquidTarget): LiquidFie
         typical * 0.13 * fbm2(paint.seed ^ 0x2f, x / (typical * 0.8), y / (typical * 0.8)) +
         typical * 0.012 * noise2(paint.seed ^ 0x51, x / (typical * 0.22), y / (typical * 0.22));
     }
+  }
+
+  // A gel's radius smoothed across the paste before it is stood up: which
+  // capsule is deepest flips from one to the next where a stroke swells
+  // into a ball, and the radius read off each would put a crease across
+  // the neck. Weighted by the paste alone, so the ground's nothing never
+  // thins an edge.
+  if (!matte) {
+    const weight = new Float32Array(n);
+    const sum = new Float32Array(n);
+    for (let i = 0; i < n; i += 1) {
+      if (depth[i] <= 0) continue;
+      weight[i] = 1;
+      sum[i] = radius[i];
+    }
+    const reach = Math.max(1, Math.round(typical * 0.3));
+    boxBlur(sum, rw, rh, reach);
+    boxBlur(weight, rw, rh, reach);
+    for (let i = 0; i < n; i += 1) if (depth[i] > 0 && weight[i] > 1e-3) radius[i] = sum[i] / weight[i];
   }
 
   // How high the paste stands.
@@ -418,7 +400,9 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
       // The edge by the depth's own slope, as liquid-gl.ts reads it.
       const depthAt = (xx: number, yy: number) => data[(Math.min(h - 1, Math.max(0, yy)) * w + Math.min(w - 1, Math.max(0, xx))) * 4] / 256;
       const slope = Math.max(0.25, Math.hypot((depthAt(x + 1, y) - depthAt(x - 1, y)) / 2, (depthAt(x, y + 1) - depthAt(x, y - 1)) / 2));
-      const cover = clamp01(d / slope + 0.5);
+      // A pixel and a half of smooth edge, so a curve never steps.
+      const e = clamp01((d / slope + 0.75) / 1.5);
+      const cover = e * e * (3 - 2 * e);
       let paste: Vec = [0, 0, 0];
       if (cover > 0) {
         if (finish === "flat") {
@@ -477,7 +461,8 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
       }
       noise = (Math.imul(noise ^ (noise >>> 15), 0x2c1b3c6d) + 0x9e3779b9) | 0;
       const dither = touched ? (((noise >>> 8) & 255) / 255 - 0.5) * 0.9 : 0;
-      for (let k = 0; k < 3; k += 1) out[o + k] = Math.round(toSrgb(ground[k] * (1 - cover) + paste[k] * cover) + dither);
+      // Blended in the display's own values, as liquid-gl.ts blends it.
+      for (let k = 0; k < 3; k += 1) out[o + k] = Math.round(toSrgb(ground[k]) * (1 - cover) + toSrgb(paste[k]) * cover + dither);
       out[o + 3] = 255;
     }
   }

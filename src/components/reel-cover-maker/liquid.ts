@@ -99,12 +99,25 @@ export interface PasteRecipe {
   swell?: { neck: number; amount: readonly [number, number]; reach: number };
   /** A drip's neck and drop, as shares of the stroke it falls from, where the hand fixes them. */
   dripShape?: { neck: number; drop: number };
-  /** A run's last letter, if a t: its crossbar swung on to the right by this much (in em) and ended in a ball this many times the stroke. */
-  crossbar?: { length: number; ball: number };
+  /**
+   * A run's last letter, if a t: its crossbar swung on to the right by
+   * `length` (in em), and how it ends: in a ball or a teardrop `ball` times
+   * the bar's stroke, running off its end into a hanging drop that size,
+   * or drawn off to a point as a brush flicks.
+   */
+  crossbar?: { length: number; ball: number; end?: "ball" | "teardrop" | "drip" | "taper" };
   /** The chance a free end swells into a ball, where not every one should: 0.45 to 0.7 when unset. */
   balls?: number;
   /** How far along a stroke an end's ball swells out of it, in radii: 2.6 when unset. */
   bulbReach?: number;
+  /** The chance a stem's foot (an end pointing down) swells into a ball, where it differs from `balls`. */
+  footBalls?: number;
+  /**
+   * The thickest a stroke may swell, as a share of the paste's radius, its
+   * end balls included, approached softly so a swelling rounds off rather
+   * than flattening: no stroke lumps where its swellings stack.
+   */
+  maxWeight?: number;
   /** The chance a stem's foot runs on as a drip, and how far a drip runs, in em. */
   drip: number;
   dripLength: readonly [number, number];
@@ -331,16 +344,18 @@ export function pasteGlyph(
     type End = { kind: "plain" | "blob" | "drip"; size: number };
     // A mark's stroke (an apostrophe, a comma's tail) is too short to swell at both ends: it would read as a blob.
     const short = total < r0 * 3;
+    // The swash's crossbar ends in the swash alone: a ball here as well would swell twice.
+    const swashBar = !!recipe.crossbar && g.char === "t" && !!g.final && isBar(raw, r0);
     const endOf = (which: 0 | 1): End => {
       const i = which ? pts.length - 1 : 0;
       const [x, y] = pts[i];
-      if (closed || short || !free(x, y)) return { kind: "plain", size: 0 };
+      if (closed || short || swashBar || !free(x, y)) return { kind: "plain", size: 0 };
       const choose = random(mixSeed(seed, 0xe0 + which));
       // Pointing down: the foot of a stem, which may run on as a drip.
       const [px, py] = pts[which ? Math.max(0, i - 4) : Math.min(pts.length - 1, 4)];
       const down = y - py > Math.abs(x - px) * 1.4;
       if (down && choose() < recipe.drip) return { kind: "drip", size: 0 };
-      const chance = recipe.balls ?? (down ? 0.7 : 0.45);
+      const chance = down && recipe.footBalls !== undefined ? recipe.footBalls : (recipe.balls ?? (down ? 0.7 : 0.45));
       return choose() < chance ? { kind: "blob", size: recipe.bulb * between(choose, 0.4, 1) } : { kind: "plain", size: 0 };
     };
     const start = endOf(0);
@@ -381,6 +396,7 @@ export function pasteGlyph(
       // A free end drawn off to a point, as a brush leaves the paper.
       if (taper && freeStart) r *= 1 - taper * (1 - smoothstep(0, r0 * 4, s));
       if (taper && freeEnd) r *= 1 - taper * (1 - smoothstep(0, r0 * 4, total - s));
+      if (recipe.maxWeight) r = softCap(r, r0 * recipe.maxWeight);
       return { x: x - (ty / tl) * sway, y: y + (tx / tl) * sway, r: Math.max(floorR, r) };
     });
     chains.push(chain);
@@ -427,26 +443,16 @@ export function pasteGlyph(
     chains.push([d.from, ...drip]);
   }
 
-  // A run's last letter, if a t: its crossbar swung on to the right and ended in a ball, a knob at its left end.
+  // A run's last letter, if a t: its crossbar swung on to the right, a knob at its left end.
   if (recipe.crossbar && g.char === "t" && g.final) {
-    const bar = chains.slice(0, strokes).findIndex((c) => {
-      if (c.length < 2) return false;
-      const [a, b] = [c[0], c[c.length - 1]];
-      return Math.abs(b.y - a.y) < Math.abs(b.x - a.x) * 0.4 && Math.abs(b.x - a.x) > r0 * 2;
-    });
+    const bar = chains.slice(0, strokes).findIndex((c) => c.length >= 2 && isBar(c.map((b) => [b.x, b.y]), r0));
     if (bar >= 0) {
       const c = chains[bar];
       const [a, b] = c[0].x < c[c.length - 1].x ? [c[0], c[c.length - 1]] : [c[c.length - 1], c[0]];
-      const length = recipe.crossbar.length * size;
-      const steps = Math.max(10, Math.ceil(length / (r0 * 0.2)));
-      const run: Chain = [];
-      for (let k = 1; k <= steps; k += 1) {
-        const t = k / steps;
-        // On to the right, rising as it goes, thinning, then swelling slowly into the ball, an oval along the bar.
-        run.push({ x: b.x + length * t, y: b.y - length * 0.2 * t, r: b.r * (1 - 0.35 * smoothstep(0, 0.3, t)) + b.r * (recipe.crossbar.ball - 0.65) * smoothstep(0.2, 0.95, t) });
-      }
-      chains.push([b, ...run]);
-      chains.push([{ x: a.x - a.r * 0.2, y: a.y, r: a.r * 1.3 }]);
+      // Sized by the bar's own stroke, its middle, never by an end.
+      const stroke = [...c.map((q) => q.r)].sort((p, q) => p - q)[Math.floor(c.length / 2)];
+      chains.push([b, ...swash(b, stroke, recipe.crossbar, size, r0)]);
+      if (recipe.crossbar.end !== "taper") chains.push([{ x: a.x - a.r * 0.2, y: a.y, r: stroke * 1.3 }]);
     }
   }
 
@@ -476,6 +482,87 @@ export function pasteGlyph(
     droplets.push(drop);
   }
   return { chains, strokes, droplets };
+}
+
+/** `r` held under `most`: unchanged to four fifths of it, then easing toward it, never past. */
+function softCap(r: number, most: number): number {
+  const knee = most * 0.8;
+  if (r <= knee) return r;
+  const over = r - knee;
+  return knee + over / (1 + over / (most - knee));
+}
+
+/** Whether a stroke runs across more than it climbs, and far enough to be a t's crossbar. */
+function isBar(points: readonly (readonly [number, number])[] | readonly number[][], r0: number): boolean {
+  if (points.length < 2) return false;
+  const [a, b] = [points[0], points[points.length - 1]];
+  return Math.abs(b[1] - a[1]) < Math.abs(b[0] - a[0]) * 0.4 && Math.abs(b[0] - a[0]) > r0 * 2;
+}
+
+/**
+ * A word's last t's crossbar swung on to the right from its end `b`, rising
+ * as it goes, and ended as the hand ends it. A ball or a teardrop never
+ * swells faster than about a quarter of the way along, so the drop grows out
+ * of the bar as paste does rather than sitting on it like a ball on a stick.
+ */
+function swash(b: Bead, stroke: number, bar: NonNullable<PasteRecipe["crossbar"]>, size: number, r0: number): Chain {
+  const end = bar.end ?? "ball";
+  const out: Chain = [];
+  const big = stroke * bar.ball;
+  if (end === "taper") {
+    // Off to a point, flicking up at the end as a brush lifts.
+    const length = bar.length * size;
+    const steps = Math.max(12, Math.ceil(length / (r0 * 0.15)));
+    for (let k = 1; k <= steps; k += 1) {
+      const t = k / steps;
+      out.push({ x: b.x + length * t, y: b.y - length * (0.08 * t + 0.3 * t * t), r: Math.max(r0 * 0.12, stroke * (1 - 0.82 * smoothstep(0.15, 1, t))) });
+    }
+    return out;
+  }
+  if (end === "drip") {
+    // Along the bar, over its end and down: the paste runs off and hangs in a drop.
+    const across = bar.length * size;
+    const fall = Math.max(big * 2.2, size * 0.2);
+    const turn = Math.max(stroke * 1.2, across * 0.22);
+    const path: [number, number][] = [];
+    const n = Math.max(16, Math.ceil((across + fall) / (r0 * 0.15)));
+    for (let k = 1; k <= n; k += 1) {
+      const t = k / n;
+      const s = t * (across + fall);
+      if (s <= across - turn) path.push([b.x + s, b.y - s * 0.12]);
+      else if (s <= across - turn + (Math.PI / 2) * turn) {
+        const q = (s - (across - turn)) / turn;
+        const cx = b.x + across - turn;
+        const cy = b.y - (across - turn) * 0.12 + turn;
+        path.push([cx + Math.sin(q) * turn, cy - Math.cos(q) * turn]);
+      } else {
+        const d = s - (across - turn) - (Math.PI / 2) * turn;
+        path.push([b.x + across, b.y - (across - turn) * 0.12 + turn + d]);
+      }
+    }
+    path.forEach(([x, y], k) => {
+      const t = (k + 1) / path.length;
+      // Thinning over the turn, then swelling slowly into the drop at the bottom.
+      const neck = 1 - 0.3 * smoothstep(0.2, 0.6, t);
+      out.push({ x, y, r: stroke * neck + (big - stroke * neck) * smoothstep(0.62, 1, t) });
+    });
+    const tip = out[out.length - 1];
+    tip.y -= tip.r * 0.4;
+    return out;
+  }
+  // A ball or a teardrop: along the bar, then swelling out of it. A ball
+  // swells over a short way, a teardrop over as long as keeps its sides to
+  // a quarter of a radius a radius along.
+  const grow = end === "teardrop" ? ((big - stroke) * 1.5) / 0.26 : (big - stroke) * 2.2;
+  const length = Math.max(bar.length * size, grow + big * 0.5);
+  const steps = Math.max(12, Math.ceil(length / (r0 * 0.15)));
+  for (let k = 1; k <= steps; k += 1) {
+    const t = k / steps;
+    const s = t * length;
+    const r = stroke + (big - stroke) * smoothstep(length - big * 0.5 - grow, length - big * 0.5, s);
+    out.push({ x: b.x + s, y: b.y - s * 0.18, r });
+  }
+  return out;
 }
 
 /**

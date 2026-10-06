@@ -17,6 +17,7 @@
   --rcm-focus: #3b6cf6;
   --rcm-danger: #b42318;
   --rcm-shadow: 0 0 0 1px rgba(21, 21, 20, 0.08), 0 2px 6px rgba(21, 21, 20, 0.06), 0 18px 48px rgba(21, 21, 20, 0.14);
+  --rcm-pop: 0 0 0 1px rgba(21, 21, 20, 0.1), 0 4px 10px rgba(21, 21, 20, 0.08), 0 16px 40px rgba(21, 21, 20, 0.16);
 
   box-sizing: border-box;
   width: 100%;
@@ -50,6 +51,7 @@
     --rcm-focus: #7ea2ff;
     --rcm-danger: #ff8a80;
     --rcm-shadow: 0 0 0 1px rgba(242, 241, 238, 0.12), 0 18px 48px rgba(0, 0, 0, 0.5);
+    --rcm-pop: 0 0 0 1px rgba(242, 241, 238, 0.14), 0 16px 40px rgba(0, 0, 0, 0.55);
   }
 }
 
@@ -194,6 +196,12 @@
   outline-offset: -1px;
 }
 
+/* Above the cover: its background, light or dark. */
+.previewTop {
+  display: flex;
+  justify-content: center;
+}
+
 .previewBar {
   display: flex;
   align-items: center;
@@ -328,18 +336,31 @@
   white-space: nowrap;
 }
 
+/* The styles in one row, scrolled sideways, the next one showing at the edge. */
 .styles {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px 10px;
+  display: flex;
+  gap: 10px;
+  margin: 0 -4px;
+  padding: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 4px;
+  scrollbar-width: none;
+}
+
+.styles::-webkit-scrollbar {
+  display: none;
 }
 
 .style {
   position: relative;
+  flex: 0 0 96px;
   display: flex;
   flex-direction: column;
   gap: 7px;
   min-width: 0;
+  scroll-snap-align: start;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -469,37 +490,122 @@
   background: var(--rcm-inset);
 }
 
-.two {
+/* Two buttons, as wide as their words: the background, over the preview. */
+.compact {
+  display: inline-grid;
+  grid-template-columns: repeat(2, auto);
+}
+
+.compact .segment {
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+}
+
+/* Stickery's two choices side by side: the lettering, and the plain words' face. */
+.pickRow {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.four {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-/* Four face names a row: smaller, so "Newsreader" fits a narrow phone. */
-.four .segment {
-  padding: 0 2px;
-  font-size: 12.5px;
-}
-
-.faces {
+.dropdown {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
 }
 
-.faceRow {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+.dropdownButton {
+  appearance: none;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  width: 100%;
+  height: 46px;
+  margin: 0;
+  padding: 0 12px 0 14px;
+  border: 1px solid var(--rcm-line);
+  border-radius: 10px;
+  background: var(--rcm-surface);
+  color: var(--rcm-text);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease;
 }
 
-.faceKind {
+.dropdownButton:hover {
+  border-color: var(--rcm-muted);
+}
+
+.dropdownButton[aria-expanded="true"] {
+  border-color: var(--rcm-strong);
+}
+
+.dropdownButton:focus-visible {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: 2px;
+}
+
+.dropdownValue {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdownCaret {
+  flex: none;
   color: var(--rcm-muted);
-  font-size: 13px;
-  font-weight: 550;
+  transition: transform 0.15s ease;
+}
+
+.dropdownButton[aria-expanded="true"] .dropdownCaret {
+  transform: rotate(180deg);
+}
+
+/* Placed against the window by Dropdown.tsx, hidden until it is. */
+.dropdownList {
+  position: fixed;
+  z-index: 50;
+  visibility: hidden;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border-radius: 12px;
+  background: var(--rcm-surface);
+  box-shadow: var(--rcm-pop);
+  outline: none;
+}
+
+.dropdownOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px 6px 12px;
+  border-radius: 8px;
+  color: var(--rcm-text);
+  font-size: 15px;
+  line-height: 1.25;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dropdownOption[data-active] {
+  background: var(--rcm-inset);
+}
+
+.dropdownList:focus-visible .dropdownOption[data-active] {
+  box-shadow: inset 0 0 0 2px var(--rcm-focus);
 }
 
 .segment {
@@ -611,33 +717,24 @@
     overflow: visible;
   }
 
+  /* The row runs to the screen's edges, its thumbnails snapping to the gutter. */
   .styles {
-    display: flex;
-    gap: 10px;
     margin: 0 calc(-1 * max(16px, env(safe-area-inset-right))) 0 calc(-1 * max(16px, env(safe-area-inset-left)));
     padding: 4px max(16px, env(safe-area-inset-right)) 4px max(16px, env(safe-area-inset-left));
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
-    /* Snapped thumbnails stop at the gutter, not the screen's edge. */
     scroll-padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
-    scrollbar-width: none;
-  }
-
-  .styles::-webkit-scrollbar {
-    display: none;
   }
 
   .style {
-    flex: 0 0 88px;
-    scroll-snap-align: start;
+    flex-basis: 88px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .save,
   .thumb,
-  .segment {
+  .segment,
+  .dropdownButton,
+  .dropdownCaret {
     transition: none;
   }
 }

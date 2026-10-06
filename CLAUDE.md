@@ -24,11 +24,12 @@ npm run build   # the static site, in out/
   hard-code `/reel-cover-maker` in a URL. It is no longer served by
   eshaanm.net, which only redirects to it.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
-  `layout`, `liquid-layout`, `collage`, `liquid`, `liquid-render`,
-  `stepped`, `noise`, `strokes`, `scene`, `colour`, `palettes`, `grain`,
-  `save`, `design` and `font-gate` never touch the DOM and are tested in `scripts/reel-cover.test.mjs`. `paint` takes a
-  context, so it is tested with a recording stand-in. `fonts`, `theme` and the
-  component are the browser.
+  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `noise`,
+  `strokes`, `scene`, `colour`, `palettes`, `grain`, `save`, `design` and
+  `font-gate` never touch the DOM and are tested in
+  `scripts/reel-cover.test.mjs`. `paint` takes a context, so it is tested
+  with a recording stand-in. `fonts`, `theme`, `Dropdown` and the component
+  are the browser.
 - **One scene, every canvas.** The preview, the thumbnails and the download
   are all drawn from `buildScene`. Never draw a second way for one of them.
 - **Text stays in the safe area.** A new style or size must keep every word
@@ -41,14 +42,15 @@ npm run build   # the static site, in out/
   the worker. Keep all three pure: the tests run them in node. The stroke
   fonts in `strokes/` are generated (Drip by `scripts/drip-font.mjs`, Goo
   by `scripts/goo-font.mjs`, which borrows Drip's capitals and marks, so run
-  it again after changing Drip's, and Hershey Sans by
-  `scripts/extract-strokes.mjs`); never edit them by hand, and keep their
+  it again after changing Drip's); never edit them by hand, and keep their
   licence notes beside them.
 - **Geometry in the worker, light on the GPU.** The worker makes a field
   per title and canvas; `liquid-gl.ts` lights it at paint time, so a colour
   or ground change is light again and never paste again. `shadeField` in
   `liquid-render.ts` is the same light for a browser without WebGL 2 and for
-  the tests: change both together, line for line.
+  the tests: change both together, line for line. An edge is blended in the
+  display's values, not linear light, or a pale gel steps on the dark
+  ground.
 - **Letters keep their gap.** Paste swells, so after layout each letter is
   kerned by its own beads (drips included) to exactly its gap, and each line
   to its gap from the one above (`kernBy`, `dropBy` in scene.ts). Only a
@@ -76,6 +78,17 @@ npm run build   # the static site, in out/
   lettering's own grid (`steps`); `stepped.ts` steps every long run and
   each piece's outer sides. The tests hold all of it over every lettering,
   face and shuffle.
+- **Stars are Stickery's alone.** `buildScene` reads every other style's
+  title with its stars as plain words (the owner's ask, 7 Oct): no accent
+  colour, italic or highlight anywhere else.
+- **Spread is gone, with all of its own** (the collage, square knife ends,
+  Hershey Sans and its package), at the owner's ask of 7 Oct. Pasty Flat
+  keeps the matte paste.
+- **The controls**: the styles one row scrolled sideways (a vertical wheel
+  scrolls it too), Stickery's Lettering and Plain words as `Dropdown`s side
+  by side (placed against the window so the scrolling panel never clips
+  them, moving with their button on scroll), and the background's Light and
+  Dark as buttons over the preview.
 - **A face is loaded only once a cover asks for it**: one font gate per
   face (`fonts.ts`), so the eight plain faces cost nothing until chosen.
 - **Every random choice is seeded by the title and the shuffle** (`seed`),

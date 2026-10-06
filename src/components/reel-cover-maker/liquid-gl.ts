@@ -16,7 +16,7 @@
  *   a sharp specular; a shadow traced across the paste's real height
  *   toward the light, soft with distance, and tinted, because the light
  *   that reaches it has passed through the gel.
- * - Matte paste (Pasty Flat, Spread): soft light, darker in the knife's
+ * - Matte paste (Pasty Flat): soft light, darker in the knife's
  *   grooves, a shadow of its own across its ridges, a faint sheen, and an
  *   opaque shadow on the ground.
  * - Flat (Stickery's liquid words): the colour alone.
@@ -108,7 +108,8 @@ void main() {
   float dx = (float(at(p + ivec2(1, 0)).r) - float(at(p - ivec2(1, 0)).r)) / 512.0;
   float dy = (float(at(p + ivec2(0, 1)).r) - float(at(p - ivec2(0, 1)).r)) / 512.0;
   float slope = max(length(vec2(dx, dy)), 0.25);
-  float cover = clamp(d / slope + 0.5, 0.0, 1.0);
+  // A pixel and a half of smooth edge, so a curve never steps.
+  float cover = smoothstep(-0.75, 0.75, d / slope);
   vec3 paste = vec3(0.0);
 
   if (cover > 0.0) {
@@ -175,10 +176,13 @@ void main() {
     }
     touched = touched || cut > 0.002 || contact > 0.002;
   }
+  // The edge blended as it is seen, in the display's own values, as type
+  // is: blended in linear light, a pale paste on a dark ground came out
+  // nearly whole in a pixel only partly covered, and its curves stepped.
   // A dither of under half a level, against banding in the soft shadows,
   // and only where the paste is or falls: the bare ground stays exactly the
   // cover's own colour, so the layer's edge never shows.
-  vec3 colour = encode(mix(ground, paste, cover));
+  vec3 colour = mix(encode(ground), encode(paste), cover);
   if (touched) colour += (hash(vec2(p) + uSeed) - 0.5) * (0.9 / 255.0);
   outColor = vec4(colour, 1.0);
 }`;

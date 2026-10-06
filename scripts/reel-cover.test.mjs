@@ -19,7 +19,6 @@ const L = await import("@/components/reel-cover-maker/layout");
 const S = await import("@/components/reel-cover-maker/scene");
 const P = await import("@/components/reel-cover-maker/palettes");
 const C = await import("@/components/reel-cover-maker/colour");
-const CL = await import("@/components/reel-cover-maker/collage");
 const FACES = await import("@/components/reel-cover-maker/faces");
 const D = await import("@/components/reel-cover-maker/design");
 const V = await import("@/components/reel-cover-maker/save");
@@ -262,7 +261,7 @@ function readableInk(scene) {
   return out;
 }
 
-const LIQUID_STYLES = new Set(["pasty", "pasty-flat", "spread", "stickery"]);
+const LIQUID_STYLES = new Set(["pasty", "pasty-flat", "stickery"]);
 /** Liquid styles cost more to set, so they are checked over fewer titles. */
 const titlesFor = (style) => (LIQUID_STYLES.has(style) ? TITLES.slice(0, 90) : TITLES);
 
@@ -499,11 +498,22 @@ check("Mono ends with its cursor after the last letter, and the block sits in th
   assert.ok(near(centre, format.safe.x + format.safe.w / 2, 0.01));
 });
 
-check("Mono's highlight covers an accented capital, and its cursor stays in when a word is broken", () => {
-  const scene = cover("*ÉÅ*", "mono", "reel");
-  const box = scene.ops.find((op) => op.kind === "box");
-  const text = scene.ops.find((op) => op.kind === "text");
-  assert.ok(box.y <= text.y - measurer.bounds(text.face, text.text).ascent * text.size);
+check("stars mean something only to Stickery: every other style sets a starred word exactly as the rest", () => {
+  for (const style of S.STYLES.filter((st) => st.id !== "stickery")) {
+    for (const [starred, plain] of [["How I *actually* save", "How I actually save"], ["*ÉÅ*", "ÉÅ"], ["take up *space* now", "take up space now"]]) {
+      for (const ground of ["light", "dark"]) {
+        const a = cover(starred, style.id, "post-4x5", { ...COLOURS.blue, ground });
+        const b = cover(plain, style.id, "post-4x5", { ...COLOURS.blue, ground });
+        assert.deepEqual(a.ops, b.ops, `${style.id} "${starred}" is not set as "${plain}"`);
+      }
+    }
+  }
+  // Stickery still reads them: the starred word, not the longest, is the funky one.
+  const funky = textOps(cover("How I *do* save money", "stickery", "reel", { lettering: "yesteryear" })).filter((op) => !op.face.startsWith("plain-"));
+  assert.deepEqual(funky.map((op) => op.text), ["do"]);
+});
+
+check("Mono's cursor stays in when a word is broken", () => {
   for (const title of ["https://example.com/very/long/url/path/that/goes", "x".repeat(49)]) {
     const broken = cover(title, "mono", "reel");
     const caret = broken.ops.at(-1);
@@ -580,15 +590,6 @@ check("words on a sticker or a highlight read on it at 4.5:1, whatever the colou
         for (const fill of [...palette.sticker, palette.accent]) assert.ok(P.contrast(P.readableOn(fill), fill) >= 4.5, `${ground} ${hue} ${shade} on ${fill}`);
       }
     }
-  }
-});
-
-check("Mono's highlighted words read on their highlight", () => {
-  for (const hue of HUES) {
-    const scene = cover("a *b*", "mono", "reel", { hue, shade: 0.5 });
-    const mark = scene.ops.find((op) => op.kind === "box");
-    const marked = scene.ops.filter((op) => op.kind === "text").at(-1);
-    assert.ok(P.contrast(marked.color, mark.color) >= 4.5, `hue ${hue}`);
   }
 });
 
@@ -886,7 +887,7 @@ check("grain is drawn only when there is a tile to draw", () => {
 
 console.log("strokes");
 
-const FONT_IDS = ["drip", "sans"];
+const FONT_IDS = ["drip", "goo"];
 
 check("every printable letter, figure and mark has strokes in every hand", () => {
   for (const font of FONT_IDS) {
@@ -918,7 +919,8 @@ check("each hand's metrics are its own, measured from its glyphs", () => {
     const m = ST.strokeMetrics(font);
     assert.ok(m.cap > m.xHeight && m.xHeight > 0.2 && m.ascent >= m.cap && m.descent > 0.1 && m.space > 0, `${font} ${JSON.stringify(m)}`);
   }
-  assert.notEqual(ST.strokeMetrics("drip").xHeight, ST.strokeMetrics("sans").xHeight);
+  // Goo's lowercase is its own: drawn wider than Drip's, letter by letter.
+  assert.ok(ST.strokeGlyphs("goo", "w")[0].advance > ST.strokeGlyphs("drip", "w")[0].advance);
 });
 
 check("Drip draws every Latin-1 letter, accents built over the letter and an i's dot left off under one", () => {
@@ -1103,18 +1105,6 @@ check("gel is lit: a highlight far brighter than its body, a body darker than it
   }
   assert.ok(brightest > 200, `highlight ${brightest}`);
   assert.ok(darkest < 0x9e, `body ${darkest}`);
-});
-
-check("a knife cuts a stroke's free ends square, but never an O, which has none", () => {
-  const bar = [Array.from({ length: 11 }, (_, i) => ({ x: 100 + i * 20, y: 200, r: 30 }))];
-  const round = LR.renderLiquid(paintOf("flat", bar), TARGET, { colours: ["#9E1B1B"], ground: null });
-  const square = LR.renderLiquid(paintOf("flat", bar, { square: true }), TARGET, { colours: ["#9E1B1B"], ground: null });
-  // Past the end, off the stroke's axis: inside a round end's corner region, outside a square one.
-  assert.ok(alphaAt(round, 100 - 22, 200) > 0 && alphaAt(square, 100 - 22, 200) === 0, "the end is not cut");
-  assert.ok(alphaAt(square, 100 - 10, 200 + 18) > 0, "the cut took the end's corner");
-  const ring = [Array.from({ length: 25 }, (_, i) => ({ x: 200 + 100 * Math.cos((i / 24) * Math.PI * 2), y: 200 + 100 * Math.sin((i / 24) * Math.PI * 2), r: 22 }))];
-  const o = LR.renderLiquid(paintOf("flat", ring, { square: true }), TARGET, { colours: ["#9E1B1B"], ground: null });
-  assert.equal(alphaAt(o, 300, 200), 255, "the O was cut where it closes");
 });
 
 check("two strokes closer than the pooling distance join; farther apart they stay two", () => {
@@ -1526,7 +1516,7 @@ check("Goo swells and thins slowly, as a brush: necks to swells about 2.5 apart,
   // Measured as the critic measured Main Sticker 2 (2.6 to 2.9): the 90th of every bead's radius over the 10th.
   const ratio = (r) => r[Math.floor(r.length * 0.9)] / r[Math.floor(r.length * 0.1)];
   assert.ok(ratio(radii("goo")) > 1.8 && ratio(radii("goo")) < 3.6, `goo neck to swell ${ratio(radii("goo")).toFixed(2)}`);
-  for (const lettering of ["goo"]) {
+  for (const lettering of ["goo", "goo-even"]) {
     const op = liquidOf(cover("*smooth transitions everywhere*", "stickery", "reel", { lettering }));
     // Bead to bead, never more than a fifth of the stroke's full weight.
     for (const chain of op.chains) {
@@ -1539,6 +1529,53 @@ check("Goo swells and thins slowly, as a brush: necks to swells about 2.5 apart,
       }
     }
   }
+});
+
+check("a word's last t swings its crossbar out into a drop grown from the bar as paste grows, never a ball on a stick or on a swollen end", () => {
+  const t = ST.strokeGlyphs("goo", "t")[0];
+  const area = { x: 0, y: 0, w: 4000, h: 4000 };
+  const recipe = { weight: 0.064, pressure: 0, bulb: 0.4, balls: 1, bulbReach: 6, wobble: 0, smooth: 1, spline: true, bow: 0, wave: 0, pen: { kind: "pressure", thin: 0.62 }, drip: 0, dripLength: [0, 0], droplets: 0 };
+  for (const end of ["teardrop", "ball", "drip", "taper"]) {
+    for (let seed = 1; seed <= 24; seed += 1) {
+      const g = { glyph: t, x: 400, y: 900, sx: 400, sy: 400, angle: 0, skew: 0, seed, char: "t", final: true };
+      const { chains, strokes } = LQ.pasteGlyph(g, { ...recipe, crossbar: { length: 0.3, ball: 2, end } }, Infinity, area);
+      const bar = chains.slice(0, strokes).find((c) => Math.abs(c.at(-1).y - c[0].y) < Math.abs(c.at(-1).x - c[0].x) * 0.4);
+      const swash = chains[strokes];
+      assert.ok(bar && swash && swash.length > 4, `${end} ${seed}: no swash`);
+      const middle = [...bar.map((b) => b.r)].sort((p, q) => p - q)[Math.floor(bar.length / 2)];
+      // The bar's own ends never swell first: the swash grows from the bar's own stroke.
+      for (const b of [bar[0], bar.at(-1)]) assert.ok(b.r <= middle * 1.15, `${end} ${seed}: the bar's end swelled to ${(b.r / middle).toFixed(2)} of it`);
+      if (end === "teardrop") {
+        for (let i = 1; i < swash.length; i += 1) {
+          const grow = (swash[i].r - swash[i - 1].r) / Math.max(1e-6, Math.hypot(swash[i].x - swash[i - 1].x, swash[i].y - swash[i - 1].y));
+          assert.ok(grow <= 0.3, `teardrop ${seed}: the drop swells ${grow.toFixed(2)} of a radius a radius along`);
+        }
+        assert.ok(swash.at(-1).r >= middle * 1.8, `teardrop ${seed}: the drop is only ${(swash.at(-1).r / middle).toFixed(2)} of the bar`);
+      }
+      if (end === "taper") assert.ok(swash.at(-1).r < middle * 0.4, `taper ${seed}: the flick ends ${(swash.at(-1).r / middle).toFixed(2)} of the bar`);
+    }
+  }
+});
+
+check("a hand held to a most weight never swells past it, its balls and swellings stacked", () => {
+  const area = { x: 0, y: 0, w: 4000, h: 4000 };
+  const recipe = { weight: 0.064, pressure: 0, bulb: 0.4, balls: 1, bulbReach: 6, footBalls: 0, maxWeight: 1.35, wobble: 0, smooth: 1, spline: true, bow: 0, wave: 0, pen: { kind: "pressure", thin: 0.62 }, swell: { neck: 0.8, amount: [0.15, 0.35], reach: 0.1 }, drip: 0, dripLength: [0, 0], droplets: 0 };
+  let beads = 0;
+  for (const ch of "abcdefghijklmnopqrstuvwxyz") {
+    for (let seed = 1; seed <= 6; seed += 1) {
+      const g = { glyph: ST.strokeGlyphs("goo", ch)[0], x: 400, y: 900, sx: 400, sy: 400, angle: 0, skew: 0, seed, char: ch };
+      const { chains, strokes } = LQ.pasteGlyph(g, recipe, Infinity, area);
+      const most = recipe.weight * 400 * recipe.maxWeight;
+      for (const chain of chains.slice(0, strokes)) {
+        if (chain.length < 2) continue;
+        for (const b of chain) {
+          beads += 1;
+          assert.ok(b.r <= most + 1e-6, `${ch} ${seed}: a bead ${(b.r / (recipe.weight * 400)).toFixed(2)} of the weight`);
+        }
+      }
+    }
+  }
+  assert.ok(beads > 2000);
 });
 
 check("a stroke drawn through its points is smooth: no corner but the font's cusps, and every point kept", () => {
@@ -1592,7 +1629,7 @@ function closest(a, b) {
 check("kerned by their paste, letters keep a thin gap, now and then touching so their paste bridges, never overlapping", () => {
   let pairs = 0;
   let touching = 0;
-  for (const style of ["pasty", "pasty-flat", "spread"]) {
+  for (const style of ["pasty", "pasty-flat"]) {
     for (const title of ["Hello", "kite", "morning routine", "Take up space", "How I *actually* plan my week", ...TITLES.slice(0, 40)]) {
       const op = liquidOf(cover(title, style, "reel", COLOURS.red));
       if (!op) continue;
@@ -1606,14 +1643,12 @@ check("kerned by their paste, letters keep a thin gap, now and then touching so 
       for (let i = 1; i < glyphs.length; i += 1) {
         if (glyphs[i].line !== glyphs[i - 1].line) continue;
         const gap = closest(glyphs[i - 1].chains, glyphs[i].chains);
-        if (style !== "spread") {
-          pairs += 1;
-          // The two letters' own paste, for how near is near.
-          const own = [...glyphs[i - 1].chains, ...glyphs[i].chains].flat();
-          const r = own.reduce((sum, b) => sum + b.r, 0) / own.length;
-          if (gap < r * 0.05) touching += 1;
-          else assert.ok(gap > r * 0.2 || style !== "pasty", `${style} "${title}": letters ${i - 1} and ${i} ${gap.toFixed(1)}px apart, bridged by accident`);
-        }
+        pairs += 1;
+        // The two letters' own paste, for how near is near.
+        const own = [...glyphs[i - 1].chains, ...glyphs[i].chains].flat();
+        const r = own.reduce((sum, b) => sum + b.r, 0) / own.length;
+        if (gap < r * 0.05) touching += 1;
+        else assert.ok(gap > r * 0.2 || style !== "pasty", `${style} "${title}": letters ${i - 1} and ${i} ${gap.toFixed(1)}px apart, bridged by accident`);
         // A touching pair meets, it does not overlap: the pooling makes the bridge.
         assert.ok(gap >= -0.5, `${style} "${title}": letters ${i - 1} and ${i} overlap by ${(-gap).toFixed(1)}px`);
       }
@@ -1713,68 +1748,11 @@ check("a long line wraps inside its sticker rather than becoming a strip", () =>
   assert.ok(Math.min(...plain.map((op) => op.size)) > 30);
 });
 
-console.log("collage");
-
-const COLLAGE = { box: { x: 100, y: 300, w: 880, h: 880 }, font: "sans", weight: 0.09, letterGap: 0.045, lineGap: 0.05, wordGap: 0.22, condense: 0.8, maxSize: 900, minSize: 56, jitter: { scale: 0, angle: 0, rise: 0, squash: 0 }, upper: true, salt: "spread" };
-/** Each line's ink: left and right of its paste, top and bottom of its capitals. */
-function collageLines(layout) {
-  const lines = new Map();
-  for (const g of layout.glyphs) {
-    const box = ST.glyphBox(g.glyph);
-    const r = COLLAGE.weight * g.em;
-    const ink = { x0: g.x + box.x0 * g.sx - r, x1: g.x + box.x1 * g.sx + r, y0: g.y + box.y0 * g.sy - r, y1: g.y + box.y1 * g.sy + r };
-    const l = lines.get(g.line) ?? { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, count: 0 };
-    lines.set(g.line, { x0: Math.min(l.x0, ink.x0), x1: Math.max(l.x1, ink.x1), y0: Math.min(l.y0, ink.y0), y1: Math.max(l.y1, ink.y1), count: l.count + 1 });
-  }
-  return [...lines.values()];
-}
-
-check("Spread packs a title into a square, as a collage: full lines run its width, the block about as tall as wide", () => {
-  const titles = ["Art is different", "How I actually save money", "The art of doing less", "Less is more says the sign", "this is so satisfying to watch", "what nobody tells you about money in Singapore"];
-  for (const title of titles) {
-    const layout = CL.collageLayout(T.parseTitle(title), COLLAGE);
-    const lines = collageLines(layout);
-    const side = COLLAGE.box.w;
-    const widest = Math.max(...lines.map((l) => l.x1 - l.x0));
-    for (const l of lines) {
-      const width = l.x1 - l.x0;
-      // A full line runs the width; a small one is a short word, centred.
-      if (width > widest * 0.7) assert.ok(Math.abs(width - widest) < widest * 0.04, `"${title}": a line ${width.toFixed(0)}px of ${widest.toFixed(0)}`);
-      else assert.ok(Math.abs((l.x0 + l.x1) / 2 - (COLLAGE.box.x + side / 2)) < 2, `"${title}": a small line off centre`);
-    }
-    const height = Math.max(...lines.map((l) => l.y1)) - Math.min(...lines.map((l) => l.y0));
-    assert.ok(height / widest > 0.75 && height / widest < 1.25, `"${title}" is ${widest.toFixed(0)} by ${height.toFixed(0)}`);
-    assert.ok(widest <= side + 1 && height <= side + 1, `"${title}" leaves its square`);
-    // Every letter kept, in order.
-    const letters = layout.glyphs.length + layout.missing.length;
-    assert.equal(letters, T.plainTitle(title).replace(/ /g, "").length, title);
-  }
-});
-
-check("Spread breaks a long word only into pieces of three letters or more, and the shuffle lays it out another way", () => {
-  const plans = new Set();
-  for (let seed = 0; seed < 12; seed += 1) {
-    const layout = CL.collageLayout(T.parseTitle("Art is different"), { ...COLLAGE, salt: `spread#${seed}` });
-    const counts = new Map();
-    for (const g of layout.glyphs) counts.set(`${g.word}:${g.line}`, (counts.get(`${g.word}:${g.line}`) ?? 0) + 1);
-    for (const [key, n] of counts) {
-      const word = Number(key.split(":")[0]);
-      const pieces = [...counts.keys()].filter((k) => Number(k.split(":")[0]) === word).length;
-      if (pieces > 1) assert.ok(n >= 3, `seed ${seed}: a piece of ${n} letters`);
-    }
-    plans.add(collageLines(layout).map((l) => l.count).join(","));
-  }
-  assert.ok(plans.size >= 2, "the shuffle always lays the title out alike");
-  const a = CL.collageLayout(T.parseTitle("Art is different"), COLLAGE);
-  assert.deepEqual(a, CL.collageLayout(T.parseTitle("Art is different"), COLLAGE));
-});
-
-check("the liquid styles lie on the cover's ground and are lit on it; Spread's ends are cut square", () => {
+check("the liquid styles lie on the cover's ground and are lit on it", () => {
   for (const ground of ["light", "dark"]) {
-    for (const style of ["pasty", "pasty-flat", "spread"]) {
+    for (const style of ["pasty", "pasty-flat"]) {
       const op = liquidOf(cover("Art is different", style, "reel", { ...COLOURS.green, ground }));
       assert.equal(op.ground, P.GROUNDS[ground], style);
-      assert.equal(op.square, style === "spread", style);
       assert.equal(op.finish, style === "pasty" ? "gloss" : "matte", style);
     }
   }

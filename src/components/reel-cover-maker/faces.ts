@@ -6,9 +6,9 @@
  */
 
 /** The faces every cover may need: loaded up front. */
-export type CoreFaceId = "serif" | "serif-italic" | "sans" | "wide" | "mono" | "mono-bold";
+export type CoreFaceId = "serif" | "sans" | "wide" | "mono";
 
-export const CORE_FACE_IDS: readonly CoreFaceId[] = ["serif", "serif-italic", "sans", "wide", "mono", "mono-bold"];
+export const CORE_FACE_IDS: readonly CoreFaceId[] = ["serif", "sans", "wide", "mono"];
 
 /**
  * The faces Stickery may set its plain words in: the owner's four (Outfit

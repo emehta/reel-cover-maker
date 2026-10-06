@@ -2,8 +2,8 @@
  * What was typed, read as the lines and words a cover sets.
  *
  * A pair of stars marks emphasis, as in a chat app: `how I *actually* save`
- * sets "actually" in the style's emphasis (italic, the accent colour, a
- * sticker of its own). A star with no partner is only a star. A line break
+ * makes "actually" Stickery's funky word; every other style sets it as it
+ * sets the rest. A star with no partner is only a star. A line break
  * typed is a line break kept; blank lines and runs of spaces fold away,
  * because a cover has no room for them.
  */
