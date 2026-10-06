@@ -26,7 +26,6 @@ import {
   Outfit,
   Sofia_Sans_Condensed,
   Space_Mono,
-  Yellowtail,
   Yesteryear,
 } from "next/font/google";
 import { CORE_FACE_IDS, type FaceId, type InkColumn, type Measurer } from "@/components/reel-cover-maker/faces";
@@ -53,7 +52,6 @@ const caslon = Libre_Caslon_Text({ weight: "400", subsets: ["latin"] });
 const yesteryear = Yesteryear({ weight: "400", subsets: ["latin"] });
 const leckerli = Leckerli_One({ weight: "400", subsets: ["latin"] });
 const damion = Damion({ weight: "400", subsets: ["latin"] });
-const yellowtail = Yellowtail({ weight: "400", subsets: ["latin"] });
 
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
   serif: { family: instrumentSerif.style.fontFamily, weight: 400, italic: false },
@@ -73,7 +71,6 @@ const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }>
   "funky-yesteryear": { family: yesteryear.style.fontFamily, weight: 400, italic: false },
   "funky-leckerli": { family: leckerli.style.fontFamily, weight: 400, italic: false },
   "funky-damion": { family: damion.style.fontFamily, weight: 400, italic: false },
-  "funky-yellowtail": { family: yellowtail.style.fontFamily, weight: 400, italic: false },
 };
 
 /** The CSS font for a face at a size in pixels, as a canvas reads it. */

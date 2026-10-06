@@ -53,7 +53,7 @@ export function isPlainFaceId(value: unknown): value is PlainFaceId {
 }
 
 /** The typefaces Stickery's funky words may be set in, where they are a face rather than drawn paste. */
-export type FunkyFaceId = "funky-yesteryear" | "funky-leckerli" | "funky-damion" | "funky-yellowtail";
+export type FunkyFaceId = "funky-yesteryear" | "funky-leckerli" | "funky-damion";
 
 export type FaceId = CoreFaceId | PlainFaceId | FunkyFaceId;
 

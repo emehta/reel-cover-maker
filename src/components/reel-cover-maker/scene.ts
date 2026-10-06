@@ -423,14 +423,14 @@ const SPREAD: LiquidStyle = {
  * reference stickers set "Want" and "What it is", or drawn paste: gooey,
  * melted letters, as they set "aren't" and "what".
  */
-export type LetteringId = "yesteryear" | "leckerli" | "damion" | "yellowtail" | "goo";
+export type LetteringId = "yesteryear" | "leckerli" | "damion" | "goo";
 
 export interface Lettering {
   id: LetteringId;
   name: string;
   /** The typeface it is set in; none for drawn paste. */
   face: FunkyFaceId | null;
-  /** The owner's choice; a suggestion is not, until they choose it. */
+  /** The owner's choice, offered in the picker; a suggestion is not, until they choose it. */
   chosen: boolean;
   /**
    * The plain words' x-height against the lettering's, a short line's (a
@@ -454,15 +454,16 @@ export interface Lettering {
 const SCRIPT_STEPS = { cell: 0.4, cellY: 0.22, pad: 0.25 };
 
 /**
- * In the order a picker would show them: the owner's two (Yesteryear and
- * Leckerli One), two suggested for being like Yesteryear, and the drawn Goo.
+ * In the order the picker shows them: the owner's picks of 7 Oct, the three
+ * scripts (Yesteryear, Leckerli One, and Damion, suggested for being like
+ * Yesteryear) and the drawn Goo. Yellowtail was suggested with Damion and
+ * not picked.
  */
 export const LETTERINGS: readonly Lettering[] = [
   { id: "yesteryear", name: "Yesteryear", face: "funky-yesteryear", chosen: true, plain: 0.6, steps: SCRIPT_STEPS },
   { id: "leckerli", name: "Leckerli One", face: "funky-leckerli", chosen: true, plain: 0.47, steps: SCRIPT_STEPS },
-  { id: "damion", name: "Damion", face: "funky-damion", chosen: false, plain: 0.55, steps: SCRIPT_STEPS },
-  { id: "yellowtail", name: "Yellowtail", face: "funky-yellowtail", chosen: false, plain: 0.5, steps: SCRIPT_STEPS },
-  { id: "goo", name: "Goo", face: null, chosen: false, plain: 0.58, steps: { cell: 0.3, cellY: 0.17, pad: 0.22 } },
+  { id: "damion", name: "Damion", face: "funky-damion", chosen: true, plain: 0.55, steps: SCRIPT_STEPS },
+  { id: "goo", name: "Goo", face: null, chosen: true, plain: 0.58, steps: { cell: 0.3, cellY: 0.17, pad: 0.22 } },
 ];
 
 export const DEFAULT_LETTERING: LetteringId = "yesteryear";

@@ -15,7 +15,7 @@ import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-make
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
 import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
-import { buildScene, letteringFace, liquidOps, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
+import { buildScene, LETTERINGS, letteringFace, liquidOps, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
@@ -437,6 +437,28 @@ export default function ReelCoverMaker() {
               ))}
             </div>
           </div>
+
+          {design.style === "stickery" && (
+            <div className={styles.field}>
+              <span className={styles.label} id="rcm-lettering-label">
+                Lettering
+              </span>
+              <div className={`${styles.segments} ${styles.two}`} role="radiogroup" aria-labelledby="rcm-lettering-label">
+                {LETTERINGS.filter((l) => l.chosen || l.id === design.lettering).map((l) => (
+                  <label key={l.id} className={styles.segment}>
+                    <input
+                      type="radio"
+                      name="rcm-lettering"
+                      className={styles.radio}
+                      checked={design.lettering === l.id}
+                      onChange={() => update({ lettering: l.id })}
+                    />
+                    {l.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {design.style === "stickery" && (
             <div className={styles.field}>

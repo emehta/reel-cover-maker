@@ -49,11 +49,11 @@ on top, so it stays in sight while you type).
     word reaches into the line, so a t can drop between two words. The plain
     words are sized against the funky word's x-height, a share of it each
     lettering sets, and a long line is made smaller to stay within the funky
-    word's width. The funky lettering is a brush script typeface (Yesteryear
-    or Leckerli One, with Damion and Yellowtail suggested for being like
-    Yesteryear) or drawn: Goo, fat liquid letters running into each other
-    after Main Sticker 2's "aren't", in a hand of its own. The plain words
-    are set in Outfit or Jost, or the serifs Fraunces or Newsreader.
+    word's width. The funky lettering, picked under Lettering, is a brush
+    script typeface (Yesteryear, Leckerli One or Damion) or drawn: Goo,
+    liquid letters running into each other after Main Sticker 2's "aren't",
+    in a hand of its own. The plain words are set in Outfit or Jost, or the
+    serifs Fraunces or Newsreader.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
 - **Shuffle** draws the letters another way: every random choice a style

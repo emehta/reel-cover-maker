@@ -66,7 +66,6 @@ const FACE_WIDTH = {
   "funky-yesteryear": 0.46,
   "funky-damion": 0.48,
   "funky-leckerli": 0.62,
-  "funky-yellowtail": 0.47,
 };
 const FACE_METRICS = {
   serif: { cap: 0.66, ascent: 0.92, descent: 0.24 },
@@ -88,7 +87,6 @@ const FACE_METRICS = {
   "funky-yesteryear": { cap: 0.72, ascent: 1.0, descent: 0.3 },
   "funky-damion": { cap: 0.72, ascent: 1.0, descent: 0.3 },
   "funky-leckerli": { cap: 0.7, ascent: 0.98, descent: 0.26 },
-  "funky-yellowtail": { cap: 0.74, ascent: 1.02, descent: 0.32 },
 };
 
 const liquidOf = (scene) => scene.ops.find((op) => op.kind === "liquid");
@@ -1421,7 +1419,7 @@ const STICKER_TITLES = ["do what you *want*", "it is *what it is*", "things *are
 check("Stickery is one unit: plain words settle close round the funky word, never touching it, whatever the lettering, face or shuffle", () => {
   let words = 0;
   for (const lettering of LETTERING_IDS) {
-    for (const seed of [0, 1, 2]) {
+    for (const seed of [0, 1, 2, 3]) {
       for (const title of STICKER_TITLES) {
         const plainFace = FACES.PLAIN_FACES[(seed + words) % FACES.PLAIN_FACES.length].id;
         const scene = cover(title, "stickery", "reel", { seed, lettering, plainFace });
@@ -1501,7 +1499,7 @@ check("a sticker with no funky word sets its words the size of its neighbours', 
     }
   }
   // A typeface sets "aren't" in pieces at its apostrophe, each a twentieth of an em of clear paper from the ink beside it.
-  for (const lettering of ["yesteryear", "leckerli", "damion", "yellowtail"]) {
+  for (const lettering of ["yesteryear", "leckerli", "damion"]) {
     const funky = textOps(cover("things *aren't*", "stickery", "reel", { lettering })).filter((op) => !op.face.startsWith("plain-"));
     assert.deepEqual(funky.map((op) => op.text), ["aren", "'", "t"], lettering);
     const ink = (op) => measurer.columns(op.face, op.text).map((c) => ({ x0: op.x + c.x * op.size, x1: op.x + (c.x + c.w) * op.size, top: c.top, bottom: c.bottom }));
