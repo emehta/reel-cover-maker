@@ -107,6 +107,9 @@ interface Word {
 
 const MISSING_ADVANCE = 1.05;
 
+/** Marks set by their ink rather than their advance. */
+const MARKS = /^[\u0027\u2019".,:;!?]$/u;
+
 /** A letter in its other case, now and then, where the hand draws both. */
 function swapped(character: string, spec: LiquidSpec, font: StrokeFontId, seed: number): string {
   if (!spec.swapCase || random(seed)() >= spec.swapCase) return character;
@@ -161,8 +164,12 @@ function letters(word: Paragraph[number], spec: LiquidSpec): Word {
         const sx = scale * squash;
         const ink = glyphBox(glyph);
         const hasInk = ink.x1 > ink.x0 || ink.y1 > ink.y0;
-        // As the font spaces it, but never so close that its ink nears the last letter's.
-        const at = hasInk ? Math.max(cursor, inkEnd + spec.inkGap - ink.x0 * sx) : cursor;
+        // As the font spaces it, but never so close that its ink nears the
+        // last letter's. A mark (an apostrophe, a full stop) sits by its ink
+        // alone, a little after the letter before it: a script's apostrophe
+        // carries a wide margin that would hang it in the middle of the word.
+        const mark = MARKS.test(character) && Number.isFinite(inkEnd);
+        const at = !hasInk ? cursor : mark ? inkEnd + Math.max(spec.inkGap, 0.05) - ink.x0 * sx : Math.max(cursor, inkEnd + spec.inkGap - ink.x0 * sx);
         out.push({ glyph, text: character, seed: mixSeed(letterSeed, part), sx, sy: scale, angle, rise, at, inkX0: ink.x0, inkX1: ink.x1, hasInk, emphasis: segment.emphasis });
         if (hasInk) inkEnd = at + ink.x1 * sx;
         cursor = at + glyph.advance * sx + spec.tracking;

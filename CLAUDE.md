@@ -56,6 +56,13 @@ npm run build   # the static site, in out/
 - **A layer is known by its paste** (`pasteKey`), never its colours and
   never the title: a layer made before a face arrived is otherwise reused
   where the paste no longer is.
+- **Stickery never touches and never rules a side.** Each line is placed
+  by its bounding box with a positive gap under the last, so a tilted
+  liquid word cannot reach the plain words; `stepped.ts` steps every long
+  run and each piece's four sides. The tests hold both, and every lettering
+  and plain face to the safe area.
+- **A face is loaded only once a cover asks for it**: one font gate per
+  face (`fonts.ts`), so the eight plain faces cost nothing until chosen.
 - **Every random choice is seeded by the title and the shuffle** (`seed`),
   never `Math.random` in a scene: the preview must be exactly what
   downloads, until Shuffle is pressed.

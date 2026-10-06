@@ -58,6 +58,17 @@ export interface PasteRecipe {
    */
   bow: number;
   wave: number;
+  /**
+   * A pen's thick and thin, where the hand has one: a brush pen's
+   * ("pressure"), heavy on a downstroke and a hairline on an upstroke, or a
+   * broad nib's ("nib"), heavy across its edge and thin along it, the edge
+   * held `angle` radians above the horizontal. `thin` is a hairline's share
+   * of the full weight. Worked out from the stroke's direction and smoothed
+   * along it, so thick swells into thin with no step between.
+   */
+  pen?: { kind: "pressure" | "nib"; thin: number; angle?: number };
+  /** How far a free end tapers to a point rather than ending round, 0 to 1. */
+  taper?: number;
   /** The chance a stem's foot runs on as a drip, and how far a drip runs, in em. */
   drip: number;
   dripLength: readonly [number, number];
@@ -197,13 +208,15 @@ export function pasteGlyph(
   placed.forEach((raw, index) => {
     const seed = mixSeed(g.seed, index + 1);
     const next = random(seed);
-    // A dot (the i's, a full stop): one round ball, bigger than the stroke.
+    // A dot (the i's, a full stop): one round ball, bigger than the stroke
+    // (as big as a pen's full weight, where it has one).
     if (raw.length === 1 || (raw.length === 2 && Math.hypot(raw[1][0] - raw[0][0], raw[1][1] - raw[0][1]) < r0 * 0.6)) {
-      chains.push([{ x: raw[0][0], y: raw[0][1], r: r0 * strength * between(next, 1.35, 1.8) }]);
+      chains.push([{ x: raw[0][0], y: raw[0][1], r: r0 * strength * (recipe.pen ? between(next, 0.85, 1.05) : between(next, 1.35, 1.8)) }]);
       return;
     }
     const closed = Math.hypot(raw[0][0] - raw[raw.length - 1][0], raw[0][1] - raw[raw.length - 1][1]) < r0 * 0.5;
-    const { pts, at } = resample(chaikin(raw, recipe.smooth), Math.max(0.8, r0 * 0.6));
+    // A pen's stroke is sampled closer, so its thick and thin change smoothly bead to bead.
+    const { pts, at } = resample(chaikin(raw, recipe.smooth), Math.max(0.8, r0 * (recipe.pen ? 0.4 : 0.6)));
     const total = at[at.length - 1] || 1;
     // Only an end that stands free swells or drips: one that runs into
     // another stroke is a joint, and a joint pools by itself.
@@ -225,6 +238,11 @@ export function pasteGlyph(
     const end = endOf(1);
     const reach = r0 * 2.6;
     const swell = r0 * 6;
+    const weightAt = penWeights(pts, recipe.pen);
+    const taper = recipe.taper ?? 0;
+    const freeStart = !closed && free(pts[0][0], pts[0][1]);
+    const freeEnd = !closed && free(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    const floorR = r0 * (recipe.pen ? recipe.pen.thin * 0.6 : 0.4);
     const chain: Chain = pts.map(([x, y], i) => {
       // The normal to the stroke here, for the wobble.
       const [ax, ay] = pts[Math.max(0, i - 1)];
@@ -235,11 +253,14 @@ export function pasteGlyph(
       const sway = recipe.wobble * size * noise1(seed ^ 0x51ed, at[i] / (r0 * 7));
       const s = at[i];
       // Thin through the middle of a long stroke, swelling and pinching as the hand pressed.
-      let r = r0 * strength * (1 + recipe.pressure * 0.5 * noise1(seed, s / swell));
-      r *= 1 - recipe.pressure * 0.18 * Math.sin(Math.PI * (s / total)) ** 2 * Math.min(1, total / (r0 * 10));
+      let r = r0 * strength * weightAt[i] * (1 + recipe.pressure * 0.5 * noise1(seed, s / swell));
+      if (!recipe.pen) r *= 1 - recipe.pressure * 0.18 * Math.sin(Math.PI * (s / total)) ** 2 * Math.min(1, total / (r0 * 10));
       r *= 1 + start.size * (1 - smoothstep(0, reach, s)) ** 2;
       r *= 1 + end.size * (1 - smoothstep(0, reach, total - s)) ** 2;
-      return { x: x - (ty / tl) * sway, y: y + (tx / tl) * sway, r: Math.max(r0 * 0.4, r) };
+      // A free end drawn off to a point, as a brush leaves the paper.
+      if (taper && freeStart) r *= 1 - taper * (1 - smoothstep(0, r0 * 4, s));
+      if (taper && freeEnd) r *= 1 - taper * (1 - smoothstep(0, r0 * 4, total - s));
+      return { x: x - (ty / tl) * sway, y: y + (tx / tl) * sway, r: Math.max(floorR, r) };
     });
     chains.push(chain);
     for (const [which, kind] of [
@@ -310,6 +331,47 @@ export function pasteGlyph(
     droplets.push(drop);
   }
   return { chains, strokes, droplets };
+}
+
+/**
+ * Each point's share of the pen's full weight along a stroke: from the
+ * stroke's direction there (over a few points either side, so a wobble is
+ * not a swell), then smoothed along its length four times, so a downstroke
+ * swells out of a hairline and back with no step. One throughout, with no pen.
+ */
+export function penWeights(pts: [number, number][], pen: PasteRecipe["pen"]): number[] {
+  if (!pen || pts.length < 2) return pts.map(() => 1);
+  const edge = pen.angle ?? 0.6;
+  // The nib's edge, rising to the right: y runs down the page.
+  const ex = Math.cos(edge);
+  const ey = -Math.sin(edge);
+  let f = pts.map((_, i) => {
+    const [ax, ay] = pts[Math.max(0, i - 2)];
+    const [bx, by] = pts[Math.min(pts.length - 1, i + 2)];
+    const l = Math.hypot(bx - ax, by - ay) || 1;
+    const tx = (bx - ax) / l;
+    const ty = (by - ay) / l;
+    // A brush is pressed going down the page, and keeps half its weight
+    // going steeply up (a d's stem is one upstroke, and must not vanish);
+    // a nib is widest moving across its edge.
+    if (pen.kind === "pressure") return Math.max(smoothstep(-0.35, 0.75, ty), 0.55 * smoothstep(0.6, 0.95, -ty));
+    return Math.abs(tx * ey - ty * ex);
+  });
+  const kernel = [1, 4, 6, 4, 1];
+  for (let pass = 0; pass < 4; pass += 1) {
+    f = f.map((_, i) => {
+      let sum = 0;
+      let weight = 0;
+      kernel.forEach((k, j) => {
+        const at = i + j - 2;
+        if (at < 0 || at >= f.length) return;
+        sum += f[at] * k;
+        weight += k;
+      });
+      return sum / weight;
+    });
+  }
+  return f.map((v) => pen.thin + (1 - pen.thin) * v);
 }
 
 /** The box around beads, their radii included. */

@@ -32,9 +32,16 @@ on top, so it stays in sight while you type).
     RENT").
   - **Stickery**: each line you type is a sticker with stepped, cut paper
     edges, in turn the colour and its pale tint, with a border that shows on
-    either background. Starred words are in gooey liquid lettering, the rest
-    in a plain face; with no stars, each sticker's longest word is the liquid
-    one. The stickers sit close, each somewhere along the cover's width.
+    either background. No side runs straight from corner to corner: wherever
+    the words leave one straight, a step is cut into it. Starred words are
+    in liquid lettering written with a pen's thick and thin (a brush pen's
+    heavy downstrokes and hairline joins, smoothed so it swells and thins
+    gradually), the rest in a plain face you pick: Inter, Manrope, Outfit or
+    Jost, or the serifs Instrument, Cormorant, Fraunces or Newsreader. With
+    no stars, each sticker's longest word is the liquid one. The liquid
+    words tilt a few degrees, each line sits a random distance from the
+    next without ever touching it, and the plain words sit a little off
+    their line, all from the title and the shuffle.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
 - **Shuffle** draws the letters another way: every random choice a style
@@ -165,8 +172,14 @@ shuffle picks among the best few.
 
 Stickery's stickers are every letter's box, padded and snapped out to a
 coarse grid, with holes filled and gaps a cell wide closed, traced as a
-polygon of straight steps. The grid, the padding and the space between
-stickers scale with the words, and a long line wraps inside its sticker.
+polygon of straight steps. A seeded pass then cuts a step a cell out into
+every straight run longer than twelve cells and into each piece's four
+outer sides, so no side is ruled; a step only adds paper, so no letter is
+ever uncovered. The grid, the padding and the space between stickers scale
+with the words, and a long line wraps inside its sticker. The liquid words'
+thick and thin comes from the pen (`penWeights` in `liquid.ts`): from each
+point's direction, then smoothed along the stroke, so it never steps. Only
+the plain face chosen is loaded.
 
 | File | What it does |
 | --- | --- |

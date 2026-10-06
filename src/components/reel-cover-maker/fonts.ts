@@ -11,8 +11,8 @@
  * file it needs.
  */
 
-import { Archivo_Black, Instrument_Serif, Inter_Tight, Space_Mono } from "next/font/google";
-import { FACE_IDS, type FaceId, type Measurer } from "@/components/reel-cover-maker/faces";
+import { Archivo_Black, Cormorant_Garamond, Fraunces, Instrument_Serif, Inter_Tight, Jost, Manrope, Newsreader, Outfit, Space_Mono } from "next/font/google";
+import { CORE_FACE_IDS, type FaceId, type Measurer } from "@/components/reel-cover-maker/faces";
 import { createFontGate, type FontGate } from "@/components/reel-cover-maker/font-gate";
 
 const instrumentSerif = Instrument_Serif({ weight: "400", style: ["normal", "italic"], subsets: ["latin"] });
@@ -22,6 +22,14 @@ const spaceMono = Space_Mono({ weight: ["400", "700"], subsets: ["latin"] });
 /** Variable, so it sets Stickery's plain words and the maker's own controls at any weight. */
 export const interTight = Inter_Tight({ subsets: ["latin"], variable: "--rcm-font-ui" });
 
+// Stickery's plain faces, one light weight each, so a choice loads one file a script.
+const manrope = Manrope({ weight: "300", subsets: ["latin"] });
+const outfit = Outfit({ weight: "300", subsets: ["latin"] });
+const jost = Jost({ weight: "300", subsets: ["latin"] });
+const cormorant = Cormorant_Garamond({ weight: "400", subsets: ["latin"] });
+const fraunces = Fraunces({ weight: "300", subsets: ["latin"] });
+const newsreader = Newsreader({ weight: "300", subsets: ["latin"] });
+
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
   serif: { family: instrumentSerif.style.fontFamily, weight: 400, italic: false },
   "serif-italic": { family: instrumentSerif.style.fontFamily, weight: 400, italic: true },
@@ -29,6 +37,14 @@ const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }>
   wide: { family: archivoBlack.style.fontFamily, weight: 400, italic: false },
   mono: { family: spaceMono.style.fontFamily, weight: 400, italic: false },
   "mono-bold": { family: spaceMono.style.fontFamily, weight: 700, italic: false },
+  "plain-inter": { family: interTight.style.fontFamily, weight: 300, italic: false },
+  "plain-manrope": { family: manrope.style.fontFamily, weight: 300, italic: false },
+  "plain-outfit": { family: outfit.style.fontFamily, weight: 300, italic: false },
+  "plain-jost": { family: jost.style.fontFamily, weight: 300, italic: false },
+  "plain-instrument": { family: instrumentSerif.style.fontFamily, weight: 400, italic: false },
+  "plain-cormorant": { family: cormorant.style.fontFamily, weight: 400, italic: false },
+  "plain-fraunces": { family: fraunces.style.fontFamily, weight: 300, italic: false },
+  "plain-newsreader": { family: newsreader.style.fontFamily, weight: 300, italic: false },
 };
 
 /** The CSS font for a face at a size in pixels, as a canvas reads it. */
@@ -52,44 +68,64 @@ const ALWAYS = (() => {
 /** A face that never arrives (offline, blocked) must not hold the maker blank for longer than this. */
 const PATIENCE_MS = 3000;
 
-let gate: FontGate | null = null;
+/** One gate a face, made on first use (the browser's font set does not exist on the server), so a face is loaded only once a cover asks for it. */
+const gates = new Map<FaceId, FontGate>();
+const listeners = new Set<() => void>();
+/** Moves whenever any face arrives: what a measurer is made for. */
+let version = 0;
 
-/** The one gate for the page, made on first use: the browser's font set does not exist on the server. */
-function fontGate(): FontGate {
-  gate ??= createFontGate(
-    {
-      load: (text) => Promise.all(FACE_IDS.map((face) => document.fonts.load(fontCss(face, 100), text))),
-      patience: PATIENCE_MS,
-      setTimer: (run, ms) => window.setTimeout(run, ms),
-    },
-    ALWAYS,
-  );
+function told() {
+  version += 1;
+  for (const listener of listeners) listener();
+}
+
+function fontGate(face: FaceId): FontGate {
+  let gate = gates.get(face);
+  if (!gate) {
+    gate = createFontGate(
+      {
+        load: (text) => document.fonts.load(fontCss(face, 100), text),
+        patience: PATIENCE_MS,
+        setTimer: (run, ms) => window.setTimeout(run, ms),
+      },
+      ALWAYS,
+    );
+    gate.subscribe(told);
+    gates.set(face, gate);
+  }
   return gate;
+}
+
+/** The faces a cover may be drawn in: every core face, and the plain face Stickery is set in. */
+export function facesFor(plain: FaceId): FaceId[] {
+  return [...CORE_FACE_IDS, plain];
 }
 
 /** For useSyncExternalStore: told whenever a face finishes loading, or fails to. */
 export function subscribeFonts(listener: () => void): () => void {
-  const g = fontGate();
-  const unsubscribe = g.subscribe(listener);
-  // A file that arrives after the gate stopped waiting for it still redraws the cover.
-  const arrived = () => g.changed();
+  listeners.add(listener);
+  // A file that arrives after its gate stopped waiting for it still redraws the cover.
+  const arrived = () => {
+    for (const gate of gates.values()) gate.changed();
+  };
   document.fonts.addEventListener("loadingdone", arrived);
   document.fonts.addEventListener("loadingerror", arrived);
   return () => {
-    unsubscribe();
+    listeners.delete(listener);
     document.fonts.removeEventListener("loadingdone", arrived);
     document.fonts.removeEventListener("loadingerror", arrived);
   };
 }
 
-/** -1 while a character of `title` is still loading, else a number that changes each time a face arrives. */
-export function fontsSnapshot(title: string): number {
-  return fontGate().snapshot(title);
+/** -1 while a character of `title` is still loading in one of `faces`, else a number that changes each time a face arrives. */
+export function fontsSnapshot(title: string, faces: readonly FaceId[]): number {
+  for (const face of faces) if (fontGate(face).snapshot(title) < 0) return -1;
+  return version;
 }
 
-/** Ask every face for whatever of `title` (and the Latin letters) it has not been asked for. */
-export function requestFonts(title: string): void {
-  fontGate().request(title);
+/** Ask each of `faces` for whatever of `title` (and the Latin letters) it has not been asked for. */
+export function requestFonts(title: string, faces: readonly FaceId[]): void {
+  for (const face of faces) fontGate(face).request(title);
 }
 
 /** Text is measured at this size and scaled, which canvas text does in proportion. */

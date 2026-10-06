@@ -20,6 +20,7 @@ const S = await import("@/components/reel-cover-maker/scene");
 const P = await import("@/components/reel-cover-maker/palettes");
 const C = await import("@/components/reel-cover-maker/colour");
 const CL = await import("@/components/reel-cover-maker/collage");
+const FACES = await import("@/components/reel-cover-maker/faces");
 const D = await import("@/components/reel-cover-maker/design");
 const V = await import("@/components/reel-cover-maker/save");
 const G = await import("@/components/reel-cover-maker/grain");
@@ -53,6 +54,15 @@ const FACE_WIDTH = {
   wide: 0.8,
   mono: 0.6,
   "mono-bold": 0.6,
+  // Stickery's plain faces: light, each its own width.
+  "plain-inter": 0.5,
+  "plain-manrope": 0.53,
+  "plain-outfit": 0.49,
+  "plain-jost": 0.47,
+  "plain-instrument": 0.38,
+  "plain-cormorant": 0.4,
+  "plain-fraunces": 0.48,
+  "plain-newsreader": 0.45,
 };
 const FACE_METRICS = {
   serif: { cap: 0.66, ascent: 0.92, descent: 0.24 },
@@ -63,7 +73,30 @@ const FACE_METRICS = {
   wide: { cap: 0.72, ascent: 0.96, descent: 0.2 },
   mono: { cap: 0.68, ascent: 0.9, descent: 0.26 },
   "mono-bold": { cap: 0.68, ascent: 0.99, descent: 0.26 },
+  "plain-inter": { cap: 0.73, ascent: 0.97, descent: 0.22 },
+  "plain-manrope": { cap: 0.72, ascent: 0.98, descent: 0.21 },
+  "plain-outfit": { cap: 0.7, ascent: 0.95, descent: 0.2 },
+  "plain-jost": { cap: 0.7, ascent: 0.98, descent: 0.25 },
+  "plain-instrument": { cap: 0.66, ascent: 0.92, descent: 0.24 },
+  "plain-cormorant": { cap: 0.63, ascent: 0.9, descent: 0.27 },
+  "plain-fraunces": { cap: 0.7, ascent: 0.96, descent: 0.25 },
+  "plain-newsreader": { cap: 0.67, ascent: 0.94, descent: 0.25 },
 };
+
+const liquidOf = (scene) => scene.ops.find((op) => op.kind === "liquid");
+
+/** Every text op, those inside a turn too, in drawing order. */
+function textOps(scene) {
+  const out = [];
+  const walk = (ops) => {
+    for (const op of ops) {
+      if (op.kind === "turn") walk(op.ops);
+      else if (op.kind === "text") out.push(op);
+    }
+  };
+  walk(scene.ops);
+  return out;
+}
 
 function charWidth(face, ch) {
   const base = FACE_WIDTH[face];
@@ -551,8 +584,10 @@ check("contrast is WCAG's: black on white is 21, a colour on itself 1", () => {
 console.log("memory");
 
 check("a design round-trips through storage", () => {
-  const design = { text: "How I *plan*", style: "spread", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345 };
+  const design = { text: "How I *plan*", style: "stickery", lettering: "nib", plainFace: "plain-fraunces", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345 };
   assert.deepEqual(D.readDesign(D.writeDesign(design)), design);
+  // A lettering or face this version does not know falls back, the rest kept.
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...design, lettering: "comic", plainFace: "papyrus" })), { ...design, lettering: D.DEFAULT_DESIGN.lettering, plainFace: D.DEFAULT_DESIGN.plainFace });
 });
 
 check("whatever storage holds, the maker opens with something it understands", () => {
@@ -1185,6 +1220,52 @@ check("a sticker is straight steps on its grid, round every letter with room to 
   }
 });
 
+check("cut by hand: a rough sticker has no long straight side, and a step on each of its four outer sides", () => {
+  const next = N.random(17);
+  let cases = 0;
+  for (let k = 0; k < 150; k += 1) {
+    const boxes = Array.from({ length: 1 + Math.floor(next() * 8) }, () => ({ x: 100 + next() * 600, y: 100 + next() * 300, w: 60 + next() * 300, h: 30 + next() * 90 }));
+    const cell = 20;
+    const pad = 18;
+    const plain = SP.steppedOutline(boxes, { cell, pad });
+    const rough = SP.steppedOutline(boxes, { cell, pad, rough: { run: 12, seed: k + 1 } });
+    // A step only adds paper: whatever the plain sticker covered, the rough one does.
+    for (let y = 80; y < 560; y += 7) {
+      for (let x = 80; x < 1100; x += 7) {
+        if (plain.some((p) => SP.insidePolygon(p, x, y))) assert.ok(rough.some((p) => SP.insidePolygon(p, x, y)), `case ${k}: a step cut paper away`);
+      }
+    }
+    for (const p of rough) {
+      cases += 1;
+      assert.ok(SP.longestEdge(p) <= 12 * cell + 1e-6, `case ${k}: a side runs ${SP.longestEdge(p) / cell} steps straight`);
+      // No outer side, top, bottom, left or right, runs straight from corner
+      // to corner: the outline leaves the box round it somewhere along each.
+      const b = SP.polygonBounds([p]);
+      const along = (test) => {
+        let length = 0;
+        for (let i = 0; i < p.length; i += 2) {
+          const j = (i + 2) % p.length;
+          if (test(p[i], p[i + 1]) && test(p[j], p[j + 1])) length += Math.abs(p[j] - p[i]) + Math.abs(p[j + 1] - p[i + 1]);
+        }
+        return length;
+      };
+      for (const [name, test, side] of [
+        ["top", (x, y) => y === b.y, b.w],
+        ["bottom", (x, y) => y === b.y + b.h, b.w],
+        ["left", (x) => x === b.x, b.h],
+        ["right", (x) => x === b.x + b.w, b.h],
+      ]) {
+        if (side >= 4 * cell) assert.ok(along(test) < side - 1e-6, `case ${k}: its ${name} is straight from corner to corner`);
+      }
+    }
+  }
+  assert.ok(cases >= 150);
+  // The same seed cuts the same steps; another seed others.
+  const boxes = [{ x: 0, y: 0, w: 600, h: 60 }];
+  assert.deepEqual(SP.steppedOutline(boxes, { cell: 20, pad: 10, rough: { run: 12, seed: 3 } }), SP.steppedOutline(boxes, { cell: 20, pad: 10, rough: { run: 12, seed: 3 } }));
+  assert.notDeepEqual(SP.steppedOutline(boxes, { cell: 20, pad: 10, rough: { run: 12, seed: 3 } }), SP.steppedOutline(boxes, { cell: 20, pad: 10, rough: { run: 12, seed: 4 } }));
+});
+
 check("a ring of words makes a sticker with no hole; words far apart make two", () => {
   const ring = [
     { x: 0, y: 0, w: 300, h: 40 },
@@ -1211,10 +1292,10 @@ check("Stickery: a sticker per typed line, the colours in turn, starred words in
     assert.equal(paste.ground, null, "Stickery's paste lies on its stickers, not the ground");
     const carried = shapes.filter((s) => paste.chains.some((c) => s.polygons.some((p) => SP.insidePolygon(p, c[0].x, c[0].y))));
     assert.equal(carried.length, 3, "a starred word is missing from its sticker");
-    const plain = scene.ops.filter((op) => op.kind === "text").map((op) => op.text);
+    const plain = textOps(scene).map((op) => op.text);
     assert.deepEqual(plain, ["things", "they", "seem", "and"]);
     assert.ok(inside(format.safe, scene.readable, 1));
-    for (const op of scene.ops.filter((o) => o.kind === "text")) {
+    for (const op of textOps(scene)) {
       const sticker = shapes.find((s) => s.polygons.some((p) => SP.insidePolygon(p, op.x + 1, op.y - 1)));
       assert.ok(sticker, `"${op.text}" is not on a sticker`);
       assert.equal(op.color, P.readableOn(sticker.color));
@@ -1244,13 +1325,115 @@ check("Stickery with no stars: each sticker's longest word is the liquid one", (
   const [paste] = scene.ops.filter((op) => op.kind === "liquid");
   const shapes = scene.ops.filter((op) => op.kind === "shape");
   assert.equal(shapes.filter((s) => paste.chains.some((c) => s.polygons.some((p) => SP.insidePolygon(p, c[0].x, c[0].y)))).length, 2);
-  const plain = scene.ops.filter((op) => op.kind === "text").map((op) => op.text);
+  const plain = textOps(scene).map((op) => op.text);
   assert.deepEqual(plain, ["do", "what", "you", "it", "is", "it", "is"]);
+});
+
+check("Stickery's liquid words never touch its plain ones, whatever the lettering, face or shuffle", () => {
+  let pairs = 0;
+  for (const lettering of S.LETTERINGS.map((l) => l.id)) {
+    for (const seed of [0, 1, 2, 3]) {
+      for (const title of ["things *aren't* what they seem", "How I actually save money", "do what you *want*\nit is *what it is*", "my morning routine as a consultant in Singapore"]) {
+        const scene = cover(title, "stickery", "reel", { seed, lettering, plainFace: seed % 2 ? "plain-cormorant" : "plain-jost" });
+        const paste = liquidOf(scene).chains.flat();
+        const walk = (ops, turn) => {
+          for (const op of ops) {
+            if (op.kind === "turn") walk(op.ops, op);
+            else if (op.kind === "text") {
+              const ink = measurer.bounds(op.face, op.text);
+              const box = applyTurn({ x: op.x - ink.left * op.size, y: op.y - ink.ascent * op.size, w: (ink.left + ink.right) * op.size, h: (ink.ascent + ink.descent) * op.size }, turn);
+              for (const b of paste) {
+                const dx = Math.max(box.x - b.x, 0, b.x - (box.x + box.w));
+                const dy = Math.max(box.y - b.y, 0, b.y - (box.y + box.h));
+                pairs += 1;
+                assert.ok(Math.hypot(dx, dy) > b.r, `${lettering} ${seed} "${title}": "${op.text}" touches the paste`);
+              }
+            }
+          }
+        };
+        walk(scene.ops, null);
+      }
+    }
+  }
+  assert.ok(pairs > 10000);
+});
+
+check("Stickery's plain words are never ruled on one line, and its liquid word sits at another angle and distance each shuffle", () => {
+  const offsets = new Set();
+  for (const seed of [0, 1, 2, 3, 4, 5]) {
+    const scene = cover("these four plain words and one *liquid* word", "stickery", "reel", { seed });
+    const words = textOps(scene).filter((op) => ["these", "four", "plain", "words"].includes(op.text));
+    assert.ok(new Set(words.map((op) => Math.round(op.y * 4))).size > 1, `seed ${seed}: the plain words sit on one line`);
+    assert.ok(scene.ops.some((op) => op.kind === "turn" && Math.abs(op.angle) > 0.002), `seed ${seed}: no word is turned at all`);
+    const paste = liquidOf(scene).chains.flat();
+    const cx = paste.reduce((sum, b) => sum + b.x, 0) / paste.length;
+    const cy = paste.reduce((sum, b) => sum + b.y, 0) / paste.length;
+    const px = words.reduce((sum, op) => sum + op.x, 0) / words.length;
+    const py = words.reduce((sum, op) => sum + op.y, 0) / words.length;
+    offsets.add(`${Math.round((cx - px) / 8)},${Math.round((cy - py) / 8)}`);
+  }
+  assert.ok(offsets.size >= 5, "the liquid word sits in the same place every shuffle");
+});
+
+check("every lettering and every plain face keeps Stickery inside the safe area", () => {
+  for (const format of F.FORMATS) {
+    for (const lettering of S.LETTERINGS.map((l) => l.id)) {
+      for (const [i, title] of TITLES.slice(0, 30).entries()) {
+        const plainFace = FACES.PLAIN_FACES[i % FACES.PLAIN_FACES.length].id;
+        const scene = cover(title, "stickery", format.id, { lettering, plainFace });
+        for (const { op, rect } of readableInk(scene)) assert.ok(inside(format.safe, rect, 1), `${lettering} ${plainFace} ${format.id} "${title}": ${op.kind} outside`);
+        for (const op of textOps(scene)) assert.equal(op.face, plainFace, `${lettering} "${title}": "${op.text}" set in ${op.face}`);
+      }
+    }
+  }
+});
+
+check("a pen's thick and thin: heavy downstrokes and hairline joins for a brush, one weight for bubble, and never a step between", () => {
+  const ratio = (lettering) => {
+    const op = liquidOf(cover("*remember*", "stickery", "reel", { lettering }));
+    const radii = op.chains.flat().map((b) => b.r).sort((a, b) => a - b);
+    // The 5th and 95th of every bead's radius: the paste's real range, not one dot.
+    return radii[Math.floor(radii.length * 0.95)] / radii[Math.floor(radii.length * 0.05)];
+  };
+  for (const lettering of ["brush", "nib", "caps"]) assert.ok(ratio(lettering) > 2.2, `${lettering} thick to thin only ${ratio(lettering).toFixed(2)}`);
+  assert.ok(ratio("bubble") < 1.6, `bubble ${ratio("bubble").toFixed(2)}`);
+  for (const lettering of S.LETTERINGS.map((l) => l.id)) {
+    const op = liquidOf(cover("*smooth transitions everywhere*", "stickery", "reel", { lettering }));
+    // Bead to bead, never more than a fifth of the stroke's full weight:
+    // swelling and thinning, even drawing off to a point, are gradual.
+    for (const chain of op.chains) {
+      const full = Math.max(...chain.map((b) => b.r));
+      for (let i = 1; i < chain.length; i += 1) {
+        const [a, b] = [chain[i - 1].r, chain[i].r];
+        assert.ok(Math.abs(a - b) <= full * 0.2, `${lettering}: the paste steps from ${a.toFixed(1)} to ${b.toFixed(1)} in a stroke ${full.toFixed(1)} at full weight`);
+      }
+    }
+  }
+});
+
+check("the pen rules: a brush is heavy going down and light going up, a nib heavy across its edge", () => {
+  const line = (dx, dy) => Array.from({ length: 12 }, (_, i) => [i * dx, i * dy]);
+  const mid = (pts, pen) => LQ.penWeights(pts, pen)[6];
+  const brush = { kind: "pressure", thin: 0.25 };
+  assert.ok(near(mid(line(0, 1), brush), 1, 0.02), "a downstroke is not full weight");
+  assert.ok(mid(line(1, -0.6), brush) < 0.35, "a rising join is not a hairline");
+  assert.ok(mid(line(0.2, -1), brush) > 0.5 && mid(line(0.2, -1), brush) < 0.8, "a steep upstroke is not half weight");
+  const nib = { kind: "nib", thin: 0.15, angle: Math.PI / 4 };
+  // Moving along the edge's own line, thinnest; across it, heaviest.
+  assert.ok(mid(line(1, -1), nib) < 0.2 && mid(line(1, 1), nib) > 0.95);
+  assert.deepEqual(LQ.penWeights(line(1, 0), undefined), line(1, 0).map(() => 1));
+});
+
+check("a mark sits by its ink: a script's apostrophe close after its letter, not in the middle of the word", () => {
+  const layout = LL.liquidLayout(T.parseTitle("aren't"), { box: { x: 0, y: 0, w: 2000, h: 600 }, fonts: [{ id: "script", share: 1 }], maxSize: 300, minSize: 40, gap: 0, maxLines: 1, stretch: 1, tracking: 0.01, inkGap: -0.06, jitter: { scale: 0, angle: 0, rise: 0, squash: 0 }, upper: false, align: "left", salt: "t" });
+  const [n, mark] = [layout.glyphs[3], layout.glyphs[4]];
+  const nEnd = n.x + ST.glyphBox(n.glyph).x1 * n.sx;
+  const markStart = mark.x + ST.glyphBox(mark.glyph).x0 * mark.sx;
+  assert.ok(markStart - nEnd < 0.12 * mark.sx && markStart - nEnd > 0, `the apostrophe is ${((markStart - nEnd) / mark.sx).toFixed(2)} em from the n`);
 });
 
 console.log("paste, set");
 
-const liquidOf = (scene) => scene.ops.find((op) => op.kind === "liquid");
 /** The closest two beads of two sets of chains come, edge to edge (below zero they overlap). */
 function closest(a, b) {
   let best = Infinity;
@@ -1350,7 +1533,7 @@ check("a layer is known by its paste: moved paste is another layer, the same pas
   assert.equal(recoloured.ground, P.GROUNDS.dark);
   assert.notEqual(liquidOf(cover("kite", "pasty", "reel", { seed: 9 })).key, a.key, "the shuffle drew the same paste");
   // Stickery's words move with the plain words beside them, whose widths depend on the face.
-  const wide = { ...measurer, width: (face, text) => measurer.width(face, text) * (face === "sans" ? 1.15 : 1) };
+  const wide = { ...measurer, width: (face, text) => measurer.width(face, text) * (face.startsWith("plain-") ? 1.15 : 1) };
   const first = liquidOf(cover("*actually* save money on groceries every week", "stickery", "reel", COLOURS.blue));
   const second = liquidOf(cover("*actually* save money on groceries every week", "stickery", "reel", COLOURS.blue, wide));
   assert.notEqual(first.key, second.key);
@@ -1377,7 +1560,7 @@ check("a long line wraps inside its sticker rather than becoming a strip", () =>
   const scene = cover("this is a rather long line of plain words with one *liquid* word in it", "stickery", "reel", COLOURS.purple);
   const [shape] = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
   assert.ok(shape.h > shape.w * 0.3, `the sticker is ${shape.w.toFixed(0)} by ${shape.h.toFixed(0)}`);
-  const plain = scene.ops.filter((op) => op.kind === "text");
+  const plain = textOps(scene);
   assert.ok(new Set(plain.map((op) => Math.round(op.y))).size >= 2, "the plain words did not wrap");
   assert.ok(Math.min(...plain.map((op) => op.size)) > 30);
 });

@@ -473,6 +473,35 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Four face names a row: smaller, so "Newsreader" fits a narrow phone. */
+.four .segment {
+  padding: 0 2px;
+  font-size: 12.5px;
+}
+
+.faces {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.faceRow {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.faceKind {
+  color: var(--rcm-muted);
+  font-size: 13px;
+  font-weight: 550;
+}
+
 .segment {
   position: relative;
   display: flex;

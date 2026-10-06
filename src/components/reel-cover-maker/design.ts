@@ -1,6 +1,7 @@
 /**
  * What the maker remembers between visits: the title being worked on, the
- * style, the colour (hue, shade and ground), the size, and the shuffle, so
+ * style, Stickery's lettering and plain face, the colour (hue, shade and
+ * ground), the size, and the shuffle, so
  * the next cover matches the last one on the grid. Kept in this browser
  * only.
  *
@@ -10,13 +11,16 @@
  */
 
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
+import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, type Ground } from "@/components/reel-cover-maker/palettes";
-import { DEFAULT_STYLE, isStyleId, type StyleId } from "@/components/reel-cover-maker/scene";
+import { DEFAULT_LETTERING, DEFAULT_STYLE, isLetteringId, isStyleId, type LetteringId, type StyleId } from "@/components/reel-cover-maker/scene";
 import { MAX_TITLE_LENGTH } from "@/components/reel-cover-maker/title";
 
 export interface Design {
   text: string;
   style: StyleId;
+  lettering: LetteringId;
+  plainFace: PlainFaceId;
   hue: number;
   shade: number;
   ground: Ground;
@@ -30,6 +34,8 @@ export const STORAGE_KEY = "reel-cover-maker:v1";
 export const DEFAULT_DESIGN: Design = {
   text: "",
   style: DEFAULT_STYLE,
+  lettering: DEFAULT_LETTERING,
+  plainFace: DEFAULT_PLAIN_FACE,
   hue: DEFAULT_COLOUR.hue,
   shade: DEFAULT_COLOUR.shade,
   ground: DEFAULT_COLOUR.ground,
@@ -52,6 +58,8 @@ export function readDesign(raw: string | null): Design {
   return {
     text: typeof stored.text === "string" ? stored.text.slice(0, MAX_TITLE_LENGTH) : DEFAULT_DESIGN.text,
     style: isStyleId(stored.style) ? stored.style : DEFAULT_DESIGN.style,
+    lettering: isLetteringId(stored.lettering) ? stored.lettering : DEFAULT_DESIGN.lettering,
+    plainFace: isPlainFaceId(stored.plainFace) ? stored.plainFace : DEFAULT_DESIGN.plainFace,
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
     ground: isGround(stored.ground) ? stored.ground : DEFAULT_DESIGN.ground,

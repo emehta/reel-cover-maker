@@ -5,7 +5,8 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties }
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
 import { loadDesign, saveDesign, type Design } from "@/components/reel-cover-maker/design";
-import { fontCss, fontsSnapshot, interTight, measurerFor, requestFonts, subscribeFonts } from "@/components/reel-cover-maker/fonts";
+import { PLAIN_FACES } from "@/components/reel-cover-maker/faces";
+import { facesFor, fontCss, fontsSnapshot, interTight, measurerFor, requestFonts, subscribeFonts } from "@/components/reel-cover-maker/fonts";
 import { FORMATS, formatById, type Format } from "@/components/reel-cover-maker/formats";
 import { GRAIN_TILE, grainPixels } from "@/components/reel-cover-maker/grain";
 import { APP_NAME } from "@/components/reel-cover-maker/meta";
@@ -49,7 +50,7 @@ function grain(): HTMLCanvasElement | null {
 const scenes = new Map<string, Scene>();
 
 function sceneFor(input: CoverInput, loads: number): Scene {
-  const key = JSON.stringify([input.title, input.style, input.hue, input.shade, input.ground, input.format, input.seed, loads]);
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.hue, input.shade, input.ground, input.format, input.seed, loads]);
   let scene = scenes.get(key);
   if (!scene) {
     scene = buildScene(input, measurerFor(loads));
@@ -208,13 +209,16 @@ export default function ReelCoverMaker() {
   const title = filled ? design.text : PLACEHOLDER_TITLE;
   const format = formatById(design.format);
 
-  const loads = useSyncExternalStore(subscribeFonts, () => fontsSnapshot(title), () => -1);
+  const faces = facesFor(design.plainFace);
+  const loads = useSyncExternalStore(subscribeFonts, () => fontsSnapshot(title, faces), () => -1);
   const method = useSyncExternalStore<SaveMethod>(subscribeTouch, currentSaveMethod, () => "download");
 
   const measurer = loads >= 0 ? measurerFor(loads) : null;
   const input: CoverInput = {
     title,
     style: design.style,
+    lettering: design.lettering,
+    plainFace: design.plainFace,
     hue: design.hue,
     shade: design.shade,
     ground: design.ground,
@@ -230,7 +234,7 @@ export default function ReelCoverMaker() {
   /** The whole picture can be drawn now: no liquid layer of it is still being drawn, and none failed. */
   const pictureReady = layers.ready && !layers.failed;
   /** What the drawn picture is of; a prepared file is handed over only if it is of the same. */
-  const key = JSON.stringify([design.text, design.style, design.hue, design.shade, design.ground, design.format, design.seed, loads]);
+  const key = JSON.stringify([design.text, design.style, design.lettering, design.plainFace, design.hue, design.shade, design.ground, design.format, design.seed, loads]);
 
   const update = (change: Partial<Design>) => {
     const next = { ...design, ...change };
@@ -246,7 +250,8 @@ export default function ReelCoverMaker() {
     update({ seed });
   };
 
-  useEffect(() => requestFonts(title), [title]);
+  const plainFace = design.plainFace;
+  useEffect(() => requestFonts(title, facesFor(plainFace)), [title, plainFace]);
 
   // The page and the browser's bars in the maker's light or dark, handed back on the way out.
   useEffect(() => {
@@ -431,6 +436,35 @@ export default function ReelCoverMaker() {
               ))}
             </div>
           </div>
+
+          {design.style === "stickery" && (
+            <div className={styles.field}>
+              <span className={styles.label} id="rcm-face-label">
+                Plain words
+              </span>
+              <div className={styles.faces} role="radiogroup" aria-labelledby="rcm-face-label">
+                {(["sans", "serif"] as const).map((kind) => (
+                  <div key={kind} className={styles.faceRow}>
+                    <span className={styles.faceKind}>{kind === "sans" ? "Sans" : "Serif"}</span>
+                    <div className={`${styles.segments} ${styles.four}`}>
+                      {PLAIN_FACES.filter((f) => f.kind === kind).map((f) => (
+                        <label key={f.id} className={styles.segment}>
+                          <input
+                            type="radio"
+                            name="rcm-face"
+                            className={styles.radio}
+                            checked={design.plainFace === f.id}
+                            onChange={() => update({ plainFace: f.id })}
+                          />
+                          {f.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className={styles.field}>
             <div className={styles.labelRow}>
