@@ -3,7 +3,7 @@
 Type a title and get an Instagram reel cover or grid post, made to read in
 the profile grid, ready to download.
 
-Used at [eshaanm.net/projects/reel-cover-maker](https://eshaanm.net/projects/reel-cover-maker).
+Use it at **[emehta.github.io/reel-cover-maker](https://emehta.github.io/reel-cover-maker/)**.
 
 ## Using it
 
@@ -107,7 +107,7 @@ from the page's own origin.
 npm run dev        # http://localhost:3000
 npm run check      # typecheck, lint and tests
 npm test           # scripts/reel-cover.test.mjs
-npm run build
+npm run build      # the static site, in out/
 ```
 
 No test framework: the tests are a plain `node` script that asserts and exits
@@ -122,10 +122,18 @@ scene put it. Node strips the types
 from a `.ts` file on its own, so a module the tests load must write
 type-only imports as `import type`.
 
-CI runs all of it, and the build, on every push.
+## Hosting
 
-### On eshaanm.net
+A static site on GitHub Pages, free. `next build` writes plain files to
+`out/` (`output: "export"`), and `.github/workflows/pages.yml` runs the
+checks, builds and publishes on every push to `main`; a pull request is
+checked by `ci.yml`. Nothing runs on a server.
 
-The site serves the same `src/components/reel-cover-maker` files at
-`/projects/reel-cover-maker`, and runs the same tests. Change them here, then
-copy them across, so the two stay identical.
+The workflow asks Pages where the site is served and builds for that
+(`PAGES_BASE_PATH`), so moving it to a domain of its own needs no code
+change: add the domain under the repo's Settings, Pages, and a CNAME record
+for it pointing at `emehta.github.io`. Pages cannot send response headers,
+so there are none beyond its own.
+
+`eshaanm.net/projects/reel-cover-maker`, where it was first served,
+redirects here.

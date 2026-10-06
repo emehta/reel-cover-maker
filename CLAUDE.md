@@ -2,24 +2,27 @@
 
 Type a title, get an Instagram reel cover or grid post as a 1080-wide PNG.
 Next.js 16 (App Router, TypeScript strict), no other dependencies but
-Phosphor icons. See [README.md](README.md) for what it does and why.
+Phosphor icons, exported as a static site to GitHub Pages:
+https://emehta.github.io/reel-cover-maker/. See [README.md](README.md) for
+what it does and why.
 
 ## Commands
 
 ```
 npm run dev
 npm run check   # typecheck, lint, tests: keep all three clean
-npm run build
+npm run build   # the static site, in out/
 ```
 
 ## Rules
 
-- **The site carries a copy.** eshaanm.net (repo `emehta/personal-hub`,
-  cloned at `~/Desktop/Viate Website`) serves `src/components/reel-cover-maker/` at
-  `/projects/reel-cover-maker`, plus `scripts/reel-cover.test.mjs`. Edit
-  here, copy both across, and keep them byte for byte identical. The pages
-  (`src/app/page.tsx` here, `src/app/projects/reel-cover-maker/page.tsx`
-  there) differ and are not copies.
+- **It is a static site.** `output: "export"`, deployed by
+  `.github/workflows/pages.yml` on every push to `main`, after
+  `npm run check`. No server features: no route handlers, `headers()`,
+  rewrites, middleware or the default `next/image` loader, which an export
+  cannot do. The base path comes from `PAGES_BASE_PATH` at build time; never
+  hard-code `/reel-cover-maker` in a URL. It is no longer served by
+  eshaanm.net, which only redirects to it.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
   `layout`, `scene`, `palettes`, `grain`, `save`, `design` and `font-gate`
   never touch the DOM and are tested in `scripts/reel-cover.test.mjs`. `paint` takes a

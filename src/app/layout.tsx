@@ -2,7 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { APP_DESCRIPTION, APP_NAME } from "@/components/reel-cover-maker/meta";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://eshaanm.net";
+/** Where the site is served; the Pages workflow sets it, and this is its address there. */
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://emehta.github.io/reel-cover-maker";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

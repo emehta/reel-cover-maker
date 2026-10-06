@@ -1,8 +1,8 @@
 name: CI
 
+# A push to main is checked by the Pages workflow before it deploys; this
+# checks a pull request before it gets there.
 on:
-  push:
-    branches: [main]
   pull_request:
 
 jobs:
