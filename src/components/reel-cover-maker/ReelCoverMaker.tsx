@@ -1,6 +1,6 @@
 "use client";
 
-import { DownloadSimple, FrameCorners, Moon, Shuffle, Sun } from "@phosphor-icons/react";
+import { Check, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
@@ -16,7 +16,7 @@ import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-make
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
 import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
-import { buildScene, LETTERINGS, letteringFace, liquidOps, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
+import { buildScene, LETTERINGS, letteringFace, liquidOps, PASTY_LETTERINGS, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
@@ -51,7 +51,7 @@ function grain(): HTMLCanvasElement | null {
 const scenes = new Map<string, Scene>();
 
 function sceneFor(input: CoverInput, loads: number): Scene {
-  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.hue, input.shade, input.ground, input.format, input.seed, loads]);
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, input.hue, input.shade, input.ground, input.format, input.seed, loads]);
   let scene = scenes.get(key);
   if (!scene) {
     scene = buildScene(input, measurerFor(loads));
@@ -221,6 +221,7 @@ export default function ReelCoverMaker() {
     style: design.style,
     lettering: design.lettering,
     plainFace: design.plainFace,
+    pastyLettering: design.pastyLettering,
     hue: design.hue,
     shade: design.shade,
     ground: design.ground,
@@ -236,7 +237,7 @@ export default function ReelCoverMaker() {
   /** The whole picture can be drawn now: no liquid layer of it is still being drawn, and none failed. */
   const pictureReady = layers.ready && !layers.failed;
   /** What the drawn picture is of; a prepared file is handed over only if it is of the same. */
-  const key = JSON.stringify([design.text, design.style, design.lettering, design.plainFace, design.hue, design.shade, design.ground, design.format, design.seed, loads]);
+  const key = JSON.stringify([design.text, design.style, design.lettering, design.plainFace, design.pastyLettering, design.hue, design.shade, design.ground, design.format, design.seed, loads]);
 
   const update = (change: Partial<Design>) => {
     const next = { ...design, ...change };
@@ -423,7 +424,7 @@ export default function ReelCoverMaker() {
         <div className={styles.panel}>
           <div className={styles.field}>
             <label className={styles.label} htmlFor="rcm-title">
-              Title
+              Text
             </label>
             <textarea
               ref={inputRef}
@@ -494,6 +495,15 @@ export default function ReelCoverMaker() {
             </div>
           )}
 
+          {(design.style === "pasty" || design.style === "pasty-flat") && (
+            <Dropdown
+              label="Lettering"
+              value={design.pastyLettering}
+              options={PASTY_LETTERINGS.map((l) => ({ value: l.id, label: l.name }))}
+              onChange={(pastyLettering) => update({ pastyLettering })}
+            />
+          )}
+
           <div className={styles.field}>
             <div className={styles.labelRow}>
               <span className={styles.label} id="rcm-colour-label">
@@ -531,9 +541,24 @@ export default function ReelCoverMaker() {
           </div>
 
           <div className={styles.field}>
-            <span className={styles.label} id="rcm-format-label">
-              Size
-            </span>
+            <div className={styles.labelRow}>
+              <span className={styles.label} id="rcm-format-label">
+                Size <span className={styles.dims}>{format.width} × {format.height}</span>
+              </span>
+              <label className={styles.check} title={format.grid ? "Dim what the profile grid cuts off" : "The profile grid shows a 3:4 post whole"}>
+                <input
+                  type="checkbox"
+                  className={styles.radio}
+                  checked={showGrid && !!format.grid}
+                  disabled={!format.grid}
+                  onChange={(event) => setShowGrid(event.target.checked)}
+                />
+                <span className={styles.checkBox} aria-hidden="true">
+                  <Check size={12} weight="bold" />
+                </span>
+                Grid crop
+              </label>
+            </div>
             <div className={styles.segments} role="radiogroup" aria-labelledby="rcm-format-label">
               {FORMATS.map((f) => (
                 <label key={f.id} className={styles.segment}>
@@ -579,22 +604,6 @@ export default function ReelCoverMaker() {
               />
               {showGrid && <GridMask format={format} />}
             </div>
-          </div>
-          <div className={styles.previewBar}>
-            <span className={styles.dims}>
-              {format.width} × {format.height}
-            </span>
-            {format.grid && (
-              <button
-                type="button"
-                className={styles.toggle}
-                aria-pressed={showGrid}
-                onClick={() => setShowGrid(!showGrid)}
-              >
-                <FrameCorners size={16} weight="bold" aria-hidden="true" />
-                Grid crop
-              </button>
-            )}
           </div>
         </section>
       </div>

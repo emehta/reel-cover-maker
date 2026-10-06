@@ -615,10 +615,14 @@ check("contrast is WCAG's: black on white is 21, a colour on itself 1", () => {
 console.log("memory");
 
 check("a design round-trips through storage", () => {
-  const design = { text: "How I *plan*", style: "stickery", lettering: "goo", plainFace: "plain-jost", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345 };
+  const design = { ...D.DEFAULT_DESIGN, text: "How I *plan*", style: "stickery", lettering: "goo", plainFace: "plain-jost", pastyLettering: "goo-even", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345 };
   assert.deepEqual(D.readDesign(D.writeDesign(design)), design);
-  // A lettering or face this version does not know falls back, the rest kept.
-  assert.deepEqual(D.readDesign(JSON.stringify({ ...design, lettering: "comic", plainFace: "papyrus" })), { ...design, lettering: D.DEFAULT_DESIGN.lettering, plainFace: D.DEFAULT_DESIGN.plainFace });
+  // A lettering or face this version does not know falls back, the rest kept; so does Spread, which is gone.
+  assert.deepEqual(
+    D.readDesign(JSON.stringify({ ...design, lettering: "comic", plainFace: "papyrus", pastyLettering: "brush" })),
+    { ...design, lettering: D.DEFAULT_DESIGN.lettering, plainFace: D.DEFAULT_DESIGN.plainFace, pastyLettering: D.DEFAULT_DESIGN.pastyLettering },
+  );
+  assert.equal(D.readDesign(JSON.stringify({ ...design, style: "spread" })).style, D.DEFAULT_DESIGN.style);
 });
 
 check("whatever storage holds, the maker opens with something it understands", () => {
@@ -1746,6 +1750,29 @@ check("a long line wraps inside its sticker rather than becoming a strip", () =>
   const plain = stickerParts(scene).plain.map((p) => p.op);
   assert.ok(new Set(plain.map((op) => Math.round(op.y))).size >= 2, "the plain words did not wrap");
   assert.ok(Math.min(...plain.map((op) => op.size)) > 30);
+});
+
+check("Pasty and Pasty Flat letter in Drip, or in Goo as a teardrop or evened out, in their own gel or paste", () => {
+  const glyphsOf = (op) => new Set(op.glyphOf).size;
+  for (const style of ["pasty", "pasty-flat"]) {
+    const drip = liquidOf(cover("what you want", style, "post-4x5", COLOURS.red));
+    for (const lettering of ["goo", "goo-even"]) {
+      const op = liquidOf(cover("what you want", style, "post-4x5", { ...COLOURS.red, pastyLettering: lettering }));
+      assert.ok(op, `${style} ${lettering}: no paste`);
+      assert.notEqual(op.key, drip.key, `${style} ${lettering} is drawn as Drip`);
+      assert.equal(op.finish, style === "pasty" ? "gloss" : "matte", `${style} ${lettering}: ${op.finish}`);
+      assert.equal(op.ground, P.GROUNDS.light);
+      assert.equal(glyphsOf(op), "whatyouwant".length, `${style} ${lettering}: a letter lost`);
+      // Goo's letters run into each other and carry no spatter; the evened one swells no further than its cap.
+      assert.equal(op.chains.length, op.letters, `${style} ${lettering}: droplets`);
+    }
+    for (const title of TITLES.slice(0, 30)) {
+      for (const lettering of ["goo", "goo-even"]) {
+        const scene = cover(title, style, "reel", { pastyLettering: lettering });
+        for (const { op, rect } of readableInk(scene)) assert.ok(inside(F.formatById("reel").safe, rect, 1), `${style} ${lettering} "${title}": ${op.kind} outside`);
+      }
+    }
+  }
 });
 
 check("the liquid styles lie on the cover's ground and are lit on it", () => {

@@ -1,7 +1,7 @@
 /**
  * What the maker remembers between visits: the title being worked on, the
- * style, Stickery's lettering and plain face, the colour (hue, shade and
- * ground), the size, and the shuffle, so
+ * style, Stickery's lettering and plain face, Pasty's lettering, the colour
+ * (hue, shade and ground), the size, and the shuffle, so
  * the next cover matches the last one on the grid. Kept in this browser
  * only.
  *
@@ -13,7 +13,17 @@
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
 import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, type Ground } from "@/components/reel-cover-maker/palettes";
-import { DEFAULT_LETTERING, DEFAULT_STYLE, isLetteringId, isStyleId, type LetteringId, type StyleId } from "@/components/reel-cover-maker/scene";
+import {
+  DEFAULT_LETTERING,
+  DEFAULT_PASTY_LETTERING,
+  DEFAULT_STYLE,
+  isLetteringId,
+  isPastyLetteringId,
+  isStyleId,
+  type LetteringId,
+  type PastyLetteringId,
+  type StyleId,
+} from "@/components/reel-cover-maker/scene";
 import { MAX_TITLE_LENGTH } from "@/components/reel-cover-maker/title";
 
 export interface Design {
@@ -21,6 +31,7 @@ export interface Design {
   style: StyleId;
   lettering: LetteringId;
   plainFace: PlainFaceId;
+  pastyLettering: PastyLetteringId;
   hue: number;
   shade: number;
   ground: Ground;
@@ -36,6 +47,7 @@ export const DEFAULT_DESIGN: Design = {
   style: DEFAULT_STYLE,
   lettering: DEFAULT_LETTERING,
   plainFace: DEFAULT_PLAIN_FACE,
+  pastyLettering: DEFAULT_PASTY_LETTERING,
   hue: DEFAULT_COLOUR.hue,
   shade: DEFAULT_COLOUR.shade,
   ground: DEFAULT_COLOUR.ground,
@@ -60,6 +72,7 @@ export function readDesign(raw: string | null): Design {
     style: isStyleId(stored.style) ? stored.style : DEFAULT_DESIGN.style,
     lettering: isLetteringId(stored.lettering) ? stored.lettering : DEFAULT_DESIGN.lettering,
     plainFace: isPlainFaceId(stored.plainFace) ? stored.plainFace : DEFAULT_DESIGN.plainFace,
+    pastyLettering: isPastyLetteringId(stored.pastyLettering) ? stored.pastyLettering : DEFAULT_DESIGN.pastyLettering,
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
     ground: isGround(stored.ground) ? stored.ground : DEFAULT_DESIGN.ground,

@@ -109,6 +109,8 @@ export interface CoverInput {
   /** Stickery's funky lettering, and the face of its plain words. */
   lettering?: LetteringId;
   plainFace?: PlainFaceId;
+  /** Pasty's and Pasty Flat's lettering: Drip, or Goo as a teardrop or evened out. */
+  pastyLettering?: PastyLetteringId;
   hue: number;
   shade: number;
   ground: Ground;
@@ -791,14 +793,49 @@ function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: strin
   );
 }
 
+/** Pasty's and Pasty Flat's letterings: their own Drip, or Stickery's Goo in their gel or paste. */
+export type PastyLetteringId = "drip" | PasteLetteringId;
+
+export const PASTY_LETTERINGS: readonly { id: PastyLetteringId; name: string }[] = [
+  { id: "drip", name: "Drip" },
+  { id: "goo", name: "Goo Teardrop" },
+  { id: "goo-even", name: "Goo Even" },
+];
+
+export const DEFAULT_PASTY_LETTERING: PastyLetteringId = "drip";
+
+export function isPastyLetteringId(value: unknown): value is PastyLetteringId {
+  return PASTY_LETTERINGS.some((l) => l.id === value);
+}
+
+/**
+ * Goo, as a teardrop or evened out, set as Pasty sets its words (centred,
+ * lines packed to fill the cover) in Pasty's glossy gel or Pasty Flat's
+ * matte paste, laid on thicker as a knife lays it. Its own hand otherwise:
+ * its kerning, its joins, its teardrops, no spatter.
+ */
+function pastyGoo(goo: LiquidStyle, matte: boolean): LiquidStyle {
+  return {
+    ...goo,
+    spec: { ...goo.spec, maxSize: PASTY.spec.maxSize, minSize: PASTY.spec.minSize, maxLines: PASTY.spec.maxLines, align: undefined, salt: "pasty-goo" },
+    recipe: (letters) => {
+      const r = goo.recipe(letters);
+      return matte ? { ...r, weight: r.weight * 1.3 } : r;
+    },
+    finish: matte ? "matte" : "gloss",
+    pool: matte ? 0.35 : goo.pool,
+  };
+}
+
 /** A style with the shuffle mixed into its seeds: the same title, drawn another way. */
 function shuffled(style: LiquidStyle, seed: number): LiquidStyle {
   return seed ? { ...style, spec: { ...style.spec, salt: `${style.spec.salt}#${seed}` } } : style;
 }
 
 /** Paste squeezed into letters: wet, glossy gel, or thick matte paste spread with a knife. */
-function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, matte: boolean, seed: number) {
-  const style = shuffled(matte ? PASTY_MATTE : PASTY, seed);
+function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, matte: boolean, seed: number, lettering: PastyLetteringId) {
+  const base = lettering === "drip" ? (matte ? PASTY_MATTE : PASTY) : pastyGoo(PASTE_LETTERINGS[lettering], matte);
+  const style = shuffled(base, seed);
   const set = setLiquid(paragraphs, safe, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
   return {
     ops: [liquidOp(set, style, [palette.ink, palette.accent], palette.bg, true), ...set.missing] as Op[],
@@ -1443,9 +1480,9 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const made: { ops: Op[]; readable: Rect; block?: Block } = (() => {
     switch (input.style) {
       case "pasty":
-        return pasty(paragraphs, safe, canvas, palette, measurer, false, seed);
+        return pasty(paragraphs, safe, canvas, palette, measurer, false, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING);
       case "pasty-flat":
-        return pasty(paragraphs, safe, canvas, palette, measurer, true, seed);
+        return pasty(paragraphs, safe, canvas, palette, measurer, true, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING);
       case "stickery":
         return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE);
       case "echo":
