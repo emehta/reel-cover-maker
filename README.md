@@ -7,16 +7,32 @@ Use it at **[emehta.github.io/reel-cover-maker](https://emehta.github.io/reel-co
 
 ## Using it
 
-- **Type the title.** It is set as large as the cover allows, wrapped into
-  even lines. A line break you type is kept.
+The controls are on the left, the cover on the right (on a phone, the cover
+on top, so it stays in sight while you type).
+
+- **Type the title.** It is set as large as the cover allows. A line break
+  you type is kept.
 - **Put a word between stars** to make it stand out: `How I *actually* save`.
-  Each style marks it its own way (italic, the accent colour, a label of its
-  own, a highlight).
+  Each style marks it its own way.
 - **Pick a style.** Each thumbnail is your title in that style, cropped to the
-  3:4 window the profile grid shows, so you are choosing by how it will look
-  on your grid.
-- **Pick a colour.** Every style uses the same palette, so covers made in one
-  colour read as a set.
+  3:4 window the profile grid shows, so you choose by how it will look on
+  your grid.
+  - **Pasty**: letters squeezed out of a tube of glossy paste, like ketchup,
+    ink or a balloon. They swell and pinch, bulge where a stroke stops,
+    drip, and spatter, and pack together to fill their block.
+  - **Pasty Flat**: the same paste, flat as a print.
+  - **Spread**: thick matte paste spread with a knife, in blocky capitals
+    packed into a square.
+  - **Stickery**: each line you type is a sticker with stepped, cut paper
+    edges, in turn the colour's bright and pale tones. Starred words are in
+    gooey liquid lettering, the rest in a plain face; with no stars, each
+    sticker's longest word is the liquid one.
+  - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
+    outline, and a typewriter with its cursor.
+- **Pick a colour**: green, yellow, blue, orange, purple, black, white, brown
+  or a dark red. The colour is the letters' (the paste, the ink, the
+  sticker), on a plain ground: off-white, or near-black where the colour is
+  light (yellow, orange, white).
 - **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5.
 - **Grid crop** dims what the profile grid cuts off.
 - **Download** (or Cmd/Ctrl+S). On an iPhone or iPad the button reads **Save
@@ -59,10 +75,10 @@ nothing a cover says is cut off wherever it appears.
   into blotches; grain two pixels across survives it and still reads as fine
   on a phone.
 - **Colours that differ in lightness, not just hue.** Instagram stores colour
-  at half resolution (4:2:0 chroma), so red text on a blue of the same
-  lightness fringes at every edge. The tests hold every palette's title
-  colour to 7:1 against its ground, Glow's text to 4.5:1 over its lights
-  everywhere text can go, and every label to 4.5:1.
+  at half resolution (4:2:0 chroma), so letters on a ground of the same
+  lightness fringe at every edge. The tests hold every colour's letters to
+  4.5:1 against their ground, an emphasised word to 3:1, and a sticker's
+  words to 4.5:1 on either of its tones.
 
 ## How it works
 
@@ -70,36 +86,74 @@ A cover is a list of things to draw, built by pure functions and drawn on a
 canvas, so the preview, the style thumbnails and the download are drawn from
 the same list and cannot disagree.
 
+### The liquid letters
+
+Pasty, Spread and Stickery's liquid words are not a font. They are paste,
+drawn from scratch for every title:
+
+1. **Centre lines.** Each letter comes from a single-line font (a pen
+   plotter's: its glyphs are strokes, not outlines), the line a tube of
+   paste would follow. Pasty draws in EMS Elfin, and some words with EMS
+   Felix's brush capitals; Stickery's liquid words in Hershey Script; Spread
+   in Hershey Sans.
+2. **A dynamic font.** Every word is seeded by its own text, which picks its
+   hand; every letter by its word and its place in it, which picks its size,
+   lean, rise and squash. So a K is drawn one way in "kite" and another in
+   "handkerchief", and the same way every time either is typed.
+3. **Paste.** Each stroke becomes a chain of beads, each a point with a
+   radius: rounded at the plotter's corners, wobbling a little, swelling and
+   pinching with the pressure, bulging at a free end. Drips hang from a
+   stroke's low points, as far as the line below, and droplets spatter
+   around. Letters are spaced by their ink, so paste never fills the gap
+   between two of them.
+4. **Shape.** Each chain is the union of tapered capsules between its beads,
+   measured as an exact signed distance. Chains join by a smooth union, so
+   where strokes meet the paste pools into a fillet, as liquid does.
+5. **Light.** How deep a pixel sits inside its stroke, against the stroke's
+   radius, is how high the paste stands there. That height is lit from the
+   top left: wet and glossy with sharp highlights and a soft shadow (Pasty),
+   flat (Pasty Flat, Stickery), or matte, ridged along each stroke by the
+   knife and rough at the edge (Spread).
+6. **Off the page's thread.** The pixels are worked out in a web worker, a
+   few hundred milliseconds at full size, the preview first and then the
+   thumbnails; a newer title replaces an older one still waiting.
+
+Stickery's stickers are every letter's box, padded and snapped out to a
+coarse grid, with holes filled and gaps a cell wide closed, traced as a
+polygon of straight steps.
+
 | File | What it does |
 | --- | --- |
 | `formats.ts` | The three sizes, Instagram's crop windows, and the safe area they agree on |
 | `title.ts` | What was typed, as lines and words, with stars read as emphasis |
-| `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows; `stack` sizes each line to run the full width, as a poster does |
-| `scene.ts` | Each style, as a list of fills, lights, grain, boxes and text |
+| `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows |
+| `liquid-layout.ts` | The liquid letters' hands, seeds and spacing, and lines packed to fill their block |
+| `liquid.ts` | A letter's paste: beads, pressure, bulbs, drips and droplets |
+| `liquid-render.ts` | The paste as pixels: distance fields, smooth union, height and light |
+| `liquid.worker.ts`, `liquid-client.ts` | The worker that draws the paste, and the page's queue for it |
+| `strokes/` | The single-line fonts, generated by `scripts/extract-strokes.mjs`, with their licences |
+| `stepped.ts` | Stickery's stepped sticker outline |
+| `scene.ts` | Each style, as a list of fills, grain, shapes, text and liquid layers |
 | `paint.ts` | Draws a scene on a canvas at any scale, from any origin |
-| `palettes.ts` | The eight palettes and WCAG contrast |
-| `grain.ts` | Seeded film grain, the same every time |
-| `fonts.ts` | The faces, served by next/font, and the canvas measurer |
-| `font-gate.ts` | Whether every character of the title has its face's file yet |
+| `palettes.ts` | The nine colours and WCAG contrast |
+| `noise.ts`, `grain.ts` | Seeded randomness, smooth noise, and film grain |
+| `fonts.ts`, `font-gate.ts` | The web faces, served by next/font, and whether every character of the title has its file yet |
 | `save.ts` | The file's name, and download or share sheet or press and hold |
 | `design.ts` | What the browser remembers |
 | `theme.ts` | Light and dark, after the system, from the first frame |
 
 Nothing is drawn until every character of the title has its face's file,
 because a canvas draws in whatever face is there at that moment, and the file
-would be set in a fallback. The faces are split by script, so a title with
-"Łódź" in it waits for the Latin Extended file. The maker keeps its own
-record of what has loaded rather than asking `document.fonts.check`, which
-Chrome answers yes to for any family installed on the computer.
+would be set in a fallback. The maker keeps its own record of what has
+loaded rather than asking `document.fonts.check`, which Chrome answers yes to
+for any family installed on the computer. A character no stroke font can
+draw (an emoji) is set as plain text in the liquid styles, so nothing typed
+is lost.
 
-Layout measures text in em through a `Measurer`, which is the canvas in the
-browser and a stand-in in the tests. Lines are placed by their ink, not only
-their advance, so an italic's lean, a wide accent or an emoji at the end of
-a line stays inside the safe area.
-
-The typefaces are Instrument Serif, Anton, Inter Tight, Archivo Black and
-Space Mono, all from Google Fonts under the SIL Open Font License, served
-from the page's own origin.
+The web typefaces are Instrument Serif, Inter Tight, Archivo Black and Space
+Mono, from Google Fonts under the SIL Open Font License, served from the
+page's own origin. The stroke fonts' licences are in
+`src/components/reel-cover-maker/strokes/LICENSE.md`.
 
 ## Development
 
@@ -108,17 +162,22 @@ npm run dev        # http://localhost:3000
 npm run check      # typecheck, lint and tests
 npm test           # scripts/reel-cover.test.mjs
 npm run build      # the static site, in out/
+node scripts/extract-strokes.mjs   # the stroke fonts again, from the hersheytext package
 ```
 
 No test framework: the tests are a plain `node` script that asserts and exits
 non-zero (`scripts/alias-loader.mjs` lets it import by the `@/` alias). They
-set every style over 410 titles in every size and hold every word's ink to
-the safe area (with a stand-in measurer whose italics, accents and emoji
-overhang), count every word back, check that no larger size that fits was
-passed over, check every palette's contrast (Glow's over its lights), drive
-the font gate with loads that arrive late or never, and check the grain, the
-file names, the save method and that the painter draws each word where the
-scene put it. Node strips the types
+set every style over hundreds of titles in every size and hold every word's
+ink to the safe area (the paste bead by bead, with a stand-in measurer whose
+italics, accents and emoji overhang), count every word and letter back, and
+check: that no larger size that fits was passed over; that letters never
+come closer than the ink gap; that a word is drawn the same wherever it
+goes; that a tapered capsule's distance matches the slow way of working it
+out; that two strokes pool when close and stay apart when not; that gloss
+casts a shadow and flat does not; that a sticker is straight steps on its
+grid round every letter; every colour's contrast; the font gate with loads
+that arrive late or never; the grain, the file names, the save method, and
+that the painter draws each word where the scene put it. Node strips the types
 from a `.ts` file on its own, so a module the tests load must write
 type-only imports as `import type`.
 

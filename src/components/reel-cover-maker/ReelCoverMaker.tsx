@@ -11,7 +11,9 @@ import { APP_NAME } from "@/components/reel-cover-maker/meta";
 import { paint } from "@/components/reel-cover-maker/paint";
 import { PALETTES } from "@/components/reel-cover-maker/palettes";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
-import { buildScene, STYLES, type Scene } from "@/components/reel-cover-maker/scene";
+import { drawLayers, drawnLayer, layersVersion, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
+import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
+import { buildScene, liquidOps, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
@@ -36,6 +38,20 @@ function grain(): HTMLCanvasElement | null {
   ctx.putImageData(new ImageData(grainPixels(), GRAIN_TILE, GRAIN_TILE), 0, 0);
   grainTile = canvas;
   return canvas;
+}
+
+/** Scenes already built, by what they are of: typing rebuilds only what changed. */
+const scenes = new Map<string, Scene>();
+
+function sceneFor(input: CoverInput, loads: number): Scene {
+  const key = JSON.stringify([input.title, input.style, input.palette, input.format, loads]);
+  let scene = scenes.get(key);
+  if (!scene) {
+    scene = buildScene(input, measurerFor(loads));
+    scenes.set(key, scene);
+    while (scenes.size > 64) scenes.delete(scenes.keys().next().value as string);
+  }
+  return scene;
 }
 
 let shareFiles: boolean | null = null;
@@ -107,22 +123,42 @@ function gridWindow(format: Format) {
   return format.grid ?? { x: 0, y: 0, w: format.width, h: format.height };
 }
 
+/** The canvas a scene is drawn on at its own size: the preview's, and the download's. */
+function fullSize(scene: Scene): LiquidTarget {
+  return { width: scene.width, height: scene.height, scale: 1, origin: { x: 0, y: 0 } };
+}
+
+/** The liquid layers of a scene for a canvas: every one drawn, or false while any is being drawn. */
+function layersFor(scene: Scene | null, target: LiquidTarget | null) {
+  if (!scene || !target) return { ops: [], ready: false };
+  const ops = liquidOps(scene);
+  return { ops, ready: ops.every((op) => drawnLayer(op, target) !== undefined) };
+}
+
 /** A style's swatch: the title in that style, as the profile grid would show it. */
-function Thumb({ scene, format }: { scene: Scene | null; format: Format }) {
+function Thumb({ scene, format, slot }: { scene: Scene | null; format: Format; slot: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // Drawn again when a liquid layer it waits on arrives.
+  useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
+  const window = gridWindow(format);
+  const scale = THUMB_WIDTH / window.w;
+  const height = Math.round(window.h * scale);
+  const target: LiquidTarget = { width: THUMB_WIDTH, height, scale, origin: { x: window.x, y: window.y } };
+  const { ops, ready } = layersFor(scene, target);
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas || !scene) return;
-    const window = gridWindow(format);
-    const scale = THUMB_WIDTH / window.w;
-    const height = Math.round(window.h * scale);
+    if (!ready) {
+      void drawLayers(ops, target, slot);
+      return;
+    }
     if (canvas.width !== THUMB_WIDTH) canvas.width = THUMB_WIDTH;
-    if (canvas.height !== height) canvas.height = height;
+    if (canvas.height !== target.height) canvas.height = target.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    paint(ctx, scene, { scale, origin: window, font: fontCss, grain: null });
-  }, [scene, format]);
+    paint(ctx, scene, { scale, origin: target.origin, font: fontCss, grain: null, liquid: (op) => drawnLayer(op, target) ?? null });
+  });
   return <canvas ref={ref} className={styles.thumbCanvas} width={THUMB_WIDTH} height={320} aria-hidden="true" />;
 }
 
@@ -169,11 +205,15 @@ export default function ReelCoverMaker() {
   const method = useSyncExternalStore<SaveMethod>(subscribeTouch, currentSaveMethod, () => "download");
 
   const measurer = loads >= 0 ? measurerFor(loads) : null;
-  const scene = measurer ? buildScene({ title, style: design.style, palette: design.palette, format: design.format }, measurer) : null;
+  const scene = measurer ? sceneFor({ title, style: design.style, palette: design.palette, format: design.format }, loads) : null;
   const thumbs = measurer
-    ? STYLES.map((style) => buildScene({ title, style: style.id, palette: design.palette, format: design.format }, measurer))
+    ? STYLES.map((style) => sceneFor({ title, style: style.id, palette: design.palette, format: design.format }, loads))
     : null;
   const name = fileName(design.text, design.format);
+  // Drawn again when a liquid layer the preview waits on arrives.
+  useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
+  /** The whole picture can be drawn now: no liquid layer of it is still being drawn. */
+  const pictureReady = layersFor(scene, scene && fullSize(scene)).ready;
   /** What the drawn picture is of; a prepared file is handed over only if it is of the same. */
   const key = JSON.stringify([design.text, design.style, design.palette, design.format, loads]);
 
@@ -211,12 +251,18 @@ export default function ReelCoverMaker() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !scene) return;
+    const mainTarget = fullSize(scene);
+    if (!pictureReady) {
+      // The last picture stays up until this one's liquid letters are drawn.
+      void drawLayers(liquidOps(scene), mainTarget, "main");
+      return;
+    }
     if (painted.current !== key) {
       if (canvas.width !== scene.width) canvas.width = scene.width;
       if (canvas.height !== scene.height) canvas.height = scene.height;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      paint(ctx, scene, { scale: 1, font: fontCss, grain: grain() });
+      paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op) => drawnLayer(op, mainTarget) ?? null });
       painted.current = key;
     }
     if (prepared.current?.key === key) return;
@@ -236,7 +282,7 @@ export default function ReelCoverMaker() {
       typing ? PREPARE_DELAY_MS : 0,
     );
     return () => window.clearTimeout(timer);
-  }, [scene, name, key, design.text]);
+  }, [scene, name, key, design.text, pictureReady]);
 
   useEffect(() => {
     const dialog = holdRef.current;
@@ -245,7 +291,8 @@ export default function ReelCoverMaker() {
 
   const save = async () => {
     const canvas = canvasRef.current;
-    if (!canvas || !scene || !filled) return;
+    // Never the last picture: only once this one is on the canvas.
+    if (!canvas || !scene || !filled || painted.current !== key) return;
     setError(null);
     const ready = prepared.current?.key === key ? prepared.current.file : null;
     try {
@@ -305,7 +352,8 @@ export default function ReelCoverMaker() {
             type="button"
             className={styles.save}
             onClick={() => void save()}
-            disabled={!scene || !filled}
+            disabled={!scene || !filled || !pictureReady}
+            aria-busy={filled && !pictureReady}
             title={filled ? `PNG, ${format.width} by ${format.height}` : "Type a title first"}
           >
             <DownloadSimple size={18} weight="bold" aria-hidden="true" />
@@ -315,38 +363,6 @@ export default function ReelCoverMaker() {
       </header>
 
       <div className={styles.main}>
-        <section className={styles.preview} aria-label="Preview">
-          <div className={styles.stage}>
-            <div className={styles.frame} style={frameStyle}>
-              <canvas
-                ref={canvasRef}
-                className={styles.canvas}
-                width={format.width}
-                height={format.height}
-                role="img"
-                aria-label={`${format.label} preview`}
-              />
-              {showGrid && <GridMask format={format} />}
-            </div>
-          </div>
-          <div className={styles.previewBar}>
-            <span className={styles.dims}>
-              {format.width} × {format.height}
-            </span>
-            {format.grid && (
-              <button
-                type="button"
-                className={styles.toggle}
-                aria-pressed={showGrid}
-                onClick={() => setShowGrid(!showGrid)}
-              >
-                <FrameCorners size={16} weight="bold" aria-hidden="true" />
-                Grid crop
-              </button>
-            )}
-          </div>
-        </section>
-
         <div className={styles.panel}>
           <div className={styles.field}>
             <label className={styles.label} htmlFor="rcm-title">
@@ -381,7 +397,7 @@ export default function ReelCoverMaker() {
                     onChange={() => update({ style: style.id })}
                   />
                   <span className={styles.thumb}>
-                    <Thumb scene={thumbs?.[i] ?? null} format={format} />
+                    <Thumb scene={thumbs?.[i] ?? null} format={format} slot={`thumb-${style.id}`} />
                   </span>
                   <span className={styles.styleName}>{style.name}</span>
                 </label>
@@ -404,7 +420,7 @@ export default function ReelCoverMaker() {
                     onChange={() => update({ palette: palette.id })}
                   />
                   <span className={styles.swatchFace} style={{ background: palette.bg }}>
-                    <span className={styles.swatchDot} style={{ background: palette.accent }} />
+                    <span className={styles.swatchDot} style={{ background: palette.ink }} />
                   </span>
                   <span className={styles.hidden}>{palette.name}</span>
                 </label>
@@ -432,6 +448,38 @@ export default function ReelCoverMaker() {
             </div>
           </div>
         </div>
+
+        <section className={styles.preview} aria-label="Preview">
+          <div className={styles.stage}>
+            <div className={styles.frame} style={frameStyle}>
+              <canvas
+                ref={canvasRef}
+                className={styles.canvas}
+                width={format.width}
+                height={format.height}
+                role="img"
+                aria-label={`${format.label} preview`}
+              />
+              {showGrid && <GridMask format={format} />}
+            </div>
+          </div>
+          <div className={styles.previewBar}>
+            <span className={styles.dims}>
+              {format.width} × {format.height}
+            </span>
+            {format.grid && (
+              <button
+                type="button"
+                className={styles.toggle}
+                aria-pressed={showGrid}
+                onClick={() => setShowGrid(!showGrid)}
+              >
+                <FrameCorners size={16} weight="bold" aria-hidden="true" />
+                Grid crop
+              </button>
+            )}
+          </div>
+        </section>
       </div>
 
       <dialog ref={holdRef} className={styles.dialog} onClose={() => setHeld(null)} aria-label="Save the cover">

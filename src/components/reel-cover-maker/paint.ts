@@ -3,12 +3,12 @@
  *
  * The scene is in pixels of the picture Instagram is given; `scale` maps
  * them to the canvas, so the same scene fills a 1080-wide download and a
- * thumbnail a tenth of that.
+ * thumbnail a tenth of that. A liquid layer is the exception: it is drawn
+ * pixel by pixel in a worker, for the canvas it is going on, and handed in.
  */
 
 import type { FaceId } from "@/components/reel-cover-maker/faces";
-import { withAlpha } from "@/components/reel-cover-maker/palettes";
-import type { Op, Scene } from "@/components/reel-cover-maker/scene";
+import type { LiquidOp, Op, Scene } from "@/components/reel-cover-maker/scene";
 
 /** The part of a 2D context painting uses, so a test can stand in for one. */
 export type PaintTarget = Pick<
@@ -37,6 +37,8 @@ export type PaintTarget = Pick<
   | "lineTo"
   | "arcTo"
   | "closePath"
+  | "stroke"
+  | "drawImage"
 >;
 
 export interface PaintOptions {
@@ -48,30 +50,8 @@ export interface PaintOptions {
   font: (face: FaceId, size: number) => string;
   /** A tile of grain at the picture's own scale, or null to leave grain out. */
   grain: CanvasImageSource | null;
-}
-
-/**
- * How a light falls away from its centre to its radius, as offset and share
- * of its strength: softly, never a disc with an edge. Exported so a test can
- * work out the ground under the text.
- */
-export const LIGHT_FALLOFF: ReadonlyArray<readonly [number, number]> = [
-  [0, 1],
-  [0.35, 0.55],
-  [0.7, 0.16],
-  [1, 0],
-];
-
-/** A light's strength at `distance` from its centre, as a share of `alpha`. */
-export function lightAlpha(alpha: number, radius: number, distance: number): number {
-  const t = distance / radius;
-  if (t >= 1) return 0;
-  for (let i = 1; i < LIGHT_FALLOFF.length; i += 1) {
-    const [o1, s1] = LIGHT_FALLOFF[i];
-    const [o0, s0] = LIGHT_FALLOFF[i - 1];
-    if (t <= o1) return alpha * (s0 + ((t - o0) / (o1 - o0)) * (s1 - s0));
-  }
-  return 0;
+  /** A liquid layer already drawn for this canvas, in its own pixels, or null while it is being drawn. */
+  liquid?: (op: LiquidOp) => { image: CanvasImageSource; x: number; y: number } | null;
 }
 
 function roundedRect(ctx: PaintTarget, x: number, y: number, w: number, h: number, radius: number) {
@@ -95,11 +75,31 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
       ctx.fillStyle = op.color;
       ctx.fillRect(0, 0, scene.width, scene.height);
       return;
-    case "light": {
-      const gradient = ctx.createRadialGradient(op.x, op.y, 0, op.x, op.y, op.r);
-      for (const [offset, share] of LIGHT_FALLOFF) gradient.addColorStop(offset, withAlpha(op.color, op.alpha * share));
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, scene.width, scene.height);
+    case "shape": {
+      ctx.beginPath();
+      for (const polygon of op.polygons) {
+        ctx.moveTo(polygon[0], polygon[1]);
+        for (let i = 2; i < polygon.length; i += 2) ctx.lineTo(polygon[i], polygon[i + 1]);
+        ctx.closePath();
+      }
+      ctx.fillStyle = op.color;
+      ctx.fill();
+      if (op.strokeWidth > 0) {
+        ctx.strokeStyle = op.stroke;
+        ctx.lineWidth = op.strokeWidth;
+        ctx.lineJoin = "miter";
+        ctx.stroke();
+      }
+      return;
+    }
+    case "liquid": {
+      // Drawn by the worker into canvas pixels; placed without the scene's scale.
+      const layer = options.liquid?.(op);
+      if (!layer) return;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(layer.image, layer.x, layer.y);
+      ctx.restore();
       return;
     }
     case "grain": {

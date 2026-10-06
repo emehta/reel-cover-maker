@@ -16,7 +16,7 @@
  */
 
 import { register } from "node:module";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -37,7 +37,8 @@ export async function resolve(specifier, context, next) {
   if (!specifier.startsWith("@/")) return next(specifier, context);
 
   let path = join(SRC, specifier.slice(2));
-  if (!existsSync(path)) {
+  // A file as named, else the same with its extension put back, or a folder's index.
+  if (!existsSync(path) || !statSync(path).isFile()) {
     for (const extension of [".ts", ".tsx", "/index.ts"]) {
       if (existsSync(path + extension)) {
         path += extension;

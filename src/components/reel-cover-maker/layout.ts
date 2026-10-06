@@ -1,14 +1,10 @@
 /**
  * Setting a title inside a box, as large as it will go.
  *
- * Two ways, after the two ways covers are set by hand:
- *
- * - `flow`: every line one size, wrapped at spaces and balanced, so a title
- *   never ends on a lone word. The size is the largest at which the lines
- *   fit both across and down the box.
- * - `stack`: a poster. Each line is sized on its own to run the full width
- *   of the box, and the words are shared between the lines in whichever way
- *   puts the most ink on the cover.
+ * `flow` sets every line at one size, wrapped at spaces and balanced, so a
+ * title never ends on a lone word. The size is the largest at which the
+ * lines fit both across and down the box. (The liquid styles pack their
+ * lines differently, in liquid-layout.ts.)
  *
  * Every measurement is in em, from the `Measurer`, and scaled by the size
  * last, so a size can be tried without measuring anything again.
@@ -50,7 +46,7 @@ export interface PlacedLine {
 
 export interface Block {
   lines: PlacedLine[];
-  /** The size of the lines; for a stack, the size of the smallest. */
+  /** The size of the lines. */
   size: number;
   /** Everything the lines may ink, padding included. */
   bounds: Rect;
@@ -84,16 +80,6 @@ export interface FlowSpec extends Faces {
   emphasisGap?: number;
   /** A further test of a placed block, for a style that turns it. */
   fits?: (block: Block) => boolean;
-}
-
-export interface StackSpec extends Faces {
-  box: Rect;
-  maxSize: number;
-  minSize: number;
-  /** The space between two lines, in em of the smaller. */
-  gap: number;
-  align: "left" | "center";
-  maxLines: number;
 }
 
 /** Text measured a hair narrow is still drawn whole: every width is checked against this much less. */
@@ -503,167 +489,4 @@ function overflow(
     end.width += trailing;
   }
   return place(lines, size, spec, extent, truncated);
-}
-
-/** The words shared between `n` lines in order, the widest line as narrow as it can be. */
-function partition(words: MeasuredWord[], n: number): MeasuredWord[][] {
-  const count = words.length;
-  const before = [0];
-  for (const word of words) before.push(before[before.length - 1] + word.width + word.space);
-  const span = (from: number, to: number) => before[to] - before[from] - words[to - 1].space;
-  // best[k][i]: the narrowest widest line for the first i words on k lines.
-  const best: number[][] = Array.from({ length: n + 1 }, () => Array(count + 1).fill(Infinity));
-  const cut: number[][] = Array.from({ length: n + 1 }, () => Array(count + 1).fill(0));
-  best[0][0] = 0;
-  for (let k = 1; k <= n; k += 1) {
-    for (let i = k; i <= count; i += 1) {
-      for (let j = k - 1; j < i; j += 1) {
-        const widest = Math.max(best[k - 1][j], span(j, i));
-        if (widest < best[k][i]) {
-          best[k][i] = widest;
-          cut[k][i] = j;
-        }
-      }
-    }
-  }
-  const lines: MeasuredWord[][] = [];
-  let i = count;
-  for (let k = n; k > 0; k -= 1) {
-    const j = cut[k][i];
-    lines.unshift(words.slice(j, i));
-    i = j;
-  }
-  return lines;
-}
-
-interface StackLine {
-  words: MeasuredWord[];
-  /** The advance, and the width with the ink past either end, in em. */
-  width: number;
-  extent: number;
-  inkLeft: number;
-  inkRight: number;
-  ascent: number;
-  descent: number;
-}
-
-/**
- * A poster: each line sized to run the box's width, the words shared between
- * the lines in whichever way inks the most of it. A line break typed is
- * kept. If even the best way leaves a line below the smallest size, the
- * title flows instead.
- */
-export function stack(paragraphs: Paragraph[], spec: StackSpec, measurer: Measurer): Block {
-  if (!paragraphs.some((p) => p.length)) return empty(spec.box);
-  const words = paragraphs.map((p) => p.map((w) => measureWord(w, spec, measurer)));
-  const inkOf = (line: MeasuredWord[]) => {
-    let ascent = 0;
-    let descent = 0;
-    for (const word of line) {
-      for (const s of word.segments) {
-        const b = measurer.bounds(s.face, s.text);
-        ascent = Math.max(ascent, b.ascent * s.scale);
-        descent = Math.max(descent, b.descent * s.scale);
-      }
-    }
-    return { ascent, descent };
-  };
-  const asLines = (lines: MeasuredWord[][]): StackLine[] =>
-    lines.map((line) => ({
-      words: line,
-      width: lineWidth(line),
-      extent: lineExtent(line),
-      inkLeft: line[0].inkLeft,
-      inkRight: line[line.length - 1].inkRight,
-      ...inkOf(line),
-    }));
-
-  const across = spec.box.w * WIDTH_SLACK;
-  type Fitted = { lines: StackLine[]; sizes: number[]; height: number; score: number };
-  /** The lines sized to the width, shrunk together if too tall; null if one falls below the smallest size. */
-  const fit = (lines: StackLine[]): Fitted | null => {
-    let sizes = lines.map((l) => Math.min(spec.maxSize, across / l.extent));
-    const heightAt = (s: number[]) =>
-      lines.reduce((sum, l, i) => sum + (l.ascent + l.descent) * s[i] + (i ? spec.gap * Math.min(s[i - 1], s[i]) : 0), 0);
-    let height = heightAt(sizes);
-    if (height > spec.box.h) {
-      const k = spec.box.h / height;
-      sizes = sizes.map((s) => s * k);
-      height = heightAt(sizes);
-    }
-    if (Math.min(...sizes) < spec.minSize) return null;
-    const score = lines.reduce((sum, l, i) => sum + l.extent * sizes[i] * (l.ascent + l.descent) * sizes[i], 0);
-    return { lines, sizes, height, score };
-  };
-
-  // Typed lines are kept as typed while they fit. Otherwise every way of
-  // giving each typed line one or more lines of the poster is tried, up to
-  // the most it may have, and the one that inks the most wins; a tie goes to
-  // fewer lines, the earlier tried.
-  let best: Fitted | null = words.length > 1 ? fit(asLines(words)) : null;
-  if (!best) {
-    const most = Math.max(spec.maxLines, words.length);
-    const share = (index: number, used: number, chosen: MeasuredWord[][]) => {
-      if (index === words.length) {
-        const fitted = fit(asLines(chosen));
-        if (fitted && (!best || fitted.score > best.score * 1.0001)) best = fitted;
-        return;
-      }
-      const left = words.length - index - 1;
-      for (let n = 1; n <= Math.min(words[index].length, most - used - left); n += 1) {
-        share(index + 1, used + n, [...chosen, ...partition(words[index], n)]);
-      }
-    };
-    share(0, 0, []);
-  }
-
-  if (!best) {
-    // Lines far enough apart that no two can touch, whatever they hold.
-    const m = measurer.metrics(spec.face);
-    return flow(paragraphs, { ...spec, leading: m.ascent + m.descent + spec.gap }, measurer);
-  }
-
-  const { lines, sizes, height } = best;
-  const { box } = spec;
-  let y = box.y + (box.h - height) / 2;
-  const placed: PlacedLine[] = lines.map((line, i) => {
-    const size = sizes[i];
-    if (i) y += spec.gap * Math.min(sizes[i - 1], size);
-    const baseline = y + line.ascent * size;
-    y = baseline + line.descent * size;
-    const width = line.width * size;
-    const inkLeft = line.inkLeft * size;
-    const inkRight = line.inkRight * size;
-    const x = spec.align === "center" ? box.x + (box.w - line.extent * size) / 2 + inkLeft : box.x + inkLeft;
-    const segments: PlacedSegment[] = [];
-    let cursor = x;
-    line.words.forEach((word, j) => {
-      word.segments.forEach((s, k) => {
-        segments.push({
-          text: s.text,
-          emphasis: s.emphasis,
-          face: s.face,
-          x: cursor,
-          size: size * s.scale,
-          width: s.width * size,
-          startsWord: k === 0,
-          endsWord: k === word.segments.length - 1,
-        });
-        cursor += s.width * size;
-      });
-      if (j < line.words.length - 1) cursor += word.space * size;
-    });
-    return { segments, x, width, baseline, size, ascent: line.ascent * size, descent: line.descent * size, inkLeft, inkRight };
-  });
-
-  const top = placed[0].baseline - placed[0].ascent;
-  const last = placed[placed.length - 1];
-  const left = Math.min(...placed.map((l) => l.x - l.inkLeft));
-  const right = Math.max(...placed.map((l) => l.x + l.width + l.inkRight));
-  return {
-    lines: placed,
-    size: Math.min(...sizes),
-    bounds: { x: left, y: top, w: right - left, h: last.baseline + last.descent - top },
-    truncated: false,
-  };
 }

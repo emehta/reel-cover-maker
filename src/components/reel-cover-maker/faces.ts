@@ -5,26 +5,9 @@
  * next/font serves, and a test binds it to a measurer of its own.
  */
 
-export type FaceId =
-  | "serif"
-  | "serif-italic"
-  | "condensed"
-  | "sans"
-  | "sans-heavy"
-  | "wide"
-  | "mono"
-  | "mono-bold";
+export type FaceId = "serif" | "serif-italic" | "sans" | "wide" | "mono" | "mono-bold";
 
-export const FACE_IDS: readonly FaceId[] = [
-  "serif",
-  "serif-italic",
-  "condensed",
-  "sans",
-  "sans-heavy",
-  "wide",
-  "mono",
-  "mono-bold",
-];
+export const FACE_IDS: readonly FaceId[] = ["serif", "serif-italic", "sans", "wide", "mono", "mono-bold"];
 
 /** A face's vertical extent, in em. All positive: ascent and cap above the baseline, descent below it. */
 export interface FaceMetrics {

@@ -134,12 +134,13 @@
   outline-offset: 2px;
 }
 
-/* Preview beside the controls on a wide screen, above them on a phone. */
+/* The controls on the left and the preview on the right on a wide screen;
+   on a phone the preview first, so the cover is in sight while typing. */
 
 .main {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 372px;
+  grid-template-columns: 372px minmax(0, 1fr);
   gap: 40px;
   min-height: 0;
   padding: 4px max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
@@ -321,8 +322,8 @@
 
 .styles {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 10px;
 }
 
 .style {
@@ -374,15 +375,19 @@
   color: var(--rcm-text);
 }
 
+/* One row of nine, each as large as the row allows up to 36px. */
 .swatches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 6px;
+  justify-items: center;
 }
 
 .swatch {
   position: relative;
   display: block;
+  width: 100%;
+  max-width: 36px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -390,16 +395,16 @@
 .swatchFace {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 100%;
+  aspect-ratio: 1;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
   transition: box-shadow 0.15s ease;
 }
 
 .swatchDot {
-  width: 12px;
-  height: 12px;
+  width: 44%;
+  height: 44%;
   border-radius: 50%;
 }
 
@@ -516,6 +521,10 @@
       max(16px, env(safe-area-inset-left));
   }
 
+  .preview {
+    order: -1;
+  }
+
   .stage {
     flex: none;
     height: min(54svh, 600px);
@@ -548,13 +557,7 @@
   }
 
   .swatches {
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .swatchFace {
-    width: 34px;
-    height: 34px;
+    gap: 5px;
   }
 }
 
