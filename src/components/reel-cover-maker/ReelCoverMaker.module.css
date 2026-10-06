@@ -1,0 +1,566 @@
+/*
+ * The maker's own look, the same wherever it is served: every rule is here
+ * and none is assumed from the page around it, so a site's resets (or the
+ * lack of them) change nothing. Light and dark follow the system.
+ */
+
+.root {
+  --rcm-bg: #f3f2ef;
+  --rcm-surface: #ffffff;
+  --rcm-inset: rgba(21, 21, 20, 0.06);
+  --rcm-text: #151514;
+  --rcm-muted: #6e6d68;
+  --rcm-line: rgba(21, 21, 20, 0.12);
+  --rcm-strong: #151514;
+  --rcm-primary: #151514;
+  --rcm-on-primary: #ffffff;
+  --rcm-focus: #3b6cf6;
+  --rcm-danger: #b42318;
+  --rcm-shadow: 0 0 0 1px rgba(21, 21, 20, 0.08), 0 2px 6px rgba(21, 21, 20, 0.06), 0 18px 48px rgba(21, 21, 20, 0.14);
+
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  background: var(--rcm-bg);
+  color: var(--rcm-text);
+  font-family: var(--rcm-font-ui), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  .root {
+    --rcm-bg: #121212;
+    --rcm-surface: #1c1c1b;
+    --rcm-inset: rgba(242, 241, 238, 0.07);
+    --rcm-text: #f2f1ee;
+    --rcm-muted: #9c9a95;
+    --rcm-line: rgba(242, 241, 238, 0.14);
+    --rcm-strong: #f2f1ee;
+    --rcm-primary: #f2f1ee;
+    --rcm-on-primary: #121212;
+    --rcm-focus: #7ea2ff;
+    --rcm-danger: #ff8a80;
+    --rcm-shadow: 0 0 0 1px rgba(242, 241, 238, 0.12), 0 18px 48px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.root *,
+.root *::before,
+.root *::after {
+  box-sizing: border-box;
+}
+
+/* Header: the name, and the one thing to do once the cover is right. */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: max(14px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 14px
+    max(24px, env(safe-area-inset-left));
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.error {
+  margin: 0;
+  color: var(--rcm-danger);
+  font-size: 13px;
+  text-align: right;
+}
+
+.save {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  margin: 0;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--rcm-primary);
+  color: var(--rcm-on-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.save:hover {
+  opacity: 0.86;
+}
+
+.save:active {
+  transform: translateY(1px);
+}
+
+.save:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.save:focus-visible,
+.toggle:focus-visible {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: 2px;
+}
+
+/* Preview beside the controls on a wide screen, above them on a phone. */
+
+.main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: 40px;
+  min-height: 0;
+  padding: 4px max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  container-type: size;
+  display: grid;
+  place-items: center;
+}
+
+.frame {
+  position: relative;
+  aspect-ratio: var(--rcm-ratio);
+  width: min(100cqw, calc(100cqh * var(--rcm-ratio-n)));
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px;
+  box-shadow: var(--rcm-shadow);
+}
+
+.mask {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.window {
+  position: absolute;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.58);
+  outline: 1px dashed rgba(255, 255, 255, 0.9);
+  outline-offset: -1px;
+}
+
+.previewBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 32px;
+  color: var(--rcm-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dims {
+  white-space: nowrap;
+}
+
+.toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--rcm-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--rcm-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toggle[aria-pressed="true"] {
+  border-color: var(--rcm-strong);
+  background: var(--rcm-strong);
+  color: var(--rcm-bg);
+}
+
+/* Controls. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the focus rings the scroller would otherwise clip. */
+  margin: -4px;
+  padding: 4px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.label {
+  margin: 0;
+  padding: 0;
+  color: var(--rcm-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  min-height: 92px;
+  max-height: 200px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rcm-line);
+  border-radius: 10px;
+  background: var(--rcm-surface);
+  color: var(--rcm-text);
+  font: inherit;
+  /* 16px or more, or iOS zooms the page when the field is focused. */
+  font-size: 16px;
+  line-height: 1.45;
+  resize: none;
+  field-sizing: content;
+}
+
+.input::placeholder {
+  color: var(--rcm-muted);
+  opacity: 1;
+}
+
+.input:focus {
+  border-color: var(--rcm-focus);
+  outline: 1px solid var(--rcm-focus);
+}
+
+.note {
+  margin: 0;
+  color: var(--rcm-danger);
+  font-size: 13px;
+}
+
+/* A radio is the control; what is drawn is its label. */
+.radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.styles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 12px;
+}
+
+.style {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.thumb {
+  display: block;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--rcm-inset);
+  box-shadow: 0 0 0 1px var(--rcm-line);
+  transition: box-shadow 0.15s ease;
+}
+
+.thumbCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.style:hover .thumb {
+  box-shadow: 0 0 0 1px var(--rcm-muted);
+}
+
+.style:has(.radio:checked) .thumb {
+  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-strong);
+}
+
+.style:has(.radio:focus-visible) .thumb {
+  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-focus);
+}
+
+.styleName {
+  color: var(--rcm-muted);
+  font-size: 13px;
+  font-weight: 550;
+  text-align: center;
+}
+
+.style:has(.radio:checked) .styleName {
+  color: var(--rcm-text);
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.swatch {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.swatchFace {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
+  transition: box-shadow 0.15s ease;
+}
+
+.swatchDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.swatch:has(.radio:checked) .swatchFace {
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35), 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-strong);
+}
+
+.swatch:has(.radio:focus-visible) .swatchFace {
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35), 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-focus);
+}
+
+.segments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--rcm-inset);
+}
+
+.segment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 6px;
+  border-radius: 7px;
+  color: var(--rcm-muted);
+  font-size: 13.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.segment:hover {
+  color: var(--rcm-text);
+}
+
+.segment:has(.radio:checked) {
+  background: var(--rcm-surface);
+  color: var(--rcm-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.segment:has(.radio:focus-visible) {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: 1px;
+}
+
+/* Inside an app's own browser: the cover alone, to press and hold. */
+
+.dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 18px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--rcm-surface);
+  color: var(--rcm-text);
+  font: inherit;
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.held {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  max-height: 62dvh;
+  object-fit: contain;
+  border-radius: 4px;
+  -webkit-touch-callout: default;
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+.holdText {
+  margin: 0;
+  font-size: 15px;
+  text-align: center;
+}
+
+/* A wide screen: the page is the viewport, the preview its full height. */
+@media (min-width: 900px) {
+  .root {
+    height: 100vh;
+    height: 100dvh;
+  }
+}
+
+/* A phone or a narrow window: preview, then controls, the page scrolling. */
+@media (max-width: 899.98px) {
+  .header {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+    padding: 0 max(16px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .stage {
+    flex: none;
+    height: min(54svh, 600px);
+  }
+
+  .panel {
+    overflow: visible;
+  }
+
+  .styles {
+    display: flex;
+    gap: 10px;
+    margin: 0 calc(-1 * max(16px, env(safe-area-inset-right))) 0 calc(-1 * max(16px, env(safe-area-inset-left)));
+    padding: 4px max(16px, env(safe-area-inset-right)) 4px max(16px, env(safe-area-inset-left));
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .styles::-webkit-scrollbar {
+    display: none;
+  }
+
+  .style {
+    flex: 0 0 88px;
+    scroll-snap-align: start;
+  }
+
+  .swatches {
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .swatchFace {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save,
+  .thumb,
+  .swatchFace,
+  .segment {
+    transition: none;
+  }
+}

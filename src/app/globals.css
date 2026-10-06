@@ -1,0 +1,19 @@
+/* The page is the maker; everything it draws is styled in its own module. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: #f3f2ef;
+}
+
+@media (prefers-color-scheme: dark) {
+  html,
+  body {
+    background: #121212;
+  }
+}
