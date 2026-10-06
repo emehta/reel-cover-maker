@@ -43,7 +43,11 @@ export const prepaintScript = `(function () {
       meta.setAttribute("content", colour);
     };
     apply();
-    window.addEventListener("load", apply, { once: true });
+    // Only if the maker is still the page: a site may have moved on by then.
+    var path = window.location.pathname;
+    window.addEventListener("load", function () {
+      if (window.location.pathname === path) apply();
+    }, { once: true });
   } catch (_) {}
 })();`;
 

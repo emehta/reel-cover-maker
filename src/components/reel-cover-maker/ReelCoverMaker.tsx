@@ -4,29 +4,18 @@ import { DownloadSimple, FrameCorners } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { loadDesign, saveDesign, type Design } from "@/components/reel-cover-maker/design";
-import {
-  fontCss,
-  fontsSnapshot,
-  interTight,
-  measurerFor,
-  requestFonts,
-  stopWaitingForFonts,
-  subscribeFonts,
-} from "@/components/reel-cover-maker/fonts";
+import { fontCss, fontsSnapshot, interTight, measurerFor, requestFonts, subscribeFonts } from "@/components/reel-cover-maker/fonts";
 import { FORMATS, formatById, type Format } from "@/components/reel-cover-maker/formats";
 import { GRAIN_TILE, grainPixels } from "@/components/reel-cover-maker/grain";
 import { APP_NAME } from "@/components/reel-cover-maker/meta";
 import { paint } from "@/components/reel-cover-maker/paint";
 import { PALETTES } from "@/components/reel-cover-maker/palettes";
-import { fileName, FILE_TYPE, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
+import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
 import { buildScene, STYLES, type Scene } from "@/components/reel-cover-maker/scene";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
-import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE, plainTitle } from "@/components/reel-cover-maker/title";
+import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
-/** A face that never arrives must not leave the maker blank for longer than this. */
-const FONT_PATIENCE_MS = 3000;
-
-/** How long typing must pause before the file is made ready to hand over. */
+/** How long typing must pause before the file is made ready to hand over. A tap on a style, colour or size makes it at once. */
 const PREPARE_DELAY_MS = 250;
 
 /** A style thumbnail's width in canvas pixels: twice its widest on screen, for sharp text on a retina screen. */
@@ -73,6 +62,7 @@ function currentSaveMethod(): SaveMethod {
   return saveMethod({
     canShareFiles: canShareFiles(),
     touch: window.matchMedia(TOUCH_QUERY).matches,
+    android: isAndroid(navigator.userAgent),
     inAppBrowser: isInAppBrowser(navigator.userAgent),
   });
 }
@@ -166,6 +156,9 @@ export default function ReelCoverMaker() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const holdRef = useRef<HTMLDialogElement>(null);
   const prepared = useRef<{ key: string; file: File } | null>(null);
+  /** What is on the canvas, and the title of the last picture drawn. */
+  const painted = useRef<string | null>(null);
+  const drawnText = useRef<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
 
   const filled = hasTitle(design.text);
@@ -193,11 +186,6 @@ export default function ReelCoverMaker() {
 
   useEffect(() => requestFonts(title), [title]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(stopWaitingForFonts, FONT_PATIENCE_MS);
-    return () => window.clearTimeout(timer);
-  }, []);
-
   // The page and the browser's bars in the maker's light or dark, handed back on the way out.
   useEffect(() => {
     applyBackdrop();
@@ -216,28 +204,39 @@ export default function ReelCoverMaker() {
     if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus({ preventScroll: true });
   }, []);
 
-  // Draw the cover, then make its file once typing pauses, so a tap on Save
-  // can share it at once: Safari refuses a share that waits on anything.
+  // Draw the cover, then make its file, so a tap on Save can share it at
+  // once: Safari refuses a share that waits on anything. Only a change to
+  // the picture draws again; a render for anything else (the grid crop, the
+  // dialog) leaves the canvas alone.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !scene) return;
-    if (canvas.width !== scene.width) canvas.width = scene.width;
-    if (canvas.height !== scene.height) canvas.height = scene.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    paint(ctx, scene, { scale: 1, font: fontCss, grain: grain() });
-    const timer = window.setTimeout(() => {
-      canvasFile(canvas, name).then(
-        (file) => {
-          prepared.current = { key, file };
-        },
-        () => {
-          prepared.current = null;
-        },
-      );
-    }, PREPARE_DELAY_MS);
+    if (painted.current !== key) {
+      if (canvas.width !== scene.width) canvas.width = scene.width;
+      if (canvas.height !== scene.height) canvas.height = scene.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      paint(ctx, scene, { scale: 1, font: fontCss, grain: grain() });
+      painted.current = key;
+    }
+    if (prepared.current?.key === key) return;
+    // Typing waits for a pause before the file is made; a tap on a style,
+    // a colour or a size, or a face arriving, does not.
+    const typing = drawnText.current !== null && drawnText.current !== design.text;
+    drawnText.current = design.text;
+    const timer = window.setTimeout(
+      () => {
+        canvasFile(canvas, name).then(
+          (file) => {
+            if (painted.current === key) prepared.current = { key, file };
+          },
+          () => {},
+        );
+      },
+      typing ? PREPARE_DELAY_MS : 0,
+    );
     return () => window.clearTimeout(timer);
-  }, [scene, name, key]);
+  }, [scene, name, key, design.text]);
 
   useEffect(() => {
     const dialog = holdRef.current;
@@ -279,7 +278,8 @@ export default function ReelCoverMaker() {
   // Cmd or Ctrl and S saves the cover rather than the page.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") {
+      const s = event.code === "KeyS" || event.key.toLowerCase() === "s";
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && s) {
         event.preventDefault();
         saveRef.current();
       }
@@ -306,7 +306,7 @@ export default function ReelCoverMaker() {
             className={styles.save}
             onClick={() => void save()}
             disabled={!scene || !filled}
-            title={filled ? `${name}, ${format.width} by ${format.height}` : "Type a title first"}
+            title={filled ? `PNG, ${format.width} by ${format.height}` : "Type a title first"}
           >
             <DownloadSimple size={18} weight="bold" aria-hidden="true" />
             {saveLabel}
@@ -324,7 +324,7 @@ export default function ReelCoverMaker() {
                 width={format.width}
                 height={format.height}
                 role="img"
-                aria-label={`${format.label}: ${plainTitle(title)}`}
+                aria-label={`${format.label} preview`}
               />
               {showGrid && <GridMask format={format} />}
             </div>
@@ -438,7 +438,7 @@ export default function ReelCoverMaker() {
         {held && (
           // A data URL of the cover, to be pressed and held: next/image has nothing to add to it.
           // eslint-disable-next-line @next/next/no-img-element
-          <img className={styles.held} src={held} alt={plainTitle(title)} />
+          <img className={styles.held} src={held} alt="The cover" />
         )}
         <p className={styles.holdText}>Press and hold the picture to save it.</p>
         <button type="button" className={styles.save} onClick={() => holdRef.current?.close()}>

@@ -19,8 +19,9 @@ Used at [eshaanm.net/projects/reel-cover-maker](https://eshaanm.net/projects/ree
   colour read as a set.
 - **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5.
 - **Grid crop** dims what the profile grid cuts off.
-- **Download** (or Cmd/Ctrl+S). On a phone the button reads **Save image**
-  and opens the share sheet, where **Save Image** puts the cover in Photos.
+- **Download** (or Cmd/Ctrl+S). On an iPhone or iPad the button reads **Save
+  image** and opens the share sheet, where **Save Image** puts the cover in
+  Photos. Android downloads it, and Instagram's picker finds it there.
   Inside an app's own browser (Instagram's, when the link is opened from a
   bio), the cover opens on its own: press and hold it to save it.
 
@@ -60,7 +61,8 @@ nothing a cover says is cut off wherever it appears.
 - **Colours that differ in lightness, not just hue.** Instagram stores colour
   at half resolution (4:2:0 chroma), so red text on a blue of the same
   lightness fringes at every edge. The tests hold every palette's title
-  colour to 7:1 against its ground, and every label to 4.5:1.
+  colour to 7:1 against its ground, Glow's text to 4.5:1 over its lights
+  everywhere text can go, and every label to 4.5:1.
 
 ## How it works
 
@@ -77,15 +79,23 @@ the same list and cannot disagree.
 | `paint.ts` | Draws a scene on a canvas at any scale, from any origin |
 | `palettes.ts` | The eight palettes and WCAG contrast |
 | `grain.ts` | Seeded film grain, the same every time |
-| `fonts.ts` | The faces, served by next/font, and when they have loaded |
+| `fonts.ts` | The faces, served by next/font, and the canvas measurer |
+| `font-gate.ts` | Whether every character of the title has its face's file yet |
 | `save.ts` | The file's name, and download or share sheet or press and hold |
 | `design.ts` | What the browser remembers |
 | `theme.ts` | Light and dark, after the system, from the first frame |
 
-Nothing is drawn until every face the title needs has loaded, because a
-canvas draws in whatever face is there at that moment, and the file would be
-set in a fallback. Layout measures text in em through a `Measurer`, which is
-the canvas in the browser and a stand-in in the tests.
+Nothing is drawn until every character of the title has its face's file,
+because a canvas draws in whatever face is there at that moment, and the file
+would be set in a fallback. The faces are split by script, so a title with
+"Łódź" in it waits for the Latin Extended file. The maker keeps its own
+record of what has loaded rather than asking `document.fonts.check`, which
+Chrome answers yes to for any family installed on the computer.
+
+Layout measures text in em through a `Measurer`, which is the canvas in the
+browser and a stand-in in the tests. Lines are placed by their ink, not only
+their advance, so an italic's lean, a wide accent or an emoji at the end of
+a line stays inside the safe area.
 
 The typefaces are Instrument Serif, Anton, Inter Tight, Archivo Black and
 Space Mono, all from Google Fonts under the SIL Open Font License, served
@@ -102,10 +112,13 @@ npm run build
 
 No test framework: the tests are a plain `node` script that asserts and exits
 non-zero (`scripts/alias-loader.mjs` lets it import by the `@/` alias). They
-set every style over 410 titles in every size and hold every word to the safe
-area, count every word back, check that no larger size that fits was passed
-over, and check every palette's contrast, the grain, the file names and that
-the painter draws each word where the scene put it. Node strips the types
+set every style over 410 titles in every size and hold every word's ink to
+the safe area (with a stand-in measurer whose italics, accents and emoji
+overhang), count every word back, check that no larger size that fits was
+passed over, check every palette's contrast (Glow's over its lights), drive
+the font gate with loads that arrive late or never, and check the grain, the
+file names, the save method and that the painter draws each word where the
+scene put it. Node strips the types
 from a `.ts` file on its own, so a module the tests load must write
 type-only imports as `import type`.
 

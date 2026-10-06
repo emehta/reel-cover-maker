@@ -20,7 +20,8 @@ const P = await import("@/components/reel-cover-maker/palettes");
 const D = await import("@/components/reel-cover-maker/design");
 const V = await import("@/components/reel-cover-maker/save");
 const G = await import("@/components/reel-cover-maker/grain");
-const { paint } = await import("@/components/reel-cover-maker/paint");
+const { paint, lightAlpha } = await import("@/components/reel-cover-maker/paint");
+const { createFontGate } = await import("@/components/reel-cover-maker/font-gate");
 const { prepaintScript } = await import("@/components/reel-cover-maker/theme");
 
 let passed = 0;
@@ -52,7 +53,7 @@ const FACE_METRICS = {
   "sans-heavy": { cap: 0.73, ascent: 0.98, descent: 0.22 },
   wide: { cap: 0.72, ascent: 0.96, descent: 0.2 },
   mono: { cap: 0.68, ascent: 0.9, descent: 0.26 },
-  "mono-bold": { cap: 0.68, ascent: 0.9, descent: 0.26 },
+  "mono-bold": { cap: 0.68, ascent: 0.99, descent: 0.26 },
 };
 
 function charWidth(face, ch) {
@@ -66,16 +67,28 @@ function charWidth(face, ch) {
   return base;
 }
 
+const advance = (face, text) => T.graphemes(text).reduce((sum, g) => sum + charWidth(face, g), 0);
+
+/*
+ * Ink past the advance, as real faces have it: an italic leans out on both
+ * sides, an accented first letter reaches left (Anton's wide accents do), and
+ * an emoji overhangs its advance on the right.
+ */
 const measurer = {
-  width: (face, text) => T.graphemes(text).reduce((sum, g) => sum + charWidth(face, g), 0),
+  width: advance,
   metrics: (face) => FACE_METRICS[face],
   bounds: (face, text) => {
     const m = FACE_METRICS[face];
     const decomposed = text.normalize("NFD");
-    const tall = /[a-z̀-ͯ\p{Extended_Pictographic}]/u.test(decomposed) && !/^[A-Z0-9\s]*$/.test(text);
+    const tall = /[a-z\u0300-\u036f\p{Extended_Pictographic}]/u.test(decomposed) && !/^[A-Z0-9\s]*$/.test(text);
+    const italic = face === "serif-italic";
+    const accentFirst = /^.[\u0300-\u036f]/u.test(decomposed) ? 0.05 : 0;
+    const emojiLast = /\p{Extended_Pictographic}$/u.test(text) ? 0.1 : 0;
     return {
       ascent: tall ? m.ascent : m.cap,
       descent: /[gjpqyQ,;\p{Extended_Pictographic}]/u.test(text) ? m.descent : 0,
+      left: (italic ? 0.06 : 0) + accentFirst,
+      right: advance(face, text) + (italic ? 0.08 : 0) + emojiLast,
     };
   },
 };
@@ -118,7 +131,16 @@ const TITLES = [
   "Week 12 👍",
   ...Array.from({ length: 400 }, () => randomTitle(random)),
 ];
-const PATHOLOGICAL = ["W".repeat(T.MAX_TITLE_LENGTH), "m".repeat(70) + " " + "W".repeat(69)];
+const PATHOLOGICAL = [
+  "W".repeat(T.MAX_TITLE_LENGTH),
+  "m".repeat(70) + " " + "W".repeat(69),
+  "https://example.com/very/long/url/path/that/goes",
+  "x".repeat(49),
+  "x".repeat(T.MAX_TITLE_LENGTH),
+  "*" + "É".repeat(60) + "* ïñţëŗñåţîöñ 👍",
+];
+// Titles whose ink reaches past their advance at a line's end.
+TITLES.push("*Łódź* Zürich", "Ïñţëŗñåţîöñåļ ţĥîñğš", "Week 12 👍", "*italic* to the *edge*");
 
 /* Where ink lands. */
 
@@ -134,8 +156,13 @@ function readableInk(scene) {
       if (op.kind === "turn") walk(op.ops, op);
       else if (op.kind === "text" && !op.outline) {
         const ink = measurer.bounds(op.face, op.text);
-        const w = measurer.width(op.face, op.text) * op.size;
-        out.push({ op, rect: applyTurn({ x: op.x, y: op.y - ink.ascent * op.size, w, h: (ink.ascent + ink.descent) * op.size }, turn) });
+        const rect = {
+          x: op.x - ink.left * op.size,
+          y: op.y - ink.ascent * op.size,
+          w: (ink.left + ink.right) * op.size,
+          h: (ink.ascent + ink.descent) * op.size,
+        };
+        out.push({ op, rect: applyTurn(rect, turn) });
       } else if (op.kind === "box") {
         out.push({ op, rect: applyTurn({ x: op.x, y: op.y, w: op.w, h: op.h }, turn) });
       }
@@ -331,7 +358,7 @@ check("a poster's lines never touch: each starts below the last one's ink", () =
 
 console.log("covers");
 
-check("every style keeps every word inside the safe area, in every size, over 410 titles", () => {
+check("every style keeps every word inside the safe area, in every size, over 410 titles, its overhanging ink too", () => {
   let scenes = 0;
   for (const format of F.FORMATS) {
     for (const style of S.STYLES) {
@@ -368,7 +395,8 @@ check("even the longest unbroken title stays inside the safe area", () => {
     for (const style of S.STYLES) {
       for (const title of PATHOLOGICAL) {
         const scene = S.buildScene({ title, style: style.id, palette: "ink", format: format.id }, measurer);
-        for (const { rect } of readableInk(scene)) assert.ok(inside(format.safe, rect, 1), `${style.id} ${format.id} pathological`);
+        for (const { rect } of readableInk(scene)) assert.ok(inside(format.safe, rect, 1), `${style.id} ${format.id} "${title}"`);
+        assert.ok(inside(format.safe, scene.readable, 1), `${style.id} ${format.id} "${title}" readable area`);
       }
     }
   }
@@ -399,6 +427,19 @@ check("Mono ends with its cursor after the last letter, and the block sits in th
   assert.ok(near(centre, format.safe.x + format.safe.w / 2, 0.01));
 });
 
+check("Mono's highlight covers an accented capital, and its cursor stays in when a word is broken", () => {
+  const scene = S.buildScene({ title: "*ÉÅ*", style: "mono", palette: "ink", format: "reel" }, measurer);
+  const box = scene.ops.find((op) => op.kind === "box");
+  const text = scene.ops.find((op) => op.kind === "text");
+  assert.ok(box.y <= text.y - measurer.bounds(text.face, text.text).ascent * text.size);
+  for (const title of ["https://example.com/very/long/url/path/that/goes", "x".repeat(49)]) {
+    const broken = S.buildScene({ title, style: "mono", palette: "ink", format: "reel" }, measurer);
+    const caret = broken.ops.at(-1);
+    assert.equal(caret.kind, "box");
+    assert.ok(inside(F.formatById("reel").safe, caret, 0.01), `"${title}" cursor outside`);
+  }
+});
+
 check("Sticker turns its labels a little, and each line has its own", () => {
   const scene = S.buildScene({ title: "one two three four five six seven", style: "sticker", palette: "acid", format: "reel" }, measurer);
   const turn = scene.ops.find((op) => op.kind === "turn");
@@ -427,6 +468,34 @@ check("text reads on its ground: 7:1 for the title, 3:1 for the accent", () => {
     assert.ok(P.contrast(p.ink, p.bg) >= 7, `${p.id} ink on ground ${P.contrast(p.ink, p.bg).toFixed(2)}`);
     assert.ok(P.contrast(p.accent, p.bg) >= 3, `${p.id} accent on ground ${P.contrast(p.accent, p.bg).toFixed(2)}`);
   }
+});
+
+check("Glow's text reads at 4.5:1 on the lights behind it, anywhere text can go", () => {
+  const blend = (under, over, alpha) => under.map((v, i) => v * (1 - alpha) + over[i] * alpha);
+  const hex = (c) => `#${c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+  for (const p of P.PALETTES) {
+    for (const f of F.FORMATS) {
+      const scene = S.buildScene({ title: "lit", style: "glow", palette: p.id, format: f.id }, measurer);
+      const lights = scene.ops.filter((op) => op.kind === "light");
+      assert.equal(lights.length, 3);
+      for (let y = f.safe.y; y <= f.safe.y + f.safe.h; y += 12) {
+        for (let x = f.safe.x; x <= f.safe.x + f.safe.w; x += 12) {
+          let ground = P.rgb(p.bg);
+          for (const l of lights) ground = blend(ground, P.rgb(l.color), lightAlpha(l.alpha, l.r, Math.hypot(x - l.x, y - l.y)));
+          const ratio = P.contrast(p.ink, hex(ground));
+          assert.ok(ratio >= 4.5, `${p.id} ${f.id} at ${x},${y}: ${ratio.toFixed(2)}`);
+        }
+      }
+    }
+  }
+});
+
+check("a light falls away from its centre to nothing at its radius", () => {
+  assert.equal(lightAlpha(0.8, 100, 0), 0.8);
+  assert.ok(near(lightAlpha(0.8, 100, 35), 0.8 * 0.55));
+  assert.equal(lightAlpha(0.8, 100, 100), 0);
+  assert.equal(lightAlpha(0.8, 100, 400), 0);
+  for (let d = 1; d < 100; d += 1) assert.ok(lightAlpha(1, 100, d) <= lightAlpha(1, 100, d - 1));
 });
 
 check("a sticker's text, a highlight's text and an emphasised sticker read at 4.5:1", () => {
@@ -483,12 +552,17 @@ check("the file is named for the title and the size", () => {
   assert.ok(long.length <= 48 + "-reel-cover.png".length && !long.includes("--") && /^[a-z0-9-]+\.png$/.test(long), long);
 });
 
-check("a phone that can share files opens the share sheet; a computer downloads; an app's browser holds", () => {
-  assert.equal(V.saveMethod({ canShareFiles: true, touch: true, inAppBrowser: false }), "share");
-  assert.equal(V.saveMethod({ canShareFiles: true, touch: false, inAppBrowser: false }), "download");
-  assert.equal(V.saveMethod({ canShareFiles: false, touch: true, inAppBrowser: false }), "download");
-  assert.equal(V.saveMethod({ canShareFiles: false, touch: true, inAppBrowser: true }), "hold");
-  assert.equal(V.saveMethod({ canShareFiles: true, touch: true, inAppBrowser: true }), "share");
+check("an iPhone opens the share sheet; a computer and Android download; an app's browser holds", () => {
+  const env = (o) => ({ canShareFiles: false, touch: false, android: false, inAppBrowser: false, ...o });
+  assert.equal(V.saveMethod(env({ canShareFiles: true, touch: true })), "share");
+  assert.equal(V.saveMethod(env({ canShareFiles: true })), "download");
+  assert.equal(V.saveMethod(env({ touch: true })), "download");
+  assert.equal(V.saveMethod(env({ canShareFiles: true, touch: true, android: true })), "download");
+  assert.equal(V.saveMethod(env({ touch: true, inAppBrowser: true })), "hold");
+  assert.equal(V.saveMethod(env({ canShareFiles: true, touch: true, android: true, inAppBrowser: true })), "hold");
+  assert.equal(V.saveMethod(env({ canShareFiles: true, touch: true, inAppBrowser: true })), "share");
+  assert.equal(V.isAndroid("Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36"), true);
+  assert.equal(V.isAndroid("Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15"), false);
 });
 
 check("Instagram's and Facebook's browsers are recognised, Safari and Chrome are not", () => {
@@ -528,6 +602,75 @@ check("each grain is a two by two cell of pure white or black, mostly faint", ()
   }
   assert.ok(faint / (size / 2) ** 2 > 0.65, `only ${faint} faint grains`);
 });
+
+console.log("fonts");
+
+/** A gate whose loads settle when the test says, and whose timers run when the test says. */
+function testGate() {
+  const loads = [];
+  const timers = [];
+  const gate = createFontGate(
+    {
+      load: (text) =>
+        new Promise((resolve, reject) => {
+          loads.push({ text, resolve, reject });
+        }),
+      patience: 3000,
+      setTimer: (run, ms) => timers.push({ run, ms }),
+    },
+    "Aa ",
+  );
+  return { gate, loads, timers };
+}
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+{
+  const { gate, loads, timers } = testGate();
+  assert.equal(gate.snapshot("Aa"), -1, "nothing is ready before anything is asked for");
+  gate.request("Aa");
+  gate.request("Aa");
+  assert.equal(loads.length, 1, "a request in flight is not made twice");
+  assert.equal(gate.snapshot("Aa"), -1, "nothing is ready while its files load");
+  loads[0].resolve();
+  await tick();
+  assert.ok(gate.snapshot("Aa") >= 0, "ready once they arrive");
+  assert.ok(gate.snapshot("a A") >= 0);
+
+  gate.request("A Łódź");
+  assert.equal(loads.length, 2);
+  assert.deepEqual([...loads[1].text].sort(), ["d", "ó", "Ł", "ź"].sort(), "only what is new is asked for");
+  assert.equal(gate.snapshot("Łódź"), -1, "a new character waits for its file, however long the page has been open");
+  assert.ok(gate.snapshot("Aa") >= 0, "what was ready stays ready");
+
+  // The file never comes: after patience, draw with what there is.
+  timers.at(-1).run();
+  const after = gate.snapshot("Łódź");
+  assert.ok(after >= 0);
+  // It arrives late after all: the count moves, so the cover is measured and drawn again.
+  gate.changed();
+  assert.ok(gate.snapshot("Łódź") > after);
+  loads[1].resolve();
+  await tick();
+  assert.equal(timers.length, 2);
+  passed += 1;
+  console.log("  ok  the font gate waits on each new character's file, never on a check, with patience and late arrivals");
+}
+
+{
+  const { gate, loads } = testGate();
+  let told = 0;
+  const off = gate.subscribe(() => (told += 1));
+  gate.request("x");
+  loads[0].reject(new Error("offline"));
+  await tick();
+  assert.ok(gate.snapshot("x") >= 0, "a failed file is not waited on");
+  assert.equal(told, 1);
+  off();
+  gate.changed();
+  assert.equal(told, 1, "an unsubscribed listener is not told");
+  passed += 1;
+  console.log("  ok  a failed load opens the gate, and listeners are told once");
+}
 
 console.log("painting");
 
@@ -646,7 +789,7 @@ check("no em or en dash anywhere in the maker's source", () => {
   const dir = new URL("../src/components/reel-cover-maker/", import.meta.url);
   for (const file of readdirSync(dir)) {
     const text = readFileSync(new URL(file, dir), "utf8");
-    assert.ok(!/[–—]/.test(text), `${file} has a dash`);
+    assert.ok(!/[\u2013\u2014]/.test(text), `${file} has a dash`);
   }
 });
 

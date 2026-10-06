@@ -43,6 +43,9 @@ export interface PlacedLine {
   /** How far the line's ink may reach above and below its baseline, in pixels. */
   ascent: number;
   descent: number;
+  /** How far its ink reaches left of `x` and right of `x + width`, in pixels. */
+  inkLeft: number;
+  inkRight: number;
 }
 
 export interface Block {
@@ -113,9 +116,33 @@ interface MeasuredSegment {
 
 interface MeasuredWord {
   segments: MeasuredSegment[];
+  /** The advance, in em of the line. */
   width: number;
   /** The space after it, in em of the line. */
   space: number;
+  /** How far its ink reaches past its start and past its advance, in em: an italic, an accent, an emoji. */
+  inkLeft: number;
+  inkRight: number;
+}
+
+/**
+ * The least an emoji is taken to reach past either end, in em: Chrome
+ * measures an emoji's ink as starting where it is drawn, and its bitmap
+ * starts a little before.
+ */
+const EMOJI_INK = 0.015;
+const EMOJI_FIRST = /^[\p{Extended_Pictographic}\p{Regional_Indicator}]/u;
+const EMOJI_LAST = /[\p{Extended_Pictographic}\p{Regional_Indicator}]\uFE0F?$/u;
+
+/** A word's ink past its two ends, from its first and last segments. */
+function inkEnds(segments: MeasuredSegment[], measurer: Measurer): { inkLeft: number; inkRight: number } {
+  const first = segments[0];
+  const last = segments[segments.length - 1];
+  const head = measurer.bounds(first.face, first.text);
+  const tail = measurer.bounds(last.face, last.text);
+  const left = Math.max(0, head.left, EMOJI_FIRST.test(first.text) ? EMOJI_INK : 0);
+  const right = Math.max(0, tail.right - measurer.width(last.face, last.text), EMOJI_LAST.test(last.text) ? EMOJI_INK : 0);
+  return { inkLeft: left * first.scale, inkRight: right * last.scale };
 }
 
 function measureWord(word: Word, faces: Faces, measurer: Measurer): MeasuredWord {
@@ -129,10 +156,11 @@ function measureWord(word: Word, faces: Faces, measurer: Measurer): MeasuredWord
     segments,
     width: segments.reduce((sum, s) => sum + s.width, 0),
     space: measurer.width(last.face, " ") * last.scale,
+    ...inkEnds(segments, measurer),
   };
 }
 
-/** The width of words set on one line, in em. */
+/** The advance of words set on one line, in em. */
 function lineWidth(words: MeasuredWord[]): number {
   let width = 0;
   words.forEach((word, i) => {
@@ -141,17 +169,22 @@ function lineWidth(words: MeasuredWord[]): number {
   return width;
 }
 
+/** The width words take on one line, in em, their ink past the line's two ends included. */
+function lineExtent(words: MeasuredWord[]): number {
+  return words.length ? words[0].inkLeft + lineWidth(words) + words[words.length - 1].inkRight : 0;
+}
+
 /** Greedy wrapping at `max` em, or null if a word on its own is wider. */
 function wrap(words: MeasuredWord[], max: number): MeasuredWord[][] | null {
   const lines: MeasuredWord[][] = [];
   let line: MeasuredWord[] = [];
   let width = 0;
   for (const word of words) {
-    if (word.width > max) return null;
+    if (word.inkLeft + word.width + word.inkRight > max) return null;
     if (line.length === 0) {
       line = [word];
       width = word.width;
-    } else if (width + line[line.length - 1].space + word.width <= max) {
+    } else if (line[0].inkLeft + width + line[line.length - 1].space + word.width + word.inkRight <= max) {
       width += line[line.length - 1].space + word.width;
       line.push(word);
     } else {
@@ -171,7 +204,7 @@ function wrap(words: MeasuredWord[], max: number): MeasuredWord[][] | null {
 function balance(words: MeasuredWord[], max: number): MeasuredWord[][] | null {
   const greedy = wrap(words, max);
   if (!greedy || greedy.length < 2) return greedy;
-  let lo = Math.max(...words.map((w) => w.width));
+  let lo = Math.max(...words.map((w) => w.inkLeft + w.width + w.inkRight));
   let hi = max;
   for (let i = 0; i < SEARCH_STEPS; i += 1) {
     const mid = (lo + hi) / 2;
@@ -190,7 +223,7 @@ function breakWord(word: MeasuredWord, max: number, measurer: Measurer): Measure
   const close = () => {
     if (!segments.length) return;
     const last = segments[segments.length - 1];
-    pieces.push({ segments, width, space: measurer.width(last.face, " ") * last.scale });
+    pieces.push({ segments, width, space: measurer.width(last.face, " ") * last.scale, ...inkEnds(segments, measurer) });
     segments = [];
     width = 0;
   };
@@ -245,7 +278,11 @@ function place(
 
   const placed = lines.map((words, i): PlacedLine => {
     const width = lineWidth(words) * size;
-    const x = spec.align === "center" ? box.x + (box.w - width) / 2 : box.x + padX * size;
+    const inkLeft = words[0].inkLeft * size;
+    const inkRight = words[words.length - 1].inkRight * size;
+    // Placed by its ink, so a leaning italic or a wide accent stays in the box.
+    const x =
+      spec.align === "center" ? box.x + (box.w - (inkLeft + width + inkRight)) / 2 + inkLeft : box.x + padX * size + inkLeft;
     const segments: PlacedSegment[] = [];
     let cursor = x;
     words.forEach((word, j) => {
@@ -272,12 +309,14 @@ function place(
       size,
       ascent: extent.ascent * size,
       descent: extent.descent * size,
+      inkLeft,
+      inkRight,
     };
   });
 
   const last = placed[placed.length - 1];
-  const left = Math.min(...placed.map((l) => l.x)) - padX * size;
-  const right = Math.max(...placed.map((l) => l.x + l.width)) + padX * size;
+  const left = Math.min(...placed.map((l) => l.x - l.inkLeft)) - padX * size;
+  const right = Math.max(...placed.map((l) => l.x + l.width + l.inkRight)) + padX * size;
   const top = placed[0].baseline - (extent.ascent + padY) * size;
   const bottom = last.baseline + (extent.descent + padY) * size;
   return { lines: placed, size, bounds: { x: left, y: top, w: right - left, h: bottom - top }, truncated };
@@ -310,7 +349,11 @@ function prepare(paragraphs: Paragraph[], spec: FlowSpec, measurer: Measurer): P
   // The caret travels with the last word, so wrapping and balancing leave it room.
   const trailing = spec.trailing ?? 0;
   const lastParagraph = words[words.length - 1];
-  if (trailing && lastParagraph.length) lastParagraph[lastParagraph.length - 1].width += trailing;
+  if (trailing && lastParagraph.length) {
+    const end = lastParagraph[lastParagraph.length - 1];
+    end.width += trailing;
+    end.inkRight = Math.max(0, end.inkRight - trailing);
+  }
   const extent = faceExtent(spec, measurer, {
     emphasis: paragraphs.some((p) => p.some((w) => w.some((s) => s.emphasis))),
   });
@@ -405,46 +448,59 @@ function overflow(
   const size = spec.minSize;
   const padX = spec.padX ?? 0;
   const padY = spec.padY ?? 0;
+  const trailing = spec.trailing ?? 0;
   const max = (spec.box.w * WIDTH_SLACK) / size - 2 * padX;
+  const fit = (w: MeasuredWord) => w.inkLeft + w.width + w.inkRight <= max;
+  // A little under the line, so a piece's own overhang still fits it.
+  const pieceMax = max * 0.92;
+
   const lines: MeasuredWord[][] = [];
-  for (const p of words) {
-    const pieces = p.flatMap((w) => (w.width > max ? breakWord(w, max, measurer) : [w]));
+  words.forEach((p, pi) => {
+    const pieces = p.flatMap((w, wi) => {
+      const isEnd = trailing > 0 && pi === words.length - 1 && wi === p.length - 1;
+      if (fit(w)) return [w];
+      // The caret's room was added to the title's last word; broken, it goes on the last piece.
+      const broken = breakWord(w, isEnd ? pieceMax - trailing : pieceMax, measurer);
+      if (isEnd) {
+        const end = broken[broken.length - 1];
+        end.width += trailing;
+        end.inkRight = Math.max(0, end.inkRight - trailing);
+      }
+      return broken;
+    });
     lines.push(...(wrap(pieces, max) ?? pieces.map((w) => [w])));
-  }
+  });
+
   const room = Math.max(1, Math.floor((spec.box.h / size - extent.ascent - extent.descent - 2 * padY) / spec.leading) + 1);
-  let truncated = false;
-  while (lines.length > room) {
-    lines.pop();
-    truncated = true;
-  }
+  const truncated = lines.length > room;
   if (truncated) {
-    const line = lines[lines.length - 1];
-    const lastWord = line[line.length - 1];
-    const lastSegment = lastWord.segments[lastWord.segments.length - 1];
-    const ellipsis = measurer.width(lastSegment.face, "…") * lastSegment.scale;
-    // Take graphemes off the end until the ellipsis fits.
-    while (lineWidth(line) + ellipsis > max && line.length) {
-      const word = line[line.length - 1];
-      const seg = word.segments[word.segments.length - 1];
+    lines.length = room;
+    const line = lines[room - 1];
+    const remeasure = (w: MeasuredWord) => {
+      for (const s of w.segments) s.width = measurer.width(s.face, s.text) * s.scale;
+      w.width = w.segments.reduce((sum, s) => sum + s.width, 0);
+      Object.assign(w, inkEnds(w.segments, measurer));
+    };
+    const tail = () => {
+      const w = line[line.length - 1];
+      return w.segments[w.segments.length - 1];
+    };
+    const ellipsis = () => measurer.width(tail().face, "\u2026") * tail().scale;
+    // Graphemes come off the end until the ellipsis, and the caret after it, fit.
+    while (lineExtent(line) + ellipsis() + trailing > max) {
+      const w = line[line.length - 1];
+      const seg = w.segments[w.segments.length - 1];
       const gs = graphemes(seg.text);
-      if (gs.length <= 1) {
-        word.segments.pop();
-        if (!word.segments.length) line.pop();
-      } else {
-        seg.text = gs.slice(0, -1).join("");
-      }
-      for (const w of line) {
-        for (const s of w.segments) s.width = measurer.width(s.face, s.text) * s.scale;
-        w.width = w.segments.reduce((sum, s) => sum + s.width, 0);
-      }
+      if (gs.length > 1) seg.text = gs.slice(0, -1).join("");
+      else if (w.segments.length > 1) w.segments.pop();
+      else if (line.length > 1) line.pop();
+      else break;
+      remeasure(line[line.length - 1]);
     }
-    const end = line[line.length - 1] ?? lastWord;
-    if (!line.length) line.push(end);
-    const tail = end.segments[end.segments.length - 1] ?? lastSegment;
-    if (!end.segments.length) end.segments.push(tail);
-    tail.text += "…";
-    tail.width += ellipsis;
-    end.width += ellipsis;
+    const end = line[line.length - 1];
+    tail().text += "\u2026";
+    remeasure(end);
+    end.width += trailing;
   }
   return place(lines, size, spec, extent, truncated);
 }
@@ -482,7 +538,11 @@ function partition(words: MeasuredWord[], n: number): MeasuredWord[][] {
 
 interface StackLine {
   words: MeasuredWord[];
+  /** The advance, and the width with the ink past either end, in em. */
   width: number;
+  extent: number;
+  inkLeft: number;
+  inkRight: number;
   ascent: number;
   descent: number;
 }
@@ -509,13 +569,20 @@ export function stack(paragraphs: Paragraph[], spec: StackSpec, measurer: Measur
     return { ascent, descent };
   };
   const asLines = (lines: MeasuredWord[][]): StackLine[] =>
-    lines.map((line) => ({ words: line, width: lineWidth(line), ...inkOf(line) }));
+    lines.map((line) => ({
+      words: line,
+      width: lineWidth(line),
+      extent: lineExtent(line),
+      inkLeft: line[0].inkLeft,
+      inkRight: line[line.length - 1].inkRight,
+      ...inkOf(line),
+    }));
 
   const across = spec.box.w * WIDTH_SLACK;
   type Fitted = { lines: StackLine[]; sizes: number[]; height: number; score: number };
   /** The lines sized to the width, shrunk together if too tall; null if one falls below the smallest size. */
   const fit = (lines: StackLine[]): Fitted | null => {
-    let sizes = lines.map((l) => Math.min(spec.maxSize, across / l.width));
+    let sizes = lines.map((l) => Math.min(spec.maxSize, across / l.extent));
     const heightAt = (s: number[]) =>
       lines.reduce((sum, l, i) => sum + (l.ascent + l.descent) * s[i] + (i ? spec.gap * Math.min(s[i - 1], s[i]) : 0), 0);
     let height = heightAt(sizes);
@@ -525,7 +592,7 @@ export function stack(paragraphs: Paragraph[], spec: StackSpec, measurer: Measur
       height = heightAt(sizes);
     }
     if (Math.min(...sizes) < spec.minSize) return null;
-    const score = lines.reduce((sum, l, i) => sum + l.width * sizes[i] * (l.ascent + l.descent) * sizes[i], 0);
+    const score = lines.reduce((sum, l, i) => sum + l.extent * sizes[i] * (l.ascent + l.descent) * sizes[i], 0);
     return { lines, sizes, height, score };
   };
 
@@ -565,7 +632,9 @@ export function stack(paragraphs: Paragraph[], spec: StackSpec, measurer: Measur
     const baseline = y + line.ascent * size;
     y = baseline + line.descent * size;
     const width = line.width * size;
-    const x = spec.align === "center" ? box.x + (box.w - width) / 2 : box.x;
+    const inkLeft = line.inkLeft * size;
+    const inkRight = line.inkRight * size;
+    const x = spec.align === "center" ? box.x + (box.w - line.extent * size) / 2 + inkLeft : box.x + inkLeft;
     const segments: PlacedSegment[] = [];
     let cursor = x;
     line.words.forEach((word, j) => {
@@ -584,13 +653,13 @@ export function stack(paragraphs: Paragraph[], spec: StackSpec, measurer: Measur
       });
       if (j < line.words.length - 1) cursor += word.space * size;
     });
-    return { segments, x, width, baseline, size, ascent: line.ascent * size, descent: line.descent * size };
+    return { segments, x, width, baseline, size, ascent: line.ascent * size, descent: line.descent * size, inkLeft, inkRight };
   });
 
   const top = placed[0].baseline - placed[0].ascent;
   const last = placed[placed.length - 1];
-  const left = Math.min(...placed.map((l) => l.x));
-  const right = Math.max(...placed.map((l) => l.x + l.width));
+  const left = Math.min(...placed.map((l) => l.x - l.inkLeft));
+  const right = Math.max(...placed.map((l) => l.x + l.width + l.inkRight));
   return {
     lines: placed,
     size: Math.min(...sizes),

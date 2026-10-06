@@ -42,6 +42,11 @@ export interface Measurer {
   width(face: FaceId, text: string): number;
   /** The face's extent, for lines set to a common leading. */
   metrics(face: FaceId): FaceMetrics;
-  /** The ink of `text` itself, for lines stacked by what they hold. */
-  bounds(face: FaceId, text: string): { ascent: number; descent: number };
+  /**
+   * The ink of `text` itself, drawn from a start point on the baseline: how
+   * far it reaches above and below the baseline, left of the start (an
+   * italic's lean, a wide accent) and right of it (beyond the advance width
+   * where the last glyph overhangs).
+   */
+  bounds(face: FaceId, text: string): { ascent: number; descent: number; left: number; right: number };
 }

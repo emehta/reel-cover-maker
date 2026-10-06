@@ -533,6 +533,8 @@
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scroll-snap-type: x proximity;
+    /* Snapped thumbnails stop at the gutter, not the screen's edge. */
+    scroll-padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
     scrollbar-width: none;
   }
 

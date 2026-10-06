@@ -6,7 +6,8 @@
  * Instagram stores every picture as sRGB JPEG with the colour at half
  * resolution (4:2:0), so text that differs from its ground only in hue
  * smears at the edges. Each pairing below differs in lightness as well, and
- * `test` holds every one to a contrast ratio.
+ * the tests hold every one to a contrast ratio, Glow's lights included: on a
+ * dark ground they are deep colours, so the light text over them still reads.
  */
 
 export type PaletteId = "ink" | "paper" | "cobalt" | "moss" | "blush" | "acid" | "plum" | "sky";
@@ -25,13 +26,13 @@ export interface Palette {
 }
 
 export const PALETTES: readonly Palette[] = [
-  { id: "ink", name: "Ink", bg: "#111111", ink: "#F3EFE6", accent: "#FF5B2E", glow: ["#FF5B2E", "#7A3CFF", "#1E6BFF"] },
+  { id: "ink", name: "Ink", bg: "#111111", ink: "#F3EFE6", accent: "#FF5B2E", glow: ["#C2410C", "#5B21B6", "#1D4ED8"] },
   { id: "paper", name: "Paper", bg: "#F1ECE2", ink: "#1A1714", accent: "#C2381E", glow: ["#FFB38A", "#F7D7A8", "#E9A6B8"] },
-  { id: "cobalt", name: "Cobalt", bg: "#1D36C9", ink: "#F4F2EC", accent: "#FFD23F", glow: ["#5E8BFF", "#00C2FF", "#9B5CFF"] },
-  { id: "moss", name: "Moss", bg: "#1B2A1E", ink: "#ECE6D6", accent: "#C9E265", glow: ["#5C8C3A", "#C9E265", "#2F6B5A"] },
+  { id: "cobalt", name: "Cobalt", bg: "#1D36C9", ink: "#F4F2EC", accent: "#FFD23F", glow: ["#2F5BEA", "#006BB8", "#7C3AED"] },
+  { id: "moss", name: "Moss", bg: "#1B2A1E", ink: "#ECE6D6", accent: "#C9E265", glow: ["#477229", "#55701A", "#245E4E"] },
   { id: "blush", name: "Blush", bg: "#F4D5CD", ink: "#2B1213", accent: "#A8122B", glow: ["#FF9C8A", "#FFD6A5", "#F58FB5"] },
   { id: "acid", name: "Acid", bg: "#D8F24A", ink: "#121212", accent: "#4626F0", glow: ["#F7FF8A", "#6BF2B0", "#B8F23A"] },
-  { id: "plum", name: "Plum", bg: "#2A0F2E", ink: "#F6E7F1", accent: "#FF7AC6", glow: ["#B5179E", "#FF7AC6", "#4B1D8F"] },
+  { id: "plum", name: "Plum", bg: "#2A0F2E", ink: "#F6E7F1", accent: "#FF7AC6", glow: ["#B5179E", "#B8307A", "#4B1D8F"] },
   { id: "sky", name: "Sky", bg: "#CFE3F2", ink: "#0E2233", accent: "#0050C8", glow: ["#FFFFFF", "#8FC3F0", "#BFD8FF"] },
 ];
 

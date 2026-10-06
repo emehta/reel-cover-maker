@@ -50,6 +50,30 @@ export interface PaintOptions {
   grain: CanvasImageSource | null;
 }
 
+/**
+ * How a light falls away from its centre to its radius, as offset and share
+ * of its strength: softly, never a disc with an edge. Exported so a test can
+ * work out the ground under the text.
+ */
+export const LIGHT_FALLOFF: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],
+  [0.35, 0.55],
+  [0.7, 0.16],
+  [1, 0],
+];
+
+/** A light's strength at `distance` from its centre, as a share of `alpha`. */
+export function lightAlpha(alpha: number, radius: number, distance: number): number {
+  const t = distance / radius;
+  if (t >= 1) return 0;
+  for (let i = 1; i < LIGHT_FALLOFF.length; i += 1) {
+    const [o1, s1] = LIGHT_FALLOFF[i];
+    const [o0, s0] = LIGHT_FALLOFF[i - 1];
+    if (t <= o1) return alpha * (s0 + ((t - o0) / (o1 - o0)) * (s1 - s0));
+  }
+  return 0;
+}
+
 function roundedRect(ctx: PaintTarget, x: number, y: number, w: number, h: number, radius: number) {
   const r = Math.max(0, Math.min(radius, w / 2, h / 2));
   ctx.beginPath();
@@ -73,11 +97,7 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
       return;
     case "light": {
       const gradient = ctx.createRadialGradient(op.x, op.y, 0, op.x, op.y, op.r);
-      // A light that falls away softly, never a disc with an edge.
-      gradient.addColorStop(0, withAlpha(op.color, op.alpha));
-      gradient.addColorStop(0.35, withAlpha(op.color, op.alpha * 0.55));
-      gradient.addColorStop(0.7, withAlpha(op.color, op.alpha * 0.16));
-      gradient.addColorStop(1, withAlpha(op.color, 0));
+      for (const [offset, share] of LIGHT_FALLOFF) gradient.addColorStop(offset, withAlpha(op.color, op.alpha * share));
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, scene.width, scene.height);
       return;

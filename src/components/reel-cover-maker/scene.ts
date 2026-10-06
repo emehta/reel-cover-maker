@@ -235,7 +235,7 @@ function mono(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: M
       leading: 1.34,
       align: "left",
       padX: pad,
-      padY: 0.04,
+      padY: 0.1,
       trailing: 0.78,
     },
     measurer,
@@ -246,12 +246,16 @@ function mono(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: M
   for (const line of block.lines) {
     for (const s of line.segments) {
       if (!s.emphasis) continue;
+      // Tall enough for the word's own ink, an accented capital included.
+      const ink = measurer.bounds(s.face, s.text);
+      const above = Math.max(cap + 0.24, ink.ascent + 0.06);
+      const below = Math.max(0.24, ink.descent + 0.06);
       ops.push({
         kind: "box",
         x: s.x - pad * line.size * 0.6,
-        y: line.baseline - (cap + 0.24) * line.size,
+        y: line.baseline - above * line.size,
         w: s.width + 2 * pad * line.size * 0.6,
-        h: (cap + 0.48) * line.size,
+        h: (above + below) * line.size,
         radius: 0,
         color: palette.accent,
       });

@@ -6,12 +6,14 @@
  * face declared in CSS loads only once something asks for it. So nothing is
  * drawn until every face the title needs has loaded: a preview set in a
  * fallback face would be the wrong picture, and so would its download.
- * Each face is split by script (`unicode-range`), so the title itself is
- * what is asked for, and "Łódź" loads the Latin Extended file it needs.
+ * Each face is split by script (`unicode-range`), so the title's own
+ * characters are what is asked for, and "Łódź" loads the Latin Extended
+ * file it needs.
  */
 
 import { Anton, Archivo_Black, Instrument_Serif, Inter_Tight, Space_Mono } from "next/font/google";
 import { FACE_IDS, type FaceId, type Measurer } from "@/components/reel-cover-maker/faces";
+import { createFontGate, type FontGate } from "@/components/reel-cover-maker/font-gate";
 
 const instrumentSerif = Instrument_Serif({ weight: "400", style: ["normal", "italic"], subsets: ["latin"] });
 const anton = Anton({ weight: "400", subsets: ["latin"] });
@@ -38,64 +40,59 @@ export function fontCss(face: FaceId, size: number): string {
   return `${italic ? "italic " : ""}${weight} ${size}px ${family}`;
 }
 
-/** Letters every title is drawn with besides its own: the placeholder's, and both cases. */
-const ALWAYS = "Type your title Aa";
+/**
+ * Characters asked for up front, besides the title's own: every printable
+ * letter of the Latin file each face is split into, so typing only ever
+ * waits on a character from further afield.
+ */
+const ALWAYS = (() => {
+  let text = "";
+  for (let c = 0x20; c <= 0x7e; c += 1) text += String.fromCharCode(c);
+  for (let c = 0xa1; c <= 0xff; c += 1) if (c !== 0xad) text += String.fromCharCode(c);
+  return `${text}\u2018\u2019\u201c\u201d\u2026\u2022`;
+})();
 
-const listeners = new Set<() => void>();
-let loads = 0;
-/** Safari has answered `check` true before a face was fetched, so nothing counts as ready until one load has finished. */
-let firstLoadDone = false;
-let waitedLongEnough = false;
+/** A face that never arrives (offline, blocked) must not hold the maker blank for longer than this. */
+const PATIENCE_MS = 3000;
 
-function changed() {
-  loads += 1;
-  for (const listener of listeners) listener();
+let gate: FontGate | null = null;
+
+/** The one gate for the page, made on first use: the browser's font set does not exist on the server. */
+function fontGate(): FontGate {
+  gate ??= createFontGate(
+    {
+      load: (text) => Promise.all(FACE_IDS.map((face) => document.fonts.load(fontCss(face, 100), text))),
+      patience: PATIENCE_MS,
+      setTimer: (run, ms) => window.setTimeout(run, ms),
+    },
+    ALWAYS,
+  );
+  return gate;
 }
 
 /** For useSyncExternalStore: told whenever a face finishes loading, or fails to. */
 export function subscribeFonts(listener: () => void): () => void {
-  listeners.add(listener);
-  if (listeners.size === 1) {
-    document.fonts.addEventListener("loadingdone", changed);
-    document.fonts.addEventListener("loadingerror", changed);
-  }
+  const g = fontGate();
+  const unsubscribe = g.subscribe(listener);
+  // A file that arrives after the gate stopped waiting for it still redraws the cover.
+  const arrived = () => g.changed();
+  document.fonts.addEventListener("loadingdone", arrived);
+  document.fonts.addEventListener("loadingerror", arrived);
   return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0) {
-      document.fonts.removeEventListener("loadingdone", changed);
-      document.fonts.removeEventListener("loadingerror", changed);
-    }
+    unsubscribe();
+    document.fonts.removeEventListener("loadingdone", arrived);
+    document.fonts.removeEventListener("loadingerror", arrived);
   };
 }
 
-/**
- * -1 while a face `title` needs is still loading, else a number that changes
- * each time any face finishes, so a measurer made before it is replaced.
- */
+/** -1 while a character of `title` is still loading, else a number that changes each time a face arrives. */
 export function fontsSnapshot(title: string): number {
-  const text = `${title} ${ALWAYS}`;
-  const ready =
-    waitedLongEnough || (firstLoadDone && FACE_IDS.every((face) => document.fonts.check(fontCss(face, 100), text)));
-  return ready ? loads : -1;
+  return fontGate().snapshot(title);
 }
 
-/** Ask for every face `title` needs and has not loaded. Whatever happens is reported to subscribers. */
+/** Ask every face for whatever of `title` (and the Latin letters) it has not been asked for. */
 export function requestFonts(title: string): void {
-  const text = `${title} ${ALWAYS}`;
-  const missing = firstLoadDone ? FACE_IDS.filter((face) => !document.fonts.check(fontCss(face, 100), text)) : FACE_IDS;
-  if (!missing.length) return;
-  const done = () => {
-    firstLoadDone = true;
-    changed();
-  };
-  Promise.all(missing.map((face) => document.fonts.load(fontCss(face, 100), text))).then(done, done);
-}
-
-/** A face that never arrives (offline, blocked) must not hold the maker blank: after this, draw with what there is. */
-export function stopWaitingForFonts(): void {
-  if (waitedLongEnough) return;
-  waitedLongEnough = true;
-  changed();
+  fontGate().request(title);
 }
 
 /** Text is measured at this size and scaled, which canvas text does in proportion. */
@@ -109,7 +106,7 @@ export function measurerFor(loadsSeen: number): Measurer {
   const ctx = document.createElement("canvas").getContext("2d");
   const widths = new Map<string, number>();
   const metrics = new Map<FaceId, { cap: number; ascent: number; descent: number }>();
-  const bounds = new Map<string, { ascent: number; descent: number }>();
+  const bounds = new Map<string, { ascent: number; descent: number; left: number; right: number }>();
   const measure = (face: FaceId, text: string) => {
     if (!ctx) return null;
     ctx.font = fontCss(face, MEASURE_SIZE);
@@ -145,6 +142,8 @@ export function measurerFor(loadsSeen: number): Measurer {
         b = {
           ascent: (m?.actualBoundingBoxAscent ?? 70) / MEASURE_SIZE,
           descent: Math.max(0, m?.actualBoundingBoxDescent ?? 0) / MEASURE_SIZE,
+          left: (m?.actualBoundingBoxLeft ?? 0) / MEASURE_SIZE,
+          right: (m?.actualBoundingBoxRight ?? m?.width ?? 0) / MEASURE_SIZE,
         };
         bounds.set(key, b);
       }

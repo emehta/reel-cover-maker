@@ -21,8 +21,8 @@ npm run build
   (`src/app/page.tsx` here, `src/app/projects/reel-cover-maker/page.tsx`
   there) differ and are not copies.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
-  `layout`, `scene`, `palettes`, `grain`, `save` and `design` never touch the
-  DOM and are tested in `scripts/reel-cover.test.mjs`. `paint` takes a
+  `layout`, `scene`, `palettes`, `grain`, `save`, `design` and `font-gate`
+  never touch the DOM and are tested in `scripts/reel-cover.test.mjs`. `paint` takes a
   context, so it is tested with a recording stand-in. `fonts`, `theme` and the
   component are the browser.
 - **One scene, every canvas.** The preview, the thumbnails and the download
@@ -32,7 +32,12 @@ npm run build
   one leaves it. Ornament (Echo's outlines, Glow's lights) may run to the
   edges.
 - **Nothing is drawn before its faces load.** A canvas draws in whatever face
-  is loaded at the time, and so would the download.
+  is loaded at the time, and so would the download. `font-gate.ts` keeps the
+  record of which characters have loaded; never gate on
+  `document.fonts.check`, which Chrome answers true for an installed family.
+- **Text is placed by its ink.** `Measurer.bounds` gives the overhang past
+  each end (italics, wide accents, emoji), and lines are fitted and placed
+  with it. A test measurer that overhangs keeps that honest.
 - **No em or en dashes** anywhere: copy, comments, docs, commits. The tests
   fail on one in the component folder.
 - Read the guide in `node_modules/next/dist/docs/` before relying on a
