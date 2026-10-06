@@ -44,6 +44,12 @@ export interface LiquidSpec {
   /** How far each letter may differ from the next: size, turn (radians), rise (em) and squash. */
   jitter: { scale: number; angle: number; rise: number; squash: number };
   upper: boolean;
+  /**
+   * The chance a letter is drawn in its other case, as a sign painter's
+   * hand mixes them ("SRirACHA"): never a dotless capital I for an i, which
+   * would read as an l.
+   */
+  swapCase?: number;
   /** Lines centred in the box, or set from its left edge. */
   align?: "center" | "left";
   /** Mixed into every seed, so two styles draw the same word differently. */
@@ -52,6 +58,8 @@ export interface LiquidSpec {
 
 export interface LiquidGlyph extends PlacedGlyph {
   line: number;
+  /** Which word of its line it is in: letters of a word may tuck together, words keep their space. */
+  word: number;
   emphasis: boolean;
 }
 
@@ -99,6 +107,17 @@ interface Word {
 
 const MISSING_ADVANCE = 1.05;
 
+/** A letter in its other case, now and then, where the hand draws both. */
+function swapped(character: string, spec: LiquidSpec, font: StrokeFontId, seed: number): string {
+  if (!spec.swapCase || random(seed)() >= spec.swapCase) return character;
+  const lower = character.toLocaleLowerCase();
+  const upper = character.toLocaleUpperCase();
+  if (lower === upper || [...lower].length !== 1 || [...upper].length !== 1) return character;
+  const other = character === lower ? upper : lower;
+  if (lower === "i" && other === upper) return character;
+  return strokeGlyphs(font, other).length ? other : character;
+}
+
 function letters(word: Paragraph[number], spec: LiquidSpec): Word {
   const text = word.map((s) => s.text).join("");
   const seed = hashString(`${spec.salt}\u0000${text}`);
@@ -120,10 +139,11 @@ function letters(word: Paragraph[number], spec: LiquidSpec): Word {
   let cursor = 0;
   for (const segment of word) {
     const characters = graphemes(spec.upper ? segment.text.toLocaleUpperCase() : segment.text);
-    for (const character of characters) {
+    for (const typed of characters) {
       const letterSeed = mixSeed(seed, index);
       index += 1;
       const next = random(letterSeed);
+      const character = swapped(typed, spec, hand.id, mixSeed(letterSeed, 0xca5e));
       const capital = character !== character.toLocaleLowerCase();
       const font = hand.capitals && !capital ? spec.fonts[0].id : hand.id;
       const glyphs = strokeGlyphs(font, character);
@@ -288,6 +308,7 @@ export function liquidLayout(paragraphs: Paragraph[], spec: LiquidSpec): LiquidL
             skew: 0,
             seed: l.seed,
             line: li,
+            word: wi,
             emphasis: l.emphasis,
           });
         } else {

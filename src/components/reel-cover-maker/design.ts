@@ -1,7 +1,8 @@
 /**
- * What the maker remembers between visits: the title being worked on and the
- * style, colour and size it is made in, so the next cover matches the last
- * one on the grid. Kept in this browser only.
+ * What the maker remembers between visits: the title being worked on, the
+ * style, the colour (hue, shade and ground), the size, and the shuffle, so
+ * the next cover matches the last one on the grid. Kept in this browser
+ * only.
  *
  * Read defensively: storage can hold anything (an older version's shape, a
  * hand edit, nothing at all), and whatever is not understood falls back to
@@ -9,15 +10,19 @@
  */
 
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
-import { DEFAULT_PALETTE, isPaletteId, type PaletteId } from "@/components/reel-cover-maker/palettes";
+import { DEFAULT_COLOUR, isGround, type Ground } from "@/components/reel-cover-maker/palettes";
 import { DEFAULT_STYLE, isStyleId, type StyleId } from "@/components/reel-cover-maker/scene";
 import { MAX_TITLE_LENGTH } from "@/components/reel-cover-maker/title";
 
 export interface Design {
   text: string;
   style: StyleId;
-  palette: PaletteId;
+  hue: number;
+  shade: number;
+  ground: Ground;
   format: FormatId;
+  /** The shuffle: every random choice a style makes is seeded by it as well as by the title. */
+  seed: number;
 }
 
 export const STORAGE_KEY = "reel-cover-maker:v1";
@@ -25,9 +30,15 @@ export const STORAGE_KEY = "reel-cover-maker:v1";
 export const DEFAULT_DESIGN: Design = {
   text: "",
   style: DEFAULT_STYLE,
-  palette: DEFAULT_PALETTE,
+  hue: DEFAULT_COLOUR.hue,
+  shade: DEFAULT_COLOUR.shade,
+  ground: DEFAULT_COLOUR.ground,
   format: DEFAULT_FORMAT,
+  seed: 0,
 };
+
+const number = (value: unknown, lo: number, hi: number): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value >= lo && value <= hi ? value : null;
 
 /** A stored design, or the default for anything in it that is missing or not understood. */
 export function readDesign(raw: string | null): Design {
@@ -41,8 +52,11 @@ export function readDesign(raw: string | null): Design {
   return {
     text: typeof stored.text === "string" ? stored.text.slice(0, MAX_TITLE_LENGTH) : DEFAULT_DESIGN.text,
     style: isStyleId(stored.style) ? stored.style : DEFAULT_DESIGN.style,
-    palette: isPaletteId(stored.palette) ? stored.palette : DEFAULT_DESIGN.palette,
+    hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
+    shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
+    ground: isGround(stored.ground) ? stored.ground : DEFAULT_DESIGN.ground,
     format: isFormatId(stored.format) ? stored.format : DEFAULT_DESIGN.format,
+    seed: Number.isInteger(stored.seed) && Math.abs(stored.seed as number) < 2 ** 31 ? (stored.seed as number) : DEFAULT_DESIGN.seed,
   };
 }
 

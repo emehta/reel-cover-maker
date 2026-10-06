@@ -1,18 +1,23 @@
 /**
- * Letters made of paste: the picture.
+ * Letters made of paste: from beads to a field, and from a field to light.
  *
  * Each chain of beads is a shape: the union of tapered capsules between its
  * beads, measured exactly as a signed distance (positive inside). Chains
- * then join by a smooth union, so where two strokes meet the paste pools
- * into a fillet, as liquid does, while each stroke on its own stays as drawn.
- * The distance inside a stroke, against its radius there, is how high the
- * paste stands, and that height is lit:
+ * join by a smooth union, so where two strokes come close the paste bridges
+ * into a fillet, as liquid does, while each stroke on its own stays as
+ * drawn. From that distance comes how high the paste stands at each pixel:
  *
- * - "gloss": a wet surface, lit from the top left, with sharp highlights and
- *   a soft shadow under it (ketchup, ink, honey, a balloon);
- * - "flat": the colour alone (a print);
- * - "matte": thick paste spread with a knife, ridged along each stroke,
- *   rough at the edge, lit softly.
+ * - "gloss": a rounded tube of gel, as sauce from a bottle sits on a plate;
+ * - "matte": thick paste spread with a knife, flat on top with a rounded
+ *   shoulder, swept in broad swaths along each stroke with a ridge where
+ *   the blade lifted, lumpy, its edge ragged; where the style asks, a
+ *   stroke's free ends are cut square, as a knife leaves them;
+ * - "flat": the shape alone.
+ *
+ * The field (distance, height, colour, tone) is what the worker makes, once
+ * per title; light is laid on it afterwards (liquid-gl.ts on the GPU, or
+ * `shadeField` here where there is none), so a change of colour is light
+ * again, never paste again.
  *
  * Pure: plain typed arrays in and out, so it runs in a worker, and in the
  * tests.
@@ -26,13 +31,14 @@ export type Finish = "gloss" | "flat" | "matte";
 
 export interface LiquidPaint {
   chains: Chain[];
-  /** Each chain's colour, as an index into `colours`, and how much lighter or darker than it (1 is as is). */
-  colours: string[];
+  /** Each chain's colour, as an index into the colours it is lit with, and how much lighter or darker (1 is as is). */
   colourOf: number[];
   tone: number[];
   finish: Finish;
-  /** How far apart two strokes may be and still pool together, in pixels of the picture. */
+  /** How far apart two strokes may be and still bridge, in pixels of the picture. */
   pool: number;
+  /** A stroke's ends cut square rather than round, as a knife leaves paste. */
+  square?: boolean;
   seed: number;
 }
 
@@ -45,6 +51,22 @@ export interface LiquidTarget {
   origin: { x: number; y: number };
 }
 
+/**
+ * Four 16-bit numbers a pixel: the signed distance into the paste
+ * ((d + 128) * 256), how high it stands (h * 256), the colour's index, and
+ * its tone (* 1000). Integers, so a GPU reads them exactly.
+ */
+export interface LiquidField {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  data: Uint16Array<ArrayBuffer>;
+  /** A typical stroke's radius, in canvas pixels: how far light and shadow reach. */
+  radius: number;
+  finish: Finish;
+}
+
 export interface LiquidImage {
   /** Where the pixels go on the canvas, and RGBA for them, not premultiplied, as ImageData wants. */
   x: number;
@@ -55,6 +77,7 @@ export interface LiquidImage {
 }
 
 const NONE = -1e6;
+export const DEPTH_OFFSET = 128;
 
 /** The signed distance (positive inside) from (px, py) to the tapered capsule between two beads. */
 export function capsuleDepth(px: number, py: number, a: Bead, b: Bead): number {
@@ -84,26 +107,6 @@ export function smoothMax(a: number, b: number, k: number): number {
   return Math.max(a, b) + h * h * k * 0.25;
 }
 
-const toLinear = (c: number) => {
-  const v = c / 255;
-  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-};
-const toSrgb = (v: number) => {
-  const c = Math.max(0, Math.min(1, v));
-  return 255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
-};
-
-function unit(x: number, y: number, z: number): [number, number, number] {
-  const l = Math.hypot(x, y, z) || 1;
-  return [x / l, y / l, z / l];
-}
-
-/** The light: from the top left, as the shadow falls to the bottom right. */
-const LIGHT = unit(-0.42, -0.62, 0.66);
-const HALF = unit(LIGHT[0], LIGHT[1], LIGHT[2] + 1);
-const RIM = unit(0.55, -0.25, 0.8);
-const RIM_HALF = unit(RIM[0], RIM[1], RIM[2] + 1);
-
 /** Three box blurs of `radius`, across then down: close to a Gaussian, in place. */
 export function boxBlur(values: Float32Array, w: number, h: number, radius: number): void {
   if (radius < 1) return;
@@ -128,22 +131,21 @@ export function boxBlur(values: Float32Array, w: number, h: number, radius: numb
   pass(w, h, 1, w);
 }
 
-export function renderLiquid(paint: LiquidPaint, target: LiquidTarget): LiquidImage | null {
+/** The paste as a field for one canvas: where it is, how deep and how high, in what colour. */
+export function liquidField(paint: LiquidPaint, target: LiquidTarget): LiquidField | null {
   const { scale, origin } = target;
   const k = paint.pool * scale;
-  const shadowOffset = paint.finish === "flat" ? 0 : 7 * scale;
-  const shadowBlur = paint.finish === "flat" ? 0 : 12 * scale;
-  // The region must hold the shadow, which falls beyond the paste; a
-  // capsule's depth is needed only as far out as the pooling and the
-  // shadow's blur reach.
-  const margin = Math.ceil(k + shadowOffset + shadowBlur + 3);
-  const reachOut = Math.ceil(Math.max(k, shadowBlur) + 2);
-
-  // The chains in canvas pixels.
   const chains: Chain[] = paint.chains
     .filter((c) => c.length > 0)
     .map((c) => c.map((b) => ({ x: (b.x - origin.x) * scale, y: (b.y - origin.y) * scale, r: b.r * scale })));
   if (!chains.length) return null;
+  const radii = chains.flatMap((c) => c.map((b) => b.r)).sort((p, q) => p - q);
+  const typical = Math.max(0.5, radii[Math.floor(radii.length / 2)]);
+
+  // Room round the paste for the light and shadow it throws on the ground,
+  // and, for the capsules, as far out as the bridging and the shadow look.
+  const margin = Math.ceil(k + typical * 2.6 + 4);
+  const reachOut = Math.ceil(Math.max(k, typical * 2.4) + 2);
 
   let x0 = Infinity;
   let y0 = Infinity;
@@ -162,16 +164,14 @@ export function renderLiquid(paint: LiquidPaint, target: LiquidTarget): LiquidIm
   const rw = Math.min(target.width, Math.ceil(x1 + margin)) - rx;
   const rh = Math.min(target.height, Math.ceil(y1 + margin)) - ry;
   if (rw <= 0 || rh <= 0) return null;
+  const n = rw * rh;
 
-  // The field: depth inside the paste, the radius of the stroke it came
-  // from, and that stroke's direction (for the knife's ridges).
-  const depth = new Float32Array(rw * rh).fill(NONE);
-  const radius = new Float32Array(rw * rh);
-  const direction = new Float32Array(rw * rh);
-  const owner = new Int32Array(rw * rh);
-  const tileDepth = new Float32Array(rw * rh);
-  const tileRadius = new Float32Array(rw * rh);
-  const tileDirection = new Float32Array(rw * rh);
+  // Distance into the paste, the radius of the stroke it came from, and which chain it is.
+  const depth = new Float32Array(n).fill(NONE);
+  const radius = new Float32Array(n);
+  const owner = new Int32Array(n);
+  const tileDepth = new Float32Array(n);
+  const tileRadius = new Float32Array(n);
 
   chains.forEach((chain, chainIndex) => {
     // This chain alone, hard union of its capsules, in a tile of its own.
@@ -185,17 +185,11 @@ export function renderLiquid(paint: LiquidPaint, target: LiquidTarget): LiquidIm
       cx1 = Math.max(cx1, b.x + b.r);
       cy1 = Math.max(cy1, b.y + b.r);
     }
-    const tx0 = Math.max(rx, Math.floor(cx0 - margin));
-    const ty0 = Math.max(ry, Math.floor(cy0 - margin));
-    const tx1 = Math.min(rx + rw, Math.ceil(cx1 + margin));
-    const ty1 = Math.min(ry + rh, Math.ceil(cy1 + margin));
-    for (let y = ty0; y < ty1; y += 1) {
-      tileDepth.fill(NONE, (y - ry) * rw + (tx0 - rx), (y - ry) * rw + (tx1 - rx));
-    }
-    // The stroke's own radius, one for the whole of it, so the height has no
-    // seam where one capsule's radius gives way to the next one's.
-    const sorted = chain.map((b) => b.r).sort((p, q) => p - q);
-    const base = sorted[Math.floor(sorted.length / 2)];
+    const tx0 = Math.max(rx, Math.floor(cx0 - reachOut));
+    const ty0 = Math.max(ry, Math.floor(cy0 - reachOut));
+    const tx1 = Math.min(rx + rw, Math.ceil(cx1 + reachOut));
+    const ty1 = Math.min(ry + rh, Math.ceil(cy1 + reachOut));
+    for (let y = ty0; y < ty1; y += 1) tileDepth.fill(NONE, (y - ry) * rw + (tx0 - rx), (y - ry) * rw + (tx1 - rx));
     const segments = chain.length === 1 ? [[chain[0], chain[0]]] : chain.slice(1).map((b, i) => [chain[i], b]);
     for (const [a, b] of segments) {
       const reach = Math.max(a.r, b.r) + reachOut;
@@ -203,7 +197,9 @@ export function renderLiquid(paint: LiquidPaint, target: LiquidTarget): LiquidIm
       const sy0 = Math.max(ty0, Math.floor(Math.min(a.y, b.y) - reach));
       const sx1 = Math.min(tx1, Math.ceil(Math.max(a.x, b.x) + reach));
       const sy1 = Math.min(ty1, Math.ceil(Math.max(a.y, b.y) + reach));
-      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      const ux = b.x - a.x;
+      const uy = b.y - a.y;
+      const span = ux * ux + uy * uy || 1;
       for (let y = sy0; y < sy1; y += 1) {
         const row = (y - ry) * rw - rx;
         const py = y + 0.5;
@@ -212,8 +208,45 @@ export function renderLiquid(paint: LiquidPaint, target: LiquidTarget): LiquidIm
           const i = row + x;
           if (d > tileDepth[i]) {
             tileDepth[i] = d;
-            tileRadius[i] = base;
-            tileDirection[i] = angle;
+            // The radius where this point lies along the capsule: the same
+            // at a bead from either side, so the height has no seam there,
+            // and a blob stands as tall as it is wide.
+            const t = Math.min(1, Math.max(0, ((x + 0.5 - a.x) * ux + (py - a.y) * uy) / span));
+            tileRadius[i] = a.r + (b.r - a.r) * t;
+          }
+        }
+      }
+    }
+    // A knife's square end: each end of the stroke cut off flat half a
+    // radius past its last bead, where the paste is that end's own, never
+    // where another part of the stroke (an S's spine) passes near it.
+    // A closed stroke (an O) has no end to cut.
+    const closed = chain.length > 2 && Math.hypot(chain[0].x - chain[chain.length - 1].x, chain[0].y - chain[chain.length - 1].y) < chain[0].r;
+    if (paint.square && chain.length > 2 && !closed) {
+      for (const [e, before, inner] of [
+        [chain[0], chain[Math.min(chain.length - 1, 2)], chain[1]],
+        [chain[chain.length - 1], chain[Math.max(0, chain.length - 3)], chain[chain.length - 2]],
+      ] as const) {
+        const l = Math.hypot(e.x - before.x, e.y - before.y);
+        if (l < 1e-6) continue;
+        const tx = (e.x - before.x) / l;
+        const ty = (e.y - before.y) / l;
+        const reach = e.r * 2.4;
+        const cut = e.r * 0.45;
+        for (let y = Math.max(ty0, Math.floor(e.y - reach)); y < Math.min(ty1, Math.ceil(e.y + reach)); y += 1) {
+          const row = (y - ry) * rw - rx;
+          for (let x = Math.max(tx0, Math.floor(e.x - reach)); x < Math.min(tx1, Math.ceil(e.x + reach)); x += 1) {
+            const along = (x + 0.5 - e.x) * tx + (y + 0.5 - e.y) * ty;
+            if (along <= 0) continue;
+            const i = row + x;
+            const own = Math.max(capsuleDepth(x + 0.5, y + 0.5, inner, e), capsuleDepth(x + 0.5, y + 0.5, before, inner));
+            if (own < tileDepth[i] - 0.5) continue;
+            // A soft minimum, so the cut's edge is rounded as paste's is, not a bevel.
+            const a = tileDepth[i];
+            const b = cut - along;
+            const k = e.r * 0.35;
+            const h = Math.max(k - Math.abs(a - b), 0) / k;
+            tileDepth[i] = Math.min(a, b) - h * h * k * 0.25;
           }
         }
       }
@@ -228,7 +261,6 @@ export function renderLiquid(paint: LiquidPaint, target: LiquidTarget): LiquidIm
         const d = depth[i];
         if (t >= d) {
           radius[i] = tileRadius[i];
-          direction[i] = tileDirection[i];
           owner[i] = chainIndex;
         }
         depth[i] = d <= NONE ? t : smoothMax(d, t, k);
@@ -236,113 +268,221 @@ export function renderLiquid(paint: LiquidPaint, target: LiquidTarget): LiquidIm
     }
   });
 
-  // Each chain's own colour, in linear light, toned.
-  const linear = paint.colours.map((c) => rgb(c).map(toLinear));
-  const chainColour = chains.map((_, i) => {
-    const base = linear[paint.colourOf[i] ?? 0] ?? linear[0];
-    const t = paint.tone[i] ?? 1;
-    return base.map((v) => Math.min(1, v * t));
-  });
-  const data = new Uint8ClampedArray(rw * rh * 4);
-  const rough = paint.finish === "matte";
-  const grain = 5 * scale;
-  const n = rw * rh;
+  const matte = paint.finish === "matte";
+  // A matte paste's edge is ragged where the knife left it: lumps and
+  // nicks the size of the paste's own crumbs, never a fuzz finer than that.
+  if (matte) {
+    for (let i = 0; i < n; i += 1) {
+      if (depth[i] <= -typical * 2) continue;
+      const x = (i % rw) + rx;
+      const y = ((i / rw) | 0) + ry;
+      depth[i] +=
+        typical * 0.13 * fbm2(paint.seed ^ 0x2f, x / (typical * 0.8), y / (typical * 0.8)) +
+        typical * 0.012 * noise2(paint.seed ^ 0x51, x / (typical * 0.22), y / (typical * 0.22));
+    }
+  }
 
-  // How high the paste stands at a pixel: a squashed round profile, as a
-  // bead of liquid sits on a plate, risen where strokes pool.
+  // How high the paste stands.
   const height = new Float32Array(n);
-  let typical = 0;
-  let counted = 0;
   for (let i = 0; i < n; i += 1) {
     const d = depth[i];
     if (d <= 0) continue;
-    const r = Math.max(1, radius[i]);
-    const f = Math.min(d, r);
-    let h = 0.62 * Math.sqrt(Math.max(0, 2 * r * f - f * f));
-    if (rough) {
+    const r = Math.max(0.5, radius[i]);
+    if (matte) {
+      // Flat on top, a rounded shoulder; across it the knife's broad
+      // swaths, a thin ridge here and there where the blade lifted, and
+      // the paste's own soft lumps. All from where the point is, never
+      // from which stroke it is on, so the surface runs on unbroken
+      // across a curve and where strokes meet.
       const x = (i % rw) + rx;
       const y = ((i / rw) | 0) + ry;
-      // Ridges the knife leaves along the stroke, and the paste's own lumps.
-      const a = direction[i];
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
-      const u = (x * ca + y * sa) / (r * 2.6);
-      const v = (-x * sa + y * ca) / (r * 0.42);
-      h = Math.min(h, r * 0.55) + r * 0.09 * noise2(paint.seed, u, v) + r * 0.05 * fbm2(paint.seed ^ 0x77, x / grain, y / grain);
-    }
-    height[i] = h;
-    if ((i & 63) === 0) {
-      typical += r;
-      counted += 1;
+      const t = typical;
+      const wx = x / (t * 2.4) + 0.7 * noise2(paint.seed ^ 0x1d, x / (t * 3.4), y / (t * 3.4));
+      const wy = y / (t * 2.4) + 0.7 * noise2(paint.seed ^ 0x2e, x / (t * 3.4), y / (t * 3.4));
+      // A knife spreads paste to one thickness, whatever stroke it is on,
+      // so where two strokes meet there is no step between them.
+      const shoulder = Math.min(1, d / (t * 0.7));
+      const top = t * 0.72 * Math.sqrt(shoulder * (2 - shoulder));
+      const swath = noise2(paint.seed, wx, wy);
+      const ridge = (1 - Math.abs(noise2(paint.seed ^ 0x33, wx * 0.8, wy * 0.8))) ** 12;
+      const lumps = fbm2(paint.seed ^ 0x77, x / (t * 0.95), y / (t * 0.95));
+      height[i] = top + shoulder * (t * 0.13 * swath + t * 0.05 * ridge + t * 0.035 * lumps);
+    } else {
+      // A tube of gel: round, a little squashed, as sauce sits.
+      const f = Math.min(d, r);
+      height[i] = 0.88 * Math.sqrt(Math.max(0, 2 * r * f - f * f));
     }
   }
   // A light blur takes out the creases where strokes cross.
-  boxBlur(height, rw, rh, Math.max(1, Math.round((counted ? typical / counted : 4) * 0.12)));
+  boxBlur(height, rw, rh, Math.max(1, Math.round(typical * (matte ? 0.05 : 0.12))));
 
-  const shadowDx = Math.round(shadowOffset * 0.45);
-  const shadowDy = Math.round(shadowOffset);
-  for (let y = 0; y < rh; y += 1) {
-    for (let x = 0; x < rw; x += 1) {
-      const i = y * rw + x;
-      let d = depth[i];
-      if (rough && d > -3) d += 1.6 * scale * fbm2(paint.seed ^ 0x2f, (x + rx) / (4 * scale), (y + ry) / (4 * scale));
-      const cover = d >= 0.5 ? 1 : d <= -0.5 ? 0 : d + 0.5;
-      let shadow = 0;
-      if (shadowBlur > 0) {
-        const sx = Math.min(rw - 1, Math.max(0, x - shadowDx));
-        const sy = Math.min(rh - 1, Math.max(0, y - shadowDy));
-        const sd = depth[sy * rw + sx];
-        shadow = 0.3 * Math.min(1, Math.max(0, (sd + shadowBlur) / (2 * shadowBlur)));
-      }
-      const alpha = cover + shadow * (1 - cover);
-      if (alpha <= 0) continue;
-      let sr = 0;
-      let sg = 0;
-      let sb = 0;
+  const data = new Uint16Array(n * 4);
+  for (let i = 0; i < n; i += 1) {
+    const d = Math.max(-DEPTH_OFFSET, Math.min(DEPTH_OFFSET - 1, depth[i]));
+    data[i * 4] = Math.round((d + DEPTH_OFFSET) * 256);
+    data[i * 4 + 1] = Math.round(Math.min(255, Math.max(0, depth[i] > 0 ? height[i] : 0)) * 256);
+    data[i * 4 + 2] = paint.colourOf[owner[i]] ?? 0;
+    data[i * 4 + 3] = Math.round(Math.min(2, Math.max(0, paint.tone[owner[i]] ?? 1)) * 1000);
+  }
+  return { x: rx, y: ry, w: rw, h: rh, data, radius: typical, finish: paint.finish };
+}
+
+export interface Shading {
+  colours: string[];
+  /** The ground the paste sits on, drawn into the picture with its shadows; null for paste alone on a transparent ground. */
+  ground: string | null;
+}
+
+const toLinear = (c: number) => {
+  const v = c / 255;
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+const toSrgb = (v: number) => {
+  const c = Math.max(0, Math.min(1, v));
+  return 255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
+};
+
+type Vec = [number, number, number];
+
+function unit(x: number, y: number, z: number): Vec {
+  const l = Math.hypot(x, y, z) || 1;
+  return [x / l, y / l, z / l];
+}
+
+const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const step = (a: number, b: number, x: number) => {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
+
+/** The light, from the top left and fairly high: x right, y down the page, z toward the viewer. */
+export const LIGHT = unit(-0.35, -0.5, 0.794);
+const HALF = unit(LIGHT[0], LIGHT[1], LIGHT[2] + 1);
+const BOX = unit(-0.4, -0.56, 0.72);
+const HOT = unit(-0.36, -0.52, 0.77);
+const STRIP = unit(0.8, 0.1, 0.59);
+
+function ggx(nh: number, a: number): number {
+  const a2 = a * a;
+  const d = nh * nh * (a2 - 1) + 1;
+  return a2 / (Math.PI * d * d);
+}
+
+/** The studio a wet surface reflects: as liquid-gl.ts has it. */
+function studio(r: Vec, table: Vec): Vec {
+  const lit = step(0.8, 0.9, dot(r, BOX)) * 5 + step(0.955, 0.985, dot(r, HOT)) * 7 + step(0.93, 0.975, dot(r, STRIP)) * 1.6;
+  const room = 0.05 + 0.08 * clamp01(r[2]);
+  const horizon = 1 - step(0, 0.45, r[2]);
+  return [room + lit + table[0] * 0.55 * horizon, room + lit + table[1] * 0.55 * horizon, room + lit + table[2] * 0.55 * horizon];
+}
+
+/**
+ * The field lit, here rather than on the GPU: for a browser without WebGL 2,
+ * and for the tests. The same light as liquid-gl.ts, line for line, so a
+ * cover looks alike either way.
+ */
+export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
+  const { w, h, data } = field;
+  const out = new Uint8ClampedArray(w * h * 4);
+  const colours = shading.colours.map((c) => rgb(c).map(toLinear) as Vec);
+  const groundColour = shading.ground ? (rgb(shading.ground).map(toLinear) as Vec) : null;
+  const table: Vec = groundColour ?? [0.8, 0.8, 0.8];
+  const heightAt = (x: number, y: number) => data[(Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))) * 4 + 1] / 256;
+  const radius = Math.max(0.5, field.radius);
+  const finish = field.finish;
+  const planar = Math.hypot(LIGHT[0], LIGHT[1]);
+  const rise = LIGHT[2] / planar;
+  const tx = LIGHT[0] / planar;
+  const ty = LIGHT[1] / planar;
+  const shadowAt = (x: number, y: number, height: number) => {
+    let cut = 0;
+    for (let i = 1; i <= 22; i += 1) {
+      const t = i * radius * 0.13;
+      const q = heightAt(x + Math.round(tx * t), y + Math.round(ty * t));
+      if (q <= 0) continue;
+      const soft = radius * 0.06 + t * 0.32;
+      cut = Math.max(cut, step(-soft, soft, q - (height + t * rise)));
+    }
+    return cut;
+  };
+  let noise = (field.x * 73856093) ^ (field.y * 19349663);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = y * w + x;
+      const d = data[i * 4] / 256 - DEPTH_OFFSET;
+      const height = data[i * 4 + 1] / 256;
+      const tone = data[i * 4 + 3] / 1000;
+      const base = colours[Math.min(3, data[i * 4 + 2])] ?? colours[0];
+      const C = base.map((v) => Math.min(1, Math.max(0.0005, v * tone))) as Vec;
+      const cover = clamp01(d + 0.5);
+      let paste: Vec = [0, 0, 0];
       if (cover > 0) {
-        const [cr, cg, cb] = chainColour[owner[i]] ?? chainColour[0];
-        if (paint.finish === "flat") {
-          sr = cr;
-          sg = cg;
-          sb = cb;
+        if (finish === "flat") {
+          paste = C;
         } else {
-          const hx = (height[x < rw - 1 ? i + 1 : i] - height[x > 0 ? i - 1 : i]) * 0.5;
-          const hy = (height[y < rh - 1 ? i + rw : i] - height[y > 0 ? i - rw : i]) * 0.5;
-          const nl = 1 / Math.sqrt(hx * hx + hy * hy + 1);
-          const nx = -hx * nl;
-          const ny = -hy * nl;
-          const nz = nl;
-          const diffuse = Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]);
-          const r = Math.max(1, radius[i]);
-          const inside = Math.min(1, Math.max(0, d) / r);
-          if (paint.finish === "gloss") {
-            const nh = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
-            const rim = Math.max(0, nx * RIM_HALF[0] + ny * RIM_HALF[1] + nz * RIM_HALF[2]);
-            const spec = 1.05 * nh ** 110 + 0.05 * nh ** 12 + 0.3 * rim ** 180;
-            // A deep body, a little lighter where it thins at the edge
-            // (light through it), darker where it meets the plate.
-            const edge = 1 - inside;
-            const body = (0.4 + 0.5 * diffuse) * (1 + 0.25 * edge * edge) * (0.78 + 0.22 * Math.min(1, inside / 0.22));
-            sr = cr * body + spec;
-            sg = cg * body + spec;
-            sb = cb * body + spec;
+          const hx = (heightAt(x + 1, y) - heightAt(x - 1, y)) * 0.5;
+          const hy = (heightAt(x, y + 1) - heightAt(x, y - 1)) * 0.5;
+          const N = unit(-hx, -hy, 1);
+          const nl = dot(N, LIGHT);
+          const nh = Math.max(0, dot(N, HALF));
+          const nv = Math.max(0, N[2]);
+          const thick = Math.min(1.6, Math.max(0, height / (radius * 0.9)));
+          const fresnel = 0.04 + 0.96 * (1 - nv) ** 5;
+          if (finish === "gloss") {
+            const wrap = clamp01((nl + 0.4) / 1.4);
+            const glow = 0.22 * step(0.35, 1.2, thick) * wrap;
+            const r: Vec = [2 * N[2] * N[0], 2 * N[2] * N[1], 2 * N[2] * N[2] - 1];
+            const env = studio(r, table);
+            const spec = ggx(nh, 0.04) * 0.06;
+            paste = C.map((c, k) => (c ** (0.75 + 0.9 * thick) * (0.16 + 0.84 * wrap) + c * c * glow) * (1 - fresnel) + env[k] * fresnel + spec) as Vec;
           } else {
-            const nh = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
-            const body = 0.62 + 0.48 * diffuse;
-            const spec = 0.07 * nh ** 10;
-            sr = cr * body + spec;
-            sg = cg * body + spec;
-            sb = cb * body + spec;
+            const k = Math.max(2, Math.floor(radius * 0.12));
+            const around = (heightAt(x + k, y) + heightAt(x - k, y) + heightAt(x, y + k) + heightAt(x, y - k)) * 0.25;
+            const cavity = Math.min(1.06, Math.max(0.6, 1 - (around - height) / Math.max(0.5, radius * 0.09)));
+            const self = shadowAt(x, y, height);
+            const wrap = clamp01((nl + 0.25) / 1.25);
+            const sheen = ggx(nh, 0.32) * 0.09 * (1 - self);
+            paste = C.map((c) => c * (0.26 + 0.86 * wrap * (1 - 0.75 * self)) * cavity * (1 - fresnel * 0.5) + sheen + 0.06 * fresnel) as Vec;
           }
         }
       }
-      // The paste over its shadow, which is black: straight alpha out.
       const o = i * 4;
-      data[o] = toSrgb((sr * cover) / alpha);
-      data[o + 1] = toSrgb((sg * cover) / alpha);
-      data[o + 2] = toSrgb((sb * cover) / alpha);
-      data[o + 3] = Math.round(alpha * 255);
+      if (!groundColour) {
+        if (cover <= 0) continue;
+        out[o] = toSrgb(paste[0]);
+        out[o + 1] = toSrgb(paste[1]);
+        out[o + 2] = toSrgb(paste[2]);
+        out[o + 3] = Math.round(cover * 255);
+        continue;
+      }
+      // The ground, in the paste's shadow, as liquid-gl.ts has it.
+      let ground: Vec = groundColour;
+      let touched = cover > 0;
+      if (finish !== "flat" && cover < 1) {
+        const cut = shadowAt(x, y, 0);
+        const contact = Math.exp(-Math.max(0, -d) / (radius * 0.26));
+        if (finish === "gloss") {
+          ground = ground.map((g, k) => {
+            const tint = 1 + (Math.min(1, C[k] * 1.6) - 1) * 0.75;
+            return g * (1 + (tint * 0.82 - 1) * cut * 0.7) * (1 - 0.22 * contact);
+          }) as Vec;
+        } else {
+          ground = ground.map((g) => g * (1 - 0.45 * cut - 0.22 * contact)) as Vec;
+        }
+        touched ||= cut > 0.002 || contact > 0.002;
+      }
+      noise = (Math.imul(noise ^ (noise >>> 15), 0x2c1b3c6d) + 0x9e3779b9) | 0;
+      const dither = touched ? (((noise >>> 8) & 255) / 255 - 0.5) * 0.9 : 0;
+      for (let k = 0; k < 3; k += 1) out[o + k] = Math.round(toSrgb(ground[k] * (1 - cover) + paste[k] * cover) + dither);
+      out[o + 3] = 255;
     }
   }
-  return { x: rx, y: ry, w: rw, h: rh, data };
+  return { x: field.x, y: field.y, w, h, data: out };
+}
+
+/** The paste lit in one go: field, then light, here. */
+export function renderLiquid(paint: LiquidPaint, target: LiquidTarget, shading: Shading): LiquidImage | null {
+  const field = liquidField(paint, target);
+  return field ? shadeField(field, shading) : null;
 }

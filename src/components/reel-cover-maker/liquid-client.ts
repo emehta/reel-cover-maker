@@ -1,14 +1,17 @@
 /**
- * The page's side of the liquid layers: which are drawn, which are waited
- * on, and one worker drawing them in turn.
+ * The page's side of the liquid layers: which are made, which are waited
+ * on, and one worker making them in turn.
  *
  * Every canvas asks for the layers its scene holds, for its own size and
- * scale. Drawn layers are kept, so turning back to a style or a colour draws
- * nothing again, up to a budget in bytes (a phone's browser caps the memory
- * all canvases may hold), and never one a canvas on screen still needs. The
- * worker draws one at a time, the preview first; a newer request from a
- * canvas replaces its older one still waiting, so fast typing never queues
- * work for titles already gone.
+ * scale. A layer is made in two parts: the paste's field (where it is, how
+ * deep, how high), which is slow and done in the worker, once per title and
+ * canvas; and the light on it, done on the GPU each time the canvas is
+ * painted, so a colour or ground being dragged never waits on the worker.
+ * Fields are kept, so turning back to a style makes nothing again, up to a
+ * budget in bytes, and never one a canvas on screen still needs. The worker
+ * makes one at a time, the preview's first; a newer request from a canvas
+ * replaces its older one still waiting, so fast typing never queues work
+ * for titles already gone.
  *
  * A worker can fail: its script may not load, or it may never answer. Then
  * it is set aside and the page draws the layers itself, a little slower but
@@ -16,19 +19,27 @@
  * never as empty, so a cover is never offered without its letters.
  */
 
-import { renderLiquid, type LiquidImage, type LiquidPaint, type LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
+import { shadeOnGpu } from "@/components/reel-cover-maker/liquid-gl";
+import { liquidField, shadeField, type LiquidField, type LiquidPaint, type LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
 import type { LiquidOp } from "@/components/reel-cover-maker/scene";
 
 export interface LiquidLayer {
-  image: HTMLCanvasElement;
+  image: CanvasImageSource;
+  /** Where the layer is in `image`, and how big. */
+  sx: number;
+  sy: number;
+  w: number;
+  h: number;
+  /** Where it goes on the canvas being painted, in that canvas's pixels. */
   x: number;
   y: number;
-  /** Bytes the layer's canvas holds. */
-  bytes: number;
 }
 
-/** The most the kept layers may hold: well inside a phone's allowance for every canvas on a page. */
-const BUDGET = 64 * 1024 * 1024;
+/** The most the kept fields may hold: eight bytes a pixel, so about four full-size covers. */
+const BUDGET = 96 * 1024 * 1024;
+
+/** Layers lit without a GPU, kept by field and colours: lighting them again is slow. */
+const LIT_KEPT = 24;
 
 /** How long the worker may take over one layer before it is taken to have died. */
 const PATIENCE_MS = 10_000;
@@ -39,7 +50,8 @@ interface Job {
   target: LiquidTarget;
 }
 
-const drawn = new Map<string, LiquidLayer | null>();
+const drawn = new Map<string, LiquidField | null>();
+const lit = new Map<string, HTMLCanvasElement>();
 const failed = new Set<string>();
 /** The layers each canvas showing now needs: never let go. */
 const wanted = new Map<string, Set<string>>();
@@ -74,10 +86,54 @@ export function layerKey(op: LiquidOp, target: LiquidTarget): string {
   return `${op.key}|${target.width}x${target.height}@${target.scale.toFixed(5)}+${target.origin.x.toFixed(2)},${target.origin.y.toFixed(2)}`;
 }
 
-/** The layer for a canvas, if it has been drawn; undefined if not yet (or if it failed). */
-export function drawnLayer(op: LiquidOp, target: LiquidTarget): LiquidLayer | null | undefined {
+/** Whether a layer's field is made for a canvas (or is known to hold nothing), so it can be lit. */
+export function layerReady(op: LiquidOp, target: LiquidTarget): boolean {
+  return drawn.has(layerKey(op, target));
+}
+
+function toCanvas(image: ImageData): HTMLCanvasElement | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+/**
+ * The layer for a canvas, lit in the op's colours, to be drawn at once (on
+ * the GPU it is one canvas shared by every layer, lit again for the next);
+ * null if it holds nothing, undefined if its field is not made yet.
+ */
+export function liquidLayer(op: LiquidOp, target: LiquidTarget): LiquidLayer | null | undefined {
   const key = layerKey(op, target);
-  return drawn.has(key) ? (drawn.get(key) ?? null) : undefined;
+  if (!drawn.has(key)) return undefined;
+  const field = drawn.get(key);
+  if (!field) return null;
+  const shading = { colours: op.colours, ground: op.ground };
+  const gpu = shadeOnGpu(field, shading, op.seed);
+  if (gpu) return { image: gpu.canvas, sx: gpu.sx, sy: gpu.sy, w: field.w, h: field.h, x: field.x, y: field.y };
+  // No WebGL 2: lit here, and kept, since that is slow.
+  const litKey = `${key}|${op.colours.join(",")}|${op.ground ?? "-"}`;
+  let canvas = lit.get(litKey);
+  if (!canvas) {
+    const image = shadeField(field, shading);
+    const made = toCanvas(new ImageData(image.data, image.w, image.h));
+    if (!made) return null;
+    canvas = made;
+    lit.set(litKey, canvas);
+    while (lit.size > LIT_KEPT) {
+      const [oldest, old] = lit.entries().next().value as [string, HTMLCanvasElement];
+      old.width = 0;
+      old.height = 0;
+      lit.delete(oldest);
+    }
+  } else {
+    lit.delete(litKey);
+    lit.set(litKey, canvas);
+  }
+  return { image: canvas, sx: 0, sy: 0, w: field.w, h: field.h, x: field.x, y: field.y };
 }
 
 /** Whether a layer for a canvas could not be drawn at all. */
@@ -85,12 +141,8 @@ export function layerFailed(op: LiquidOp, target: LiquidTarget): boolean {
   return failed.has(layerKey(op, target));
 }
 
-function release(layer: LiquidLayer | null | undefined) {
-  if (!layer) return;
-  held -= layer.bytes;
-  // A canvas of no size holds nothing; the browser can reclaim it at once.
-  layer.image.width = 0;
-  layer.image.height = 0;
+function release(field: LiquidField | null | undefined) {
+  if (field) held -= field.data.byteLength;
 }
 
 /** Layers let go, oldest first, until `bytes` more fit the budget; those a canvas needs are kept. */
@@ -104,45 +156,24 @@ function makeRoom(bytes: number, all = false) {
   }
 }
 
-function toCanvas(image: LiquidImage): HTMLCanvasElement | null {
-  const canvas = document.createElement("canvas");
-  canvas.width = image.w;
-  canvas.height = image.h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  ctx.putImageData(new ImageData(image.data, image.w, image.h), 0, 0);
-  return canvas;
-}
-
-/** Keep a drawn layer, or record that it could not be drawn, and tell the canvases. */
-function settle(key: string, image: LiquidImage | null | "failed") {
-  if (image === "failed") {
+/** Keep a made field, or record that it could not be made, and tell the canvases. */
+function settle(key: string, field: LiquidField | null | "failed") {
+  if (field === "failed") {
     failed.add(key);
-  } else if (!image || image.w <= 0 || image.h <= 0) {
+  } else if (!field || field.w <= 0 || field.h <= 0) {
     // Nothing to draw (a title of spaces): a layer of nothing is a fact, not a failure.
     drawn.set(key, null);
   } else {
-    const bytes = image.w * image.h * 4;
-    makeRoom(bytes);
-    let canvas = toCanvas(image);
-    if (!canvas) {
-      // Out of canvas memory, as a phone can be: let go of every layer not on screen, and try once more.
-      makeRoom(bytes, true);
-      canvas = toCanvas(image);
-    }
-    if (canvas) {
-      drawn.set(key, { image: canvas, x: image.x, y: image.y, bytes });
-      held += bytes;
-    } else {
-      failed.add(key);
-    }
+    makeRoom(field.data.byteLength);
+    drawn.set(key, field);
+    held += field.data.byteLength;
   }
   changed();
 }
 
 function drawHere(job: Job) {
   try {
-    settle(job.key, renderLiquid(job.paint, job.target));
+    settle(job.key, liquidField(job.paint, job.target));
   } catch {
     settle(job.key, "failed");
   }
@@ -188,7 +219,7 @@ function pump() {
   const id = nextId;
   nextId += 1;
   let over = false;
-  const end = (image: LiquidImage | null | undefined, dead: boolean) => {
+  const end = (field: LiquidField | null | undefined, dead: boolean) => {
     if (over) return;
     over = true;
     window.clearTimeout(watchdog);
@@ -201,19 +232,19 @@ function pump() {
         if (worker === w) worker = null;
         w.terminate();
         drawHere(job);
-      } else if (image === undefined) {
+      } else if (field === undefined) {
         // The worker could not draw it: neither, most likely, can the page, but it is tried.
         drawHere(job);
       } else {
-        settle(job.key, image);
+        settle(job.key, field);
       }
     } finally {
       finish();
     }
   };
-  const onMessage = (event: MessageEvent<{ id: number; image: LiquidImage | null; error?: string }>) => {
+  const onMessage = (event: MessageEvent<{ id: number; field: LiquidField | null; error?: string }>) => {
     if (event.data?.id !== id) return;
-    end(event.data.error ? undefined : event.data.image, false);
+    end(event.data.error ? undefined : event.data.field, false);
   };
   const onError = () => end(undefined, true);
   const watchdog = window.setTimeout(() => end(undefined, true), PATIENCE_MS);
@@ -224,7 +255,7 @@ function pump() {
 }
 
 /**
- * Ask for every layer of `ops`, drawn for a canvas. `slot` names the
+ * Ask for every layer of `ops`, made for a canvas. `slot` names the
  * canvas: what it asked for before and has not yet been sent is dropped,
  * and what it asks for now is kept while it shows it. The canvas hears that
  * a layer is ready through `subscribeLayers`.
@@ -239,7 +270,7 @@ export function drawLayers(ops: LiquidOp[], target: LiquidTarget, slot: string):
     queued.set(i ? `${slot}#${i}` : slot, {
       key,
       target,
-      paint: { chains: op.chains, colours: op.colours, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, seed: op.seed },
+      paint: { chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, square: op.square, seed: op.seed },
     });
   });
   pump();

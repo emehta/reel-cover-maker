@@ -35,6 +35,8 @@ export interface PlacedGlyph {
   /** A turn about its middle, in radians, and a lean (x moves by `skew` times the height above the baseline). */
   angle: number;
   skew: number;
+  /** The size the paste's thickness follows, in pixels per em, where it is neither `sx` nor `sy`. */
+  em?: number;
   seed: number;
 }
 
@@ -43,13 +45,20 @@ export interface PasteRecipe {
   weight: number;
   /** How much a stroke swells and pinches along its length, 0 to 1. */
   pressure: number;
-  /** How much bigger a stroke is where it starts and stops, 0 to 1. */
+  /** How much bigger a free end may swell into a blob, as a share of the radius: 0.8 is up to 1.8 times. */
   bulb: number;
   /** How far the centre line strays sideways, in em. */
   wobble: number;
   /** Passes of corner cutting: the plotter's sharp corners made liquid. */
   smooth: number;
-  /** The chance a glyph drips, and how far a drip runs, in em. */
+  /**
+   * The hand's own unsteadiness, in em: how far a stroke bows off its chord,
+   * and how far a glyph's strokes waver side to side as they run down it,
+   * so a stem is never ruled straight.
+   */
+  bow: number;
+  wave: number;
+  /** The chance a stem's foot runs on as a drip, and how far a drip runs, in em. */
   drip: number;
   dripLength: readonly [number, number];
   /** Droplets around each glyph, on average. */
@@ -128,8 +137,38 @@ export interface GlyphPaste {
 }
 
 /**
+ * A stroke as the hand drew it, in em: bowed off its chord one way or the
+ * other, and wavering side to side as it runs down the glyph, the same wave
+ * through every stroke of the glyph, so its stems sway together.
+ */
+function unsteady(points: [number, number][], seed: number, recipe: PasteRecipe, wave: { amp: number; length: number; phase: number }): [number, number][] {
+  if (points.length < 2) return points;
+  const [ax, ay] = points[0];
+  const [bx, by] = points[points.length - 1];
+  const chord = Math.hypot(bx - ax, by - ay);
+  const closed = chord < 0.05;
+  const next = random(mixSeed(seed, 0xb0));
+  const bow = closed ? 0 : recipe.bow * between(next, -1, 1) * Math.min(1, chord / 0.5);
+  const nx = chord ? -(by - ay) / chord : 0;
+  const ny = chord ? (bx - ax) / chord : 0;
+  let run = 0;
+  const along = points.map((p, i) => (i ? (run += Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1])) : 0));
+  const total = run || 1;
+  return points.map(([x, y], i) => {
+    const f = along[i] / total;
+    const bend = bow * Math.sin(Math.PI * f);
+    const sway = wave.amp * Math.sin((y / wave.length) * Math.PI * 2 + wave.phase);
+    return [x + nx * bend + sway, y + ny * bend];
+  });
+}
+
+/**
  * The paste for one glyph. `floor` is the lowest a drip may run to, and
  * `area` where droplets may land, both in pixels of the picture.
+ *
+ * Each choice is drawn from its own seeded stream (the hand's wave, each
+ * stroke's swelling, each end's blob or drip, the spatter), so a recipe
+ * with no drips draws the same strokes as one with them.
  */
 export function pasteGlyph(
   g: PlacedGlyph,
@@ -139,40 +178,53 @@ export function pasteGlyph(
 ): GlyphPaste {
   const place = placer(g);
   const size = g.sy;
-  const r0 = recipe.weight * size;
-  const next = random(g.seed);
-  const strength = between(next, 0.85, 1.18);
+  // The nozzle's width follows the letter's size, never its stretch: a
+  // letter drawn taller is drawn with the same paste, so its counters stay open.
+  const r0 = recipe.weight * (g.em ?? Math.min(g.sx, g.sy));
+  const hand = random(mixSeed(g.seed, 0x4a));
+  const strength = between(hand, 0.88, 1.14);
+  const wave = { amp: recipe.wave * between(hand, 0.4, 1), length: between(hand, 0.45, 0.9), phase: hand() * Math.PI * 2 };
   const chains: Chain[] = [];
-  const lows: { x: number; y: number; r: number; dx: number }[] = [];
+  const drips: { from: Bead; dx: number; dy: number; seed: number }[] = [];
 
-  // Every stroke in the picture's pixels, so an end can be checked against the others.
-  const others: [number, number][][] = g.glyph.strokes.map((flat) => {
+  // Every stroke as drawn, in the picture's pixels, so an end can be checked against the others.
+  const placed: [number, number][][] = g.glyph.strokes.map((flat, index) => {
     const pts: [number, number][] = [];
-    for (let i = 0; i < flat.length; i += 2) pts.push(place(flat[i], flat[i + 1]));
-    return pts;
+    for (let i = 0; i < flat.length; i += 2) pts.push([flat[i], flat[i + 1]]);
+    return unsteady(pts, mixSeed(g.seed, index + 1), recipe, wave).map(([u, v]) => place(u, v));
   });
 
-  g.glyph.strokes.forEach((_, index) => {
+  placed.forEach((raw, index) => {
     const seed = mixSeed(g.seed, index + 1);
-    const raw = others[index];
-    // A dot (the i's, a full stop): one round bead.
+    const next = random(seed);
+    // A dot (the i's, a full stop): one round ball, bigger than the stroke.
     if (raw.length === 1 || (raw.length === 2 && Math.hypot(raw[1][0] - raw[0][0], raw[1][1] - raw[0][1]) < r0 * 0.6)) {
-      chains.push([{ x: raw[0][0], y: raw[0][1], r: r0 * strength * between(next, 1.15, 1.45) }]);
+      chains.push([{ x: raw[0][0], y: raw[0][1], r: r0 * strength * between(next, 1.35, 1.8) }]);
       return;
     }
     const closed = Math.hypot(raw[0][0] - raw[raw.length - 1][0], raw[0][1] - raw[raw.length - 1][1]) < r0 * 0.5;
-    const { pts, at } = resample(chaikin(raw, recipe.smooth), Math.max(0.8, r0 * 0.7));
+    const { pts, at } = resample(chaikin(raw, recipe.smooth), Math.max(0.8, r0 * 0.6));
     const total = at[at.length - 1] || 1;
-    // Only an end that stands free swells: one that runs into another
-    // stroke is a joint, and a joint pools by itself. Not every free end
-    // swells either, or the letter reads as a string of beads.
+    // Only an end that stands free swells or drips: one that runs into
+    // another stroke is a joint, and a joint pools by itself.
     const free = (x: number, y: number) =>
-      !others.some((o, j) => j !== index && o.some(([ox, oy]) => Math.hypot(ox - x, oy - y) < r0 * 1.6));
-    const swell = () => (next() < 0.55 ? recipe.bulb * between(next, 0.3, 1) : 0);
-    const bulbStart = closed || !free(raw[0][0], raw[0][1]) ? 0 : swell();
-    const bulbEnd = closed || !free(raw[raw.length - 1][0], raw[raw.length - 1][1]) ? 0 : swell();
-    const reach = r0 * 2.4;
-    const wave = r0 * 7;
+      !placed.some((o, j) => j !== index && o.some(([ox, oy]) => Math.hypot(ox - x, oy - y) < r0 * 1.6));
+    type End = { kind: "plain" | "blob" | "drip"; size: number };
+    const endOf = (which: 0 | 1): End => {
+      const i = which ? pts.length - 1 : 0;
+      const [x, y] = pts[i];
+      if (closed || !free(x, y)) return { kind: "plain", size: 0 };
+      const choose = random(mixSeed(seed, 0xe0 + which));
+      // Pointing down: the foot of a stem, which may run on as a drip.
+      const [px, py] = pts[which ? Math.max(0, i - 4) : Math.min(pts.length - 1, 4)];
+      const down = y - py > Math.abs(x - px) * 1.4;
+      if (down && choose() < recipe.drip) return { kind: "drip", size: 0 };
+      return choose() < (down ? 0.7 : 0.45) ? { kind: "blob", size: recipe.bulb * between(choose, 0.4, 1) } : { kind: "plain", size: 0 };
+    };
+    const start = endOf(0);
+    const end = endOf(1);
+    const reach = r0 * 2.6;
+    const swell = r0 * 6;
     const chain: Chain = pts.map(([x, y], i) => {
       // The normal to the stroke here, for the wobble.
       const [ax, ay] = pts[Math.max(0, i - 1)];
@@ -180,77 +232,75 @@ export function pasteGlyph(
       const tx = bx - ax;
       const ty = by - ay;
       const tl = Math.hypot(tx, ty) || 1;
-      const sway = recipe.wobble * size * noise1(seed ^ 0x51ed, at[i] / wave);
+      const sway = recipe.wobble * size * noise1(seed ^ 0x51ed, at[i] / (r0 * 7));
       const s = at[i];
-      let r = r0 * strength * (1 + recipe.pressure * 0.42 * noise1(seed, s / (wave * 0.8)));
-      r *= 1 + bulbStart * 0.55 * (1 - smoothstep(0, reach, s)) ** 2;
-      r *= 1 + bulbEnd * 0.55 * (1 - smoothstep(0, reach, total - s)) ** 2;
-      return { x: x - (ty / tl) * sway, y: y + (tx / tl) * sway, r: Math.max(r0 * 0.35, r) };
+      // Thin through the middle of a long stroke, swelling and pinching as the hand pressed.
+      let r = r0 * strength * (1 + recipe.pressure * 0.5 * noise1(seed, s / swell));
+      r *= 1 - recipe.pressure * 0.18 * Math.sin(Math.PI * (s / total)) ** 2 * Math.min(1, total / (r0 * 10));
+      r *= 1 + start.size * (1 - smoothstep(0, reach, s)) ** 2;
+      r *= 1 + end.size * (1 - smoothstep(0, reach, total - s)) ** 2;
+      return { x: x - (ty / tl) * sway, y: y + (tx / tl) * sway, r: Math.max(r0 * 0.4, r) };
     });
     chains.push(chain);
-
-    // Where a drip could fall from: the stroke's low points that lie
-    // nearly level (a drip leaves the underside of a curve or a bar), and a
-    // stroke's end that points downward.
-    for (let i = 1; i < chain.length - 1; i += 1) {
-      const b = chain[i];
-      if (b.y >= chain[i - 1].y && b.y >= chain[i + 1].y && Math.abs(chain[i + 1].y - chain[i - 1].y) < b.r * 0.5) {
-        lows.push({ x: b.x, y: b.y, r: b.r, dx: 0 });
-      }
-    }
-    if (!closed) {
-      for (const [end, before] of [
-        [chain[chain.length - 1], chain[Math.max(0, chain.length - 4)]],
-        [chain[0], chain[Math.min(chain.length - 1, 3)]],
-      ] as const) {
-        if (end.y - before.y > Math.abs(end.x - before.x) * 1.2) lows.push({ x: end.x, y: end.y, r: end.r, dx: end.x - before.x });
-      }
+    for (const [which, kind] of [
+      [0, start.kind],
+      [1, end.kind],
+    ] as const) {
+      if (kind !== "drip") continue;
+      const i = which ? chain.length - 1 : 0;
+      const before = chain[which ? Math.max(0, i - 3) : Math.min(chain.length - 1, 3)];
+      const from = chain[i];
+      const l = Math.hypot(from.x - before.x, from.y - before.y) || 1;
+      drips.push({ from, dx: (from.x - before.x) / l, dy: (from.y - before.y) / l, seed: mixSeed(seed, 0xd1 + which) });
     }
   });
-
   const strokes = chains.length;
-  // Drips, most often one, from the lowest candidates first.
-  if (lows.length && next() < recipe.drip) {
-    lows.sort((a, b) => b.y - a.y);
-    const count = next() < 0.25 ? 2 : 1;
-    for (let d = 0; d < Math.min(count, lows.length); d += 1) {
-      const from = lows[Math.floor(next() * Math.min(lows.length, 3))];
-      const room = floor - (from.y + from.r);
-      const length = Math.min(room, between(next, recipe.dripLength[0], recipe.dripLength[1]) * size);
-      if (length < from.r * 1.2) continue;
-      const seed = mixSeed(g.seed, 0xd41f + d);
-      const drip: Chain = [];
-      const steps = Math.max(2, Math.ceil(length / (from.r * 0.4)));
-      for (let k = 0; k <= steps; k += 1) {
-        const t = k / steps;
-        const neck = 1 - 0.45 * smoothstep(0, 0.75, t);
-        const bead = t > 0.82 ? 0.55 + 0.5 * smoothstep(0.82, 1, t) : neck;
-        drip.push({
-          x: from.x + from.dx * 0.15 * t + noise1(seed, t * 2.2) * from.r * 0.25,
-          y: from.y + t * length,
-          r: from.r * bead * 0.95,
-        });
-      }
-      chains.push(drip);
+
+  // Each drip runs on from its stem's foot in the stem's direction, falls
+  // straight as gravity takes it, thins to a neck, and ends in a drop.
+  for (const d of drips) {
+    const next = random(d.seed);
+    const room = floor - (d.from.y + d.from.r);
+    const length = Math.min(room, between(next, recipe.dripLength[0], recipe.dripLength[1]) * size);
+    if (length < d.from.r * 1.5) continue;
+    const drop = between(next, 1.05, 1.4);
+    const neck = between(next, 0.42, 0.62);
+    const drip: Chain = [];
+    const steps = Math.max(3, Math.ceil(length / (d.from.r * 0.35)));
+    let x = d.from.x;
+    for (let k = 1; k <= steps; k += 1) {
+      const t = k / steps;
+      // The stem's lean, fading as the drip falls.
+      x += d.dx * (length / steps) * Math.max(0, 1 - t * 2.2) + noise1(d.seed, t * 3) * d.from.r * 0.04;
+      const thin = 1 - (1 - neck) * smoothstep(0, 0.55, t);
+      const end = t > 0.72 ? smoothstep(0.72, 0.97, t) : 0;
+      drip.push({ x, y: d.from.y + t * length, r: Math.max(r0 * 0.4, d.from.r * (thin + (drop - thin) * end)) });
     }
+    // The drop is round: its last bead sits a little above the tip, and
+    // no bead, swollen as the drop is, reaches past the floor.
+    const tip = drip[drip.length - 1];
+    tip.y -= tip.r * 0.4;
+    for (const b of drip) b.y = Math.min(b.y, floor - b.r);
+    chains.push([d.from, ...drip]);
   }
 
   // Droplets: a few spatters around the glyph, some with a tail toward it.
+  const spatter = random(mixSeed(g.seed, 0x5a));
   const droplets: Chain[] = [];
   const box = boundsOf(chains);
   const cx = (box.x0 + box.x1) / 2;
   const cy = (box.y0 + box.y1) / 2;
-  const count = Math.floor(recipe.droplets * between(next, 0, 2) + next() * 0.5);
+  const count = Math.floor(recipe.droplets * between(spatter, 0, 2) + spatter() * 0.5);
   for (let k = 0; k < count; k += 1) {
-    const angle = next() * Math.PI * 2;
-    const reachX = (box.x1 - box.x0) / 2 + between(next, 0.12, 0.55) * size;
-    const reachY = (box.y1 - box.y0) / 2 + between(next, 0.12, 0.55) * size;
+    const angle = spatter() * Math.PI * 2;
+    const reachX = (box.x1 - box.x0) / 2 + between(spatter, 0.12, 0.55) * size;
+    const reachY = (box.y1 - box.y0) / 2 + between(spatter, 0.12, 0.55) * size;
     const x = cx + Math.cos(angle) * reachX;
     const y = cy + Math.sin(angle) * reachY;
-    const r = r0 * between(next, 0.18, 0.62);
+    const r = r0 * between(spatter, 0.18, 0.7);
     if (x - r < area.x || x + r > area.x + area.w || y - r < area.y || y + r > area.y + area.h) continue;
     const drop: Chain = [{ x, y, r }];
-    if (next() < 0.4) {
+    if (spatter() < 0.4) {
       // A tail thinning toward the letter it flew from.
       const tx = cx - x;
       const ty = cy - y;

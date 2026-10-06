@@ -17,22 +17,36 @@ on top, so it stays in sight while you type).
 - **Pick a style.** Each thumbnail is your title in that style, cropped to the
   3:4 window the profile grid shows, so you choose by how it will look on
   your grid.
-  - **Pasty**: letters squeezed out of a tube of glossy paste, like ketchup,
-    ink or a balloon. They swell and pinch, bulge where a stroke stops,
-    drip, and spatter, and pack together to fill their block.
-  - **Pasty Flat**: the same paste, flat as a print.
-  - **Spread**: thick matte paste spread with a knife, in blocky capitals
-    packed into a square.
+  - **Pasty**: drippy hand lettering squeezed out in glossy gel, like
+    sriracha from a bottle. Tall letters, their case mixed as a sign
+    painter's hand mixes it, thin strokes that bow and sway and swell into
+    blobs, stems whose feet run on as drips. Letters keep a thin gap, now
+    and then touching so their gel bridges, and tuck under each other's
+    arms; lines nest into each other.
+  - **Pasty Flat**: the same lettering in thick, matte paste spread with a
+    knife.
+  - **Spread**: that knife-spread paste in blocky capitals, cut square at
+    their ends, packed into a square as a collage: every line runs the full
+    width, so a short line is set big; a long word may be broken across
+    two lines, and a short one set small between them ("ART / is / DIFFE /
+    RENT").
   - **Stickery**: each line you type is a sticker with stepped, cut paper
-    edges, in turn the colour's bright and pale tones. Starred words are in
-    gooey liquid lettering, the rest in a plain face; with no stars, each
-    sticker's longest word is the liquid one.
+    edges, in turn the colour and its pale tint, with a border that shows on
+    either background. Starred words are in gooey liquid lettering, the rest
+    in a plain face; with no stars, each sticker's longest word is the liquid
+    one. The stickers sit close, each somewhere along the cover's width.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
-- **Pick a colour**: green, yellow, blue, orange, purple, black, white, brown
-  or a dark red. The colour is the letters' (the paste, the ink, the
-  sticker), on a plain ground: off-white, or near-black where the colour is
-  light (yellow, orange, white).
+- **Shuffle** draws the letters another way: every random choice a style
+  makes (each letter's hand, the drips, the collage's arrangement, where the
+  stickers sit) is seeded by the title and the shuffle together, so what you
+  see is exactly what downloads, until you shuffle again.
+- **Pick a colour** with two sliders: the hue, and the shade from near-black
+  to near-white. The colour is the letters' (the paste, the ink, the
+  sticker). An emphasised word takes a shade of it further from the ground.
+  Dragging a slider only lights the paste again, so it keeps up with your
+  finger.
+- **Pick the background**: light or dark.
 - **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5.
 - **Grid crop** dims what the profile grid cuts off.
 - **Download** (or Cmd/Ctrl+S). On an iPhone or iPad the button reads **Save
@@ -41,8 +55,8 @@ on top, so it stays in sight while you type).
   Inside an app's own browser (Instagram's, when the link is opened from a
   bio), the cover opens on its own: press and hold it to save it.
 
-The title, style, colour and size are remembered in this browser, so the next
-cover matches the last one.
+The title, style, colour, background, size and shuffle are remembered in
+this browser, so the next cover matches the last one.
 
 To use it as a reel's cover: when posting, tap **Edit cover**, then **Add
 from camera roll**. In Instagram's settings, **Data usage and media quality →
@@ -76,9 +90,12 @@ nothing a cover says is cut off wherever it appears.
   on a phone.
 - **Colours that differ in lightness, not just hue.** Instagram stores colour
   at half resolution (4:2:0 chroma), so letters on a ground of the same
-  lightness fringe at every edge. The tests hold every colour's letters to
-  4.5:1 against their ground, an emphasised word to 3:1, and a sticker's
-  words to 4.5:1 on either of its tones.
+  lightness fringe at every edge. The sliders leave the choice to you, and
+  the page says so under them when the letters fall below 3:1 against the
+  background. The sliders work in OKLCH, so equal steps look equal and a
+  shade is as light at every hue; a sticker's or a highlight's words are
+  black or white, whichever reads, and the tests hold them to 4.5:1 at every
+  hue and shade.
 
 ## How it works
 
@@ -91,38 +108,60 @@ the same list and cannot disagree.
 Pasty, Spread and Stickery's liquid words are not a font. They are paste,
 drawn from scratch for every title:
 
-1. **Centre lines.** Each letter comes from a single-line font (a pen
-   plotter's: its glyphs are strokes, not outlines), the line a tube of
-   paste would follow. Pasty draws in EMS Elfin, and some words with EMS
-   Felix's brush capitals; Stickery's liquid words in Hershey Script; Spread
-   in Hershey Sans.
-2. **A dynamic font.** Every word is seeded by its own text, which picks its
-   hand; every letter by its word and its place in it, which picks its size,
-   lean, rise and squash. So a K is drawn one way in "kite" and another in
-   "handkerchief", and the same way every time either is typed.
-3. **Paste.** Each stroke becomes a chain of beads, each a point with a
-   radius: rounded at the plotter's corners, wobbling a little, swelling and
-   pinching with the pressure, bulging at a free end. Drips hang from a
-   stroke's low points, stopping short of the next line's ink, and droplets
-   spatter around.
-4. **Kerning by paste.** Paste swells, so each letter is moved right of its
-   neighbours until no bead of it comes near theirs, drips included, and
-   each line down until it clears the line above. Paste never fills the gap
-   between two letters or two lines.
-5. **Shape.** Each chain is the union of tapered capsules between its beads,
+1. **Centre lines.** Each letter comes from a single-line font: its glyphs
+   are strokes, not outlines, the line a nozzle of paste would follow.
+   Pasty draws in Drip, a hand drawn for it (`scripts/drip-font.mjs`): tall,
+   narrow, no serifs, curves where a pen would rule a line. Stickery's
+   liquid words are in Hershey Script, Spread in Hershey Sans.
+2. **A dynamic font.** Every word is seeded by its own text and the
+   shuffle; every letter by its word and its place in it, which picks its
+   size, lean, rise, squash, and whether it is drawn in its other case. So a
+   K is drawn one way in "kite" and another in "handkerchief", and the same
+   way every time either is typed.
+3. **The hand.** Each stroke is bowed off its chord, and a glyph's strokes
+   sway together as they run down it, so no stem is ruled straight.
+4. **Paste.** Each stroke becomes a chain of beads, each a point with a
+   radius: thin through its run, swelling and pinching with the pressure, a
+   free end swelling into a blob. A stem's foot may run on as a drip: in the
+   stem's direction at first, then straight down, thinning to a neck and
+   ending in a drop, stopping short of the next line's ink. The paste's
+   thickness follows the letter's size, never its stretch, so a tall letter
+   keeps its counters open.
+5. **Kerning by paste.** Paste swells, so each letter is moved to exactly
+   its gap from its neighbours, bead by bead: tucked under an arm as far as
+   the paste allows, never touching, except now and then a pair let meet so
+   their paste bridges. Lines come to their gap from the line above, rising
+   into the room between its letters. Words keep their space, ink to ink.
+6. **Shape.** Each chain is the union of tapered capsules between its beads,
    measured as an exact signed distance. Chains join by a smooth union, so
-   where strokes meet the paste pools into a fillet, as liquid does.
-6. **Light.** How deep a pixel sits inside its stroke, against the stroke's
-   radius, is how high the paste stands there. That height is lit from the
-   top left: wet and glossy with sharp highlights and a soft shadow (Pasty),
-   flat (Pasty Flat, Stickery), or matte, ridged along each stroke by the
-   knife and rough at the edge (Spread).
-7. **Off the page's thread.** The pixels are worked out in a web worker, a
-   few hundred milliseconds at full size, the preview first and then the
+   where strokes meet the paste pools into a fillet, as liquid does. Spread's
+   ends are cut square, as a knife leaves them.
+7. **Height.** How deep a pixel sits inside its stroke, against the radius
+   at that point of it, is how high the paste stands: a round tube of gel
+   whose blobs stand taller (Pasty), or paste of one thickness with a
+   rounded shoulder, broad knife swaths, a ridge here and there, soft lumps
+   and a ragged edge (Pasty Flat, Spread).
+8. **Light, on the GPU.** The field (depth, height, colour, tone) is lit in
+   a WebGL 2 shader every time a canvas is painted. Gel reflects a studio:
+   a large softbox, a strip light, the room and the table, by Fresnel, so
+   it catches the light at its shoulders as gel does, over a body that
+   absorbs more the thicker it is. Its shadow is traced across the paste's
+   real height toward the light and is a soft stain of its colour, as light
+   through gel is. Matte paste has soft light, its own ridges' shadows, a
+   satin sheen and a grey shadow. Without WebGL 2 the same light is worked
+   out on the page (`shadeField`).
+9. **Off the page's thread.** The field is made in a web worker, a few
+   hundred milliseconds at full size, the preview first and then the
    thumbnails; a newer title replaces an older one still waiting. If the
-   worker fails or stops answering, the page draws them itself. Drawn layers
-   are kept up to a budget in bytes, and a layer is known by its paste, so
-   it is never drawn where paste that has since moved used to be.
+   worker fails or stops answering, the page makes it itself. Fields are
+   kept up to a budget in bytes, known by their paste and never by their
+   colour, so a colour change makes nothing again and a field is never
+   drawn where paste that has since moved used to be.
+
+Spread's collage tries hundreds of ways of breaking the title into lines
+(a new line here, a long word broken there, a short word set small) and
+keeps the ones that come out nearest a square, breaking fewest words; the
+shuffle picks among the best few.
 
 Stickery's stickers are every letter's box, padded and snapped out to a
 coarse grid, with holes filled and gaps a cell wide closed, traced as a
@@ -134,15 +173,17 @@ stickers scale with the words, and a long line wraps inside its sticker.
 | `formats.ts` | The three sizes, Instagram's crop windows, and the safe area they agree on |
 | `title.ts` | What was typed, as lines and words, with stars read as emphasis |
 | `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows |
-| `liquid-layout.ts` | The liquid letters' hands, seeds and spacing, and lines packed to fill their block |
-| `liquid.ts` | A letter's paste: beads, pressure, bulbs, drips and droplets |
-| `liquid-render.ts` | The paste as pixels: distance fields, smooth union, height and light |
-| `liquid.worker.ts`, `liquid-client.ts` | The worker that draws the paste, and the page's queue for it |
-| `strokes/` | The single-line fonts, generated by `scripts/extract-strokes.mjs`, with their licences |
+| `liquid-layout.ts` | The liquid letters' hands, seeds, cases and spacing, and lines packed to fill their block |
+| `collage.ts` | Spread's square collage |
+| `liquid.ts` | A letter's paste: the hand's bow and sway, beads, pressure, blobs, drips and droplets |
+| `liquid-render.ts` | The paste as a field (distance fields, smooth union, square ends, height), and its light worked out on the page |
+| `liquid-gl.ts` | The same light, in a WebGL 2 shader |
+| `liquid.worker.ts`, `liquid-client.ts` | The worker that makes the fields, and the page's queue and lighting of them |
+| `strokes/` | The single-line fonts: Drip, from `scripts/drip-font.mjs`, and two Hershey fonts from `scripts/extract-strokes.mjs`, with their licences |
 | `stepped.ts` | Stickery's stepped sticker outline |
 | `scene.ts` | Each style, as a list of fills, grain, shapes, text and liquid layers |
 | `paint.ts` | Draws a scene on a canvas at any scale, from any origin |
-| `palettes.ts` | The nine colours and WCAG contrast |
+| `colour.ts`, `palettes.ts` | The sliders' colours in OKLCH, the roles a style reads, and WCAG contrast |
 | `noise.ts`, `grain.ts` | Seeded randomness, smooth noise, and film grain |
 | `fonts.ts`, `font-gate.ts` | The web faces, served by next/font, and whether every character of the title has its file yet |
 | `save.ts` | The file's name, and download or share sheet or press and hold |
@@ -169,7 +210,8 @@ npm run dev        # http://localhost:3000
 npm run check      # typecheck, lint and tests
 npm test           # scripts/reel-cover.test.mjs
 npm run build      # the static site, in out/
-node scripts/extract-strokes.mjs   # the stroke fonts again, from the hersheytext package
+node scripts/drip-font.mjs         # Drip again, from its drawing
+node scripts/extract-strokes.mjs   # the Hershey fonts again, from the hersheytext package
 ```
 
 No test framework: the tests are a plain `node` script that asserts and exits
@@ -177,12 +219,18 @@ non-zero (`scripts/alias-loader.mjs` lets it import by the `@/` alias). They
 set every style over hundreds of titles in every size and hold every word's
 ink to the safe area (the paste bead by bead, with a stand-in measurer whose
 italics, accents and emoji overhang), count every word and letter back, and
-check: that no larger size that fits was passed over; that letters never
-come closer than the ink gap; that a word is drawn the same wherever it
-goes; that a tapered capsule's distance matches the slow way of working it
-out; that two strokes pool when close and stay apart when not; that gloss
-casts a shadow and flat does not; that a sticker is straight steps on its
-grid round every letter; every colour's contrast; the font gate with loads
+check: that no larger size that fits was passed over; that letters keep
+their gap and touch only now and then; that a word is drawn the same
+wherever it goes, and the hand mixes its cases at about the rate it should;
+that drips stay above their floor; that a tapered capsule's distance
+matches the slow way of working it out; that two strokes pool when close
+and stay apart when not; that paste shades the ground away from the light,
+gel's shadow in its colour, and the layer's edge is exactly the ground;
+that a knife cuts ends square but never an O; that Spread's collage comes
+out square with its full lines justified; that the shuffle moves things and
+the same seed does not; that a sticker is straight steps on its grid round
+every letter, with a border that shows on either ground; the sliders'
+colours at every hue and shade; the font gate with loads
 that arrive late or never; the grain, the file names, the save method, and
 that the painter draws each word where the scene put it. Node strips the types
 from a `.ts` file on its own, so a module the tests load must write

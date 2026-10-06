@@ -5,8 +5,9 @@
  * A single-line font is a pen plotter's: every glyph is a set of centre
  * lines, not an outline, which is exactly what paste squeezed from a tube
  * follows. The fonts come from the hersheytext package (a dev dependency):
- * the Hershey fonts are public domain, and the EMS fonts are under the SIL
- * Open Font License (see src/components/reel-cover-maker/strokes/LICENSE.md).
+ * the Hershey fonts are public domain (see
+ * src/components/reel-cover-maker/strokes/LICENSE.md). Pasty's own hand,
+ * Drip, is drawn by scripts/drip-font.mjs instead.
  *
  * Each glyph is written as its advance and its strokes, every point in font
  * units (1000 to the em) with y pointing down from the baseline, and every
@@ -23,8 +24,6 @@ const OUT = join(ROOT, "src/components/reel-cover-maker/strokes");
 
 /** Which fonts, under which id, and what each is for. */
 const WANTED = [
-  { file: "EMSElfin.svg", id: "elfin", note: "hand-lettered, for Pasty" },
-  { file: "EMSFelix.svg", id: "felix", note: "brush-lettered, for Pasty" },
   { file: "HersheyScript1.svg", id: "script", note: "joined script, for Stickery's liquid words" },
   { file: "HersheySans1.svg", id: "sans", note: "plain capitals, for Spread" },
 ];

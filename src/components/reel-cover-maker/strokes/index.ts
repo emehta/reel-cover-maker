@@ -9,17 +9,15 @@
  * typed is ever lost.
  */
 
-import { ELFIN } from "@/components/reel-cover-maker/strokes/elfin";
-import { FELIX } from "@/components/reel-cover-maker/strokes/felix";
+import { DRIP } from "@/components/reel-cover-maker/strokes/drip";
 import { SANS } from "@/components/reel-cover-maker/strokes/sans";
 import { SCRIPT } from "@/components/reel-cover-maker/strokes/script";
 import type { StrokeFontData } from "@/components/reel-cover-maker/strokes/types";
 
-export type StrokeFontId = "elfin" | "felix" | "script" | "sans";
+export type StrokeFontId = "drip" | "script" | "sans";
 
 export const STROKE_FONTS: Record<StrokeFontId, StrokeFontData> = {
-  elfin: ELFIN,
-  felix: FELIX,
+  drip: DRIP,
   script: SCRIPT,
   sans: SANS,
 };

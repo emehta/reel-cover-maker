@@ -12,11 +12,12 @@
 import type { FaceId, Measurer } from "@/components/reel-cover-maker/faces";
 import { formatById, type FormatId, type Rect } from "@/components/reel-cover-maker/formats";
 import { flow, type Block } from "@/components/reel-cover-maker/layout";
+import { collageLayout } from "@/components/reel-cover-maker/collage";
 import { boundsOf, pasteGlyph, type Chain, type PasteRecipe } from "@/components/reel-cover-maker/liquid";
-import { liquidLayout, shrink, type LiquidSpec } from "@/components/reel-cover-maker/liquid-layout";
+import { liquidLayout, shrink, type LiquidLayout, type LiquidSpec } from "@/components/reel-cover-maker/liquid-layout";
 import type { Finish } from "@/components/reel-cover-maker/liquid-render";
 import { mixSeed, random, between, hashString } from "@/components/reel-cover-maker/noise";
-import { paletteById, readableOn, type Palette, type PaletteId } from "@/components/reel-cover-maker/palettes";
+import { paletteFor, readableOn, type Ground, type Palette } from "@/components/reel-cover-maker/palettes";
 import { polygonBounds, steppedOutline, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { parseTitle, type Paragraph } from "@/components/reel-cover-maker/title";
 
@@ -59,10 +60,18 @@ export interface LiquidOp {
   colourOf: number[];
   tone: number[];
   finish: Finish;
+  /**
+   * The ground the paste lies on, which the layer draws under it with the
+   * shadows the paste casts; null for paste alone, over whatever is drawn
+   * before it (Stickery's stickers).
+   */
+  ground: string | null;
   /** How far apart two strokes may be and still pool together, in pixels of the picture. */
   pool: number;
+  /** Strokes' free ends cut square, as a knife leaves paste. */
+  square: boolean;
   seed: number;
-  /** What the layer is of, for a cache of drawn layers. */
+  /** What the paste is, its colours aside, for a cache of made layers: a new colour is only light again. */
   key: string;
 }
 
@@ -100,8 +109,12 @@ export interface Scene {
 export interface CoverInput {
   title: string;
   style: StyleId;
-  palette: PaletteId;
+  hue: number;
+  shade: number;
+  ground: Ground;
   format: FormatId;
+  /** The shuffle: mixed into every random choice the style makes. */
+  seed: number;
 }
 
 function upper(paragraphs: Paragraph[]): Paragraph[] {
@@ -266,6 +279,9 @@ function rectOf(b: { x0: number; y0: number; x1: number; y1: number }): Rect {
   return { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 };
 }
 
+/** The least space between two words' paste, in em: a word space, measured ink to ink. */
+const WORD_GAP = 0.2;
+
 /** What a liquid style needs to set its letters. */
 interface LiquidStyle {
   spec: Omit<LiquidSpec, "box">;
@@ -275,72 +291,118 @@ interface LiquidStyle {
   pool: number;
   /** The least gap between two letters' paste, in em of the letter's height; 0 leaves a joined script joined. */
   kern: number;
+  /** The chance two neighbouring letters are let touch, so their paste bridges, as it does now and then from a bottle. */
+  merge?: number;
+  /**
+   * Whether kerning may also draw letters and lines together, tucking one
+   * under another's arm; otherwise it only ever pushes apart, for a layout
+   * that spaces its letters exactly itself.
+   */
+  tuck?: boolean;
+  /** Ends cut square, as a knife leaves paste. */
+  square?: boolean;
+  /** A layout of its own in place of the poster's lines. */
+  layout?: (paragraphs: Paragraph[], box: Rect, style: LiquidStyle, recipe: PasteRecipe) => LiquidLayout;
 }
 
-/** Hand-lettered paste: mostly a brush hand, now and then a rounder one, so no two words are drawn alike. */
+/**
+ * Drippy hand lettering in gel: Drip's tall letters, their case mixed, each
+ * stroke thin through its run and swelling into a blob at a free end, stems
+ * bowed and swaying, feet running on as drips.
+ */
 const PASTY: LiquidStyle = {
   spec: {
-    // Elfin's letters, and for some words Felix's brush capitals: Felix's
-    // own lowercase is too tight to read as paste.
-    fonts: [
-      { id: "elfin", share: 0.55 },
-      { id: "felix", share: 0.45, capitals: true },
-    ],
-    maxSize: 620,
+    fonts: [{ id: "drip", share: 1 }],
+    maxSize: 640,
     minSize: 64,
-    gap: -0.03,
+    gap: -0.04,
     maxLines: 7,
-    stretch: 1.9,
-    tracking: 0.02,
-    inkGap: 0.035,
-    jitter: { scale: 0.11, angle: 0.08, rise: 0.045, squash: 0.08 },
+    stretch: 1.25,
+    tracking: 0.01,
+    inkGap: 0.02,
+    jitter: { scale: 0.15, angle: 0.075, rise: 0.05, squash: 0.1 },
     upper: false,
+    swapCase: 0.3,
     salt: "pasty",
   },
-  // A short title is set fat, as balloons and blots are; a long one thinner, as paste from a bottle.
+  // A short title is set fat, as balloons and blots are; a long one thinner, as sauce from a bottle.
   recipe: (letters) => ({
-    weight: letters <= 6 ? 0.078 : letters <= 14 ? 0.066 : 0.057,
-    pressure: 0.85,
-    bulb: 0.9,
-    wobble: 0.03,
-    smooth: 2,
-    drip: 0.32,
-    dripLength: [0.22, 0.62],
-    droplets: 0.7,
+    weight: letters <= 6 ? 0.058 : letters <= 14 ? 0.05 : 0.045,
+    pressure: 0.8,
+    bulb: 0.7,
+    wobble: 0.01,
+    smooth: 1,
+    bow: 0.05,
+    wave: 0.028,
+    drip: 0.5,
+    dripLength: [0.16, 0.7],
+    droplets: 0.3,
   }),
   finish: "gloss",
   pool: 0.6,
-  kern: 0.035,
+  kern: 0.022,
+  merge: 0.2,
 };
 
-/** Thick paste spread with a knife: blocky capitals packed into a square. */
+/** Pasty's lettering in Spread's paste: thick, matte, spread with a knife. */
+const PASTY_MATTE: LiquidStyle = {
+  ...PASTY,
+  // Thicker: a knife lays paste down heavier than a nozzle squeezes it.
+  recipe: (letters) => ({ ...PASTY.recipe(letters), weight: PASTY.recipe(letters).weight * 1.4, droplets: 0.15 }),
+  finish: "matte",
+  pool: 0.35,
+};
+
+/**
+ * Thick paste spread with a knife: blocky capitals, their ends cut square,
+ * packed into a square as a collage, every line run the full width.
+ */
 const SPREAD: LiquidStyle = {
   spec: {
     fonts: [{ id: "sans", share: 1 }],
-    maxSize: 380,
-    minSize: 60,
-    gap: 0.02,
-    maxLines: 6,
-    stretch: 1.55,
-    tracking: 0.035,
-    inkGap: 0.05,
-    jitter: { scale: 0.05, angle: 0.035, rise: 0.02, squash: 0.06 },
+    maxSize: 900,
+    minSize: 56,
+    gap: 0,
+    maxLines: 8,
+    stretch: 1,
+    tracking: 0,
+    inkGap: 0,
+    jitter: { scale: 0.08, angle: 0.035, rise: 0.02, squash: 0.08 },
     upper: true,
     salt: "spread",
   },
   recipe: () => ({
-    weight: 0.088,
-    pressure: 0.35,
+    weight: 0.09,
+    pressure: 0.25,
     bulb: 0,
-    wobble: 0.014,
+    wobble: 0.01,
     smooth: 1,
+    bow: 0.012,
+    wave: 0.008,
     drip: 0,
     dripLength: [0, 0],
-    droplets: 0.12,
+    droplets: 0.08,
   }),
   finish: "matte",
   pool: 0.3,
   kern: 0.03,
+  tuck: false,
+  square: true,
+  layout: (paragraphs, box, style, recipe) =>
+    collageLayout(paragraphs, {
+      box,
+      font: style.spec.fonts[0].id,
+      weight: recipe.weight,
+      letterGap: 0.045,
+      lineGap: 0.05,
+      wordGap: 0.22,
+      condense: 0.8,
+      maxSize: style.spec.maxSize,
+      minSize: style.spec.minSize,
+      jitter: style.spec.jitter,
+      upper: true,
+      salt: style.spec.salt,
+    }),
 };
 
 /** Stickery's liquid words: a joined script, thick and bulbous, flat, with no drips. */
@@ -365,6 +427,8 @@ const GOO: LiquidStyle = {
     bulb: 1,
     wobble: 0.018,
     smooth: 2,
+    bow: 0,
+    wave: 0,
     drip: 0,
     dripLength: [0, 0],
     droplets: 0,
@@ -390,12 +454,14 @@ interface Set {
 }
 
 /**
- * How far right glyph `b`'s beads must move so none comes within `gap` of
- * any of glyph `a`'s: kerning by the paste itself, swelling and lean
- * included, so paste never fills the space between two letters.
+ * How far right glyph `b`'s beads must move (left, below zero) for the
+ * nearest of them to come exactly `gap` from `a`'s: kerning by the paste
+ * itself, swelling and lean included, so a letter tucks under its
+ * neighbour's arm as far as the paste lets it, and no further. Zero where
+ * no bead of `b` is level with one of `a`'s, and so nothing can meet.
  */
 export function kernBy(a: Chain[], b: Chain[], gap: number): number {
-  let need = 0;
+  let need = -Infinity;
   for (const ca of a) {
     for (const p of ca) {
       for (const cb of b) {
@@ -403,19 +469,19 @@ export function kernBy(a: Chain[], b: Chain[], gap: number): number {
           const reach = p.r + q.r + gap;
           const dy = q.y - p.y;
           if (Math.abs(dy) >= reach) continue;
-          // b moves right until the two beads are `reach` apart.
+          // b moves until the two beads are `reach` apart.
           const dx = Math.sqrt(reach * reach - dy * dy) - (q.x - p.x);
           if (dx > need) need = dx;
         }
       }
     }
   }
-  return need;
+  return Number.isFinite(need) ? need : 0;
 }
 
-/** The same, downward: how far `b` must drop so none of its beads comes within `gap` of `a`'s. */
+/** The same, downward: how far `b` must drop (rise, below zero) for its nearest bead to come exactly `gap` from `a`'s. */
 export function dropBy(a: Chain[], b: Chain[], gap: number): number {
-  let need = 0;
+  let need = -Infinity;
   for (const ca of a) {
     for (const p of ca) {
       for (const cb of b) {
@@ -429,7 +495,7 @@ export function dropBy(a: Chain[], b: Chain[], gap: number): number {
       }
     }
   }
-  return need;
+  return Number.isFinite(need) ? need : 0;
 }
 
 function shiftChains(chains: Chain[], dx: number, dy = 0): Chain[] {
@@ -463,7 +529,7 @@ function setLiquid(
   for (let attempt = 0; attempt < 6; attempt += 1) {
     // Letters kept apart by the paste's thickness and a gap, as a first guess the kerning then makes exact.
     const inkGap = style.spec.inkGap + 2 * recipe.weight;
-    const layout = liquidLayout(paragraphs, { ...style.spec, inkGap, box: inner });
+    const layout = style.layout ? style.layout(paragraphs, inner, style, recipe) : liquidLayout(paragraphs, { ...style.spec, inkGap, box: inner });
     if (!layout.glyphs.length && !layout.missing.length) return empty;
 
     // The strokes alone, to find where each line's ink starts, and so how
@@ -481,25 +547,37 @@ function setLiquid(
     };
     // Each letter's whole paste, drips and all.
     const pastes = layout.glyphs.map((g) => pasteGlyph(g, recipe, Math.min(box.y + box.h, floorOf(g.line)), canvas));
-    // Kerning, line by line, by that paste: each letter moves right of the
-    // last two on its line until no bead of it comes near theirs.
+    // Kerning, line by line, by that paste. Inside a word each letter moves
+    // to exactly its gap from the last two, tucking under an arm or over a
+    // tail as the paste allows; between words a letter only ever moves
+    // right, so a word's space is kept.
     const shift = new Array(layout.glyphs.length).fill(0);
     if (style.kern) {
       let lineShift = 0;
       layout.glyphs.forEach((g, i) => {
         if (i === 0 || layout.glyphs[i - 1].line !== g.line) lineShift = 0;
-        let need = 0;
+        let need = -Infinity;
+        // Mostly a thin gap, wider than the pooling reaches; now and then
+        // none, and the smooth union bridges the two letters' paste.
+        const touch = random(mixSeed(g.seed, 0x70c4))() < (style.merge ?? 0);
+        const gap = touch ? 0 : style.kern * g.sy * between(random(mixSeed(g.seed, 0x9a9)), 0.75, 1.35);
+        let within = false;
         for (let j = Math.max(0, i - 2); j < i; j += 1) {
-          if (layout.glyphs[j].line !== g.line) continue;
-          need = Math.max(need, kernBy(shiftChains(pastes[j].chains, shift[j]), shiftChains(pastes[i].chains, lineShift), style.kern * g.sy));
+          const h = layout.glyphs[j];
+          if (h.line !== g.line) continue;
+          const same = h.word === g.word;
+          within ||= same;
+          need = Math.max(need, kernBy(shiftChains(pastes[j].chains, shift[j]), shiftChains(pastes[i].chains, lineShift), same ? gap : WORD_GAP * g.sx));
         }
-        lineShift += need;
+        // Never further left than a third of an em: a letter tucks, it does not pass its neighbour.
+        lineShift += !Number.isFinite(need) ? 0 : within && style.tuck !== false ? Math.max(need, -0.33 * g.sy) : Math.max(0, need);
         shift[i] = lineShift;
       });
     }
 
-    // Then down: each line drops as far as it must to clear the line above,
-    // a descender above meeting an ascender below as much as a drip.
+    // Then down: each line comes to exactly its gap from the line above,
+    // rising into the room between its letters' tops or dropping clear of
+    // a descender or a drip, by up to a third of its height.
     const drop = new Map<number, number>();
     if (style.kern) {
       let total = 0;
@@ -508,7 +586,8 @@ function setLiquid(
           const previous = lines[li - 1];
           const above = layout.glyphs.flatMap((g, i) => (g.line === previous ? shiftChains(pastes[i].chains, shift[i], drop.get(g.line) ?? 0) : []));
           const here = layout.glyphs.flatMap((g, i) => (g.line === line ? shiftChains(pastes[i].chains, shift[i], total) : []));
-          total += dropBy(above, here, style.kern * (layout.sizes[line] ?? 0));
+          const size = layout.sizes[line] ?? 0;
+          total += Math.max(dropBy(above, here, style.kern * size), style.tuck === false ? 0 : -0.33 * size);
         }
         drop.set(line, total);
       });
@@ -598,11 +677,12 @@ function setLiquid(
 }
 
 /**
- * What a layer of paste is, from the paste itself: every bead, colour and
- * tone, to a hundredth of a pixel. A drawn layer is kept under this, so it
- * is never drawn where paste that has since moved used to be.
+ * What a layer of paste is, from the paste itself: every bead, which colour
+ * and tone it takes, to a hundredth of a pixel. A made layer is kept under
+ * this, so it is never drawn where paste that has since moved used to be;
+ * the colours themselves are left out, since they are only light.
  */
-export function pasteKey(chains: Chain[], colours: string[], colourOf: number[], tone: number[], finish: Finish, pool: number): string {
+export function pasteKey(chains: Chain[], colourOf: number[], tone: number[], finish: Finish, pool: number, square = false): string {
   let a = 0x811c9dc5;
   let b = 0x9e3779b9;
   const mix = (v: number) => {
@@ -622,7 +702,7 @@ export function pasteKey(chains: Chain[], colours: string[], colourOf: number[],
     mix((tone[i] ?? 1) * 1000);
   });
   mix(pool);
-  return `${finish}|${colours.join(",")}|${chains.length}|${a.toString(36)}${b.toString(36)}`;
+  return `${finish}${square ? "#" : ""}|${chains.length}|${a.toString(36)}${b.toString(36)}`;
 }
 
 /** A layer of paste from its parts, keyed by what it is. */
@@ -633,15 +713,17 @@ function pasteOp(
   colourOf: number[],
   tone: number[],
   finish: Finish,
+  ground: string | null,
   pool: number,
+  square: boolean,
   glyphOf: number[] = [],
   lineOf: number[] = [],
 ): LiquidOp {
-  const key = pasteKey(chains, colours, colourOf, tone, finish, pool);
-  return { kind: "liquid", chains, letters, glyphOf, lineOf, colours, colourOf, tone, finish, pool, seed: hashString(key), key };
+  const key = pasteKey(chains, colourOf, tone, finish, pool, square);
+  return { kind: "liquid", chains, letters, glyphOf, lineOf, colours, colourOf, tone, finish, ground, pool, square, seed: hashString(key), key };
 }
 
-function liquidOp(set: Set, style: LiquidStyle, colours: string[], withDroplets: boolean): LiquidOp {
+function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: string | null, withDroplets: boolean): LiquidOp {
   const chains = withDroplets ? [...set.chains, ...set.droplets] : set.chains;
   const typical = set.chains.length ? set.chains.reduce((sum, c) => sum + c[0].r, 0) / set.chains.length : 10;
   return pasteOp(
@@ -651,41 +733,61 @@ function liquidOp(set: Set, style: LiquidStyle, colours: string[], withDroplets:
     [...set.colourOf, ...(withDroplets ? set.droplets.map(() => 0) : [])],
     [...set.tone, ...(withDroplets ? set.droplets.map(() => 1) : [])],
     style.finish,
+    ground,
     typical * style.pool,
+    style.square ?? false,
     set.glyphOf,
     set.lineOf,
   );
 }
 
-/** Paste squeezed into letters: wet and glossy, or flat as a print. */
-function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, flat: boolean) {
-  const style = flat ? { ...PASTY, finish: "flat" as const } : PASTY;
+/** A style with the shuffle mixed into its seeds: the same title, drawn another way. */
+function shuffled(style: LiquidStyle, seed: number): LiquidStyle {
+  return seed ? { ...style, spec: { ...style.spec, salt: `${style.spec.salt}#${seed}` } } : style;
+}
+
+/** Paste squeezed into letters: wet, glossy gel, or thick matte paste spread with a knife. */
+function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, matte: boolean, seed: number) {
+  const style = shuffled(matte ? PASTY_MATTE : PASTY, seed);
   const set = setLiquid(paragraphs, safe, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
   return {
-    ops: [liquidOp(set, style, [palette.ink, palette.accent], true), ...set.missing] as Op[],
+    ops: [liquidOp(set, style, [palette.ink, palette.accent], palette.bg, true), ...set.missing] as Op[],
     readable: set.readable,
   };
 }
 
 /** Thick, matte paste spread in blocky capitals, packed into a square. */
-function spread(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer) {
+function spread(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, seed: number) {
   const side = Math.min(safe.w, safe.h);
   const box = { x: safe.x + (safe.w - side) / 2, y: safe.y + (safe.h - side) / 2, w: side, h: side };
-  const set = setLiquid(paragraphs, box, SPREAD, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
+  const style = shuffled(SPREAD, seed);
+  const set = setLiquid(paragraphs, box, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
   return {
-    ops: [{ kind: "grain", alpha: 0.06 } as Op, liquidOp(set, SPREAD, [palette.ink, palette.accent], true), ...set.missing],
+    ops: [liquidOp(set, style, [palette.ink, palette.accent], palette.bg, true), ...set.missing, { kind: "grain", alpha: 0.035 } as Op],
     readable: set.readable,
   };
 }
 
+/** Every op moved by (dx, dy). */
+function moveOp(op: Op, dx: number, dy: number): Op {
+  if (op.kind === "text" || op.kind === "box") return { ...op, x: op.x + dx, y: op.y + dy };
+  if (op.kind === "shape") return { ...op, polygons: op.polygons.map((p) => p.map((v, i) => v + (i % 2 ? dy : dx))) };
+  return op;
+}
+
 /**
- * Each typed line a sticker of straight steps, in turn the palette's bright
- * and pale sticker colours, its liquid words (starred, or the longest when
- * nothing is) over its plain ones. Everything, the steps and their padding
+ * Each typed line a sticker of straight steps, in turn the chosen colour
+ * and its pale tint, its liquid words (starred, or the longest when nothing
+ * is) over its plain ones. Everything, the steps and their padding
  * included, scales with one size, the largest at which it all fits; a long
  * line wraps inside its sticker.
+ *
+ * Nothing lines up on purpose: inside a sticker each line sits somewhere
+ * along its width, and each sticker somewhere along the cover's, all drawn
+ * from the title and the shuffle, so two titles never stack alike, and
+ * Shuffle moves them about. The stickers sit close, a step or so apart.
  */
-function stickery(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer) {
+function stickery(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, seed: number) {
   const starred = paragraphs.some((p) => p.some((w) => w.some((s) => s.emphasis)));
   // Which words are liquid: the starred ones, else each sticker's longest.
   const groups = paragraphs.map((p) => {
@@ -701,6 +803,8 @@ function stickery(paragraphs: Paragraph[], safe: Rect, palette: Palette, measure
     }
     return runs;
   });
+  const goo = shuffled(GOO, seed);
+  const salt = hashString(`stickery#${seed}#${paragraphs.map((p) => p.map((w) => w.map((s) => s.text).join("")).join(" ")).join("\n")}`);
 
   const plainScale = 0.36;
   const anywhere = { x: -1e5, y: -1e5, w: 2e5, h: 2e5 };
@@ -709,70 +813,106 @@ function stickery(paragraphs: Paragraph[], safe: Rect, palette: Palette, measure
     return { x: x - b.left * size, y: baseline - b.ascent * size, w: (b.left + b.right) * size, h: (b.ascent + b.descent) * size };
   };
 
+  /** One line of a sticker, set from (0, y): its ops, its paste, and the boxes its steps go round. */
+  const line = (run: (typeof groups)[number][number], y: number, size: number, ink: string, colours: string[]) => {
+    const texts: Op[] = [];
+    const chains: Chain[] = [];
+    const colourOf: number[] = [];
+    const boxes: Rect[] = [];
+    let bottom = y;
+    if (run.goo) {
+      const set = setLiquid(
+        [run.words],
+        { x: 0, y, w: size * 4.4, h: size * 3.6 },
+        { ...goo, spec: { ...goo.spec, maxSize: size, minSize: size * 0.45 } },
+        anywhere,
+        () => ink,
+        measurer,
+      );
+      // One box per stroke of paste, so the steps follow the letters.
+      for (const c of set.chains) {
+        chains.push(c);
+        colourOf.push(colours.indexOf(ink));
+        boxes.push(rectOf(boundsOf([c])));
+      }
+      for (const t of set.missing) {
+        if (t.kind !== "text") continue;
+        texts.push(t);
+        boxes.push(boxOf(t.face, t.text, t.x, t.y, t.size));
+      }
+      bottom = set.readable.y + set.readable.h;
+    } else {
+      const plain = flow(
+        [run.words],
+        { box: { x: 0, y, w: size * 4.4, h: size * plainScale * 12 }, face: "sans", emphasisFace: "sans", maxSize: size * plainScale, minSize: size * plainScale, leading: 1.06, align: "left" },
+        measurer,
+      );
+      // Set from the top of its slot, not the middle.
+      const lift = y - plain.bounds.y;
+      for (const l of plain.lines) {
+        for (const s of l.segments) {
+          texts.push({ kind: "text", text: s.text, face: s.face, size: s.size, x: s.x, y: l.baseline + lift, color: ink });
+          boxes.push(boxOf(s.face, s.text, s.x, l.baseline + lift, s.size));
+        }
+      }
+      bottom = plain.bounds.y + lift + plain.bounds.h;
+    }
+    const bounds = boxes.length ? union(boxes) : { x: 0, y, w: 0, h: 0 };
+    return { texts, chains, colourOf, boxes, bounds, bottom };
+  };
+
   const build = (size: number) => {
     const cell = Math.max(5, size * STEP);
     const pad = cell * 0.9;
-    const wrapAt = size * 4.4;
+    const colours: string[] = [];
+    // Each sticker on its own first, from (0, 0).
+    const stickers = groups.map((runs, gi) => {
+      const next = random(mixSeed(salt, gi + 1));
+      const fill = palette.sticker[gi % 2];
+      const ink = readableOn(fill);
+      if (!colours.includes(ink)) colours.push(ink);
+      let y = 0;
+      const lines = runs.map((run) => {
+        const made = line(run, y, size, ink, colours);
+        // The next line close under this one: plain words tuck up under paste a little.
+        y = made.bottom + (run.goo ? -0.02 : 0.03) * size;
+        return made;
+      });
+      // Each line somewhere along the sticker's width.
+      const width = Math.max(...lines.map((l) => l.bounds.w));
+      const texts: Op[] = [];
+      const chains: Chain[] = [];
+      const colourOf: number[] = [];
+      const boxes: Rect[] = [];
+      for (const l of lines) {
+        const dx = next() * (width - l.bounds.w) - l.bounds.x;
+        texts.push(...l.texts.map((t) => moveOp(t, dx, 0)));
+        chains.push(...shiftChains(l.chains, dx));
+        colourOf.push(...l.colourOf);
+        boxes.push(...l.boxes.map((b) => ({ ...b, x: b.x + dx })));
+      }
+      const polygons = steppedOutline(boxes, { cell, pad });
+      return { fill, texts, chains, colourOf, polygons, bounds: polygonBounds(polygons), next };
+    });
+    // Then stacked, a step or so apart, each somewhere along the widest's width and a little more.
+    const widest = Math.max(...stickers.map((st) => st.bounds.w), 0);
+    const span = widest * 1.16;
     const texts: Op[] = [];
     const shapes: Op[] = [];
     const chains: Chain[] = [];
     const colourOf: number[] = [];
-    const colours: string[] = [];
     const boxes: Rect[] = [];
     let y = 0;
-    groups.forEach((runs, gi) => {
-      const fill = palette.sticker[gi % 2];
-      const ink = readableOn(fill);
-      if (!colours.includes(ink)) colours.push(ink);
-      const groupBoxes: Rect[] = [];
-      const indent = gi % 2 === 0 ? 0 : size * 0.35;
-      for (const run of runs) {
-        if (run.goo) {
-          const set = setLiquid(
-            [run.words],
-            { x: indent, y, w: wrapAt, h: size * 3.6 },
-            { ...GOO, spec: { ...GOO.spec, maxSize: size, minSize: size * 0.45 } },
-            anywhere,
-            () => ink,
-            measurer,
-          );
-          // One box per stroke of paste, so the steps follow the letters.
-          for (const c of set.chains) {
-            chains.push(c);
-            colourOf.push(colours.indexOf(ink));
-            groupBoxes.push(rectOf(boundsOf([c])));
-          }
-          for (const t of set.missing) {
-            if (t.kind !== "text") continue;
-            texts.push(t);
-            groupBoxes.push(boxOf(t.face, t.text, t.x, t.y, t.size));
-          }
-          y = set.readable.y + set.readable.h + size * 0.04;
-        } else {
-          const plain = flow(
-            [run.words],
-            { box: { x: indent, y, w: wrapAt, h: size * plainScale * 12 }, face: "sans", emphasisFace: "sans", maxSize: size * plainScale, minSize: size * plainScale, leading: 1.1, align: "left" },
-            measurer,
-          );
-          // Set from the top of its slot, not the middle.
-          const lift = y - plain.bounds.y;
-          for (const line of plain.lines) {
-            for (const s of line.segments) {
-              texts.push({ kind: "text", text: s.text, face: s.face, size: s.size, x: s.x, y: line.baseline + lift, color: ink });
-              groupBoxes.push(boxOf(s.face, s.text, s.x, line.baseline + lift, s.size));
-            }
-          }
-          y = plain.bounds.y + lift + plain.bounds.h + size * 0.06;
-        }
-      }
-      const polygons = steppedOutline(groupBoxes, { cell, pad });
-      const bounds = polygonBounds(polygons);
-      shapes.push({ kind: "shape", polygons, color: fill, stroke: "#141414", strokeWidth: Math.max(1, cell * 0.13) });
-      boxes.push(bounds);
-      // The next sticker's steps reach its padding and up to a cell beyond
-      // its words: start them far enough down that the two never meet.
-      y = bounds.y + bounds.h + pad + cell * 2.2;
-    });
+    for (const st of stickers) {
+      const dx = st.next() * (span - st.bounds.w) - st.bounds.x;
+      const dy = y - st.bounds.y;
+      shapes.push({ kind: "shape", polygons: st.polygons.map((p) => p.map((v, i) => v + (i % 2 ? dy : dx))), color: st.fill, stroke: palette.outline, strokeWidth: Math.max(1, cell * 0.13) });
+      texts.push(...st.texts.map((t) => moveOp(t, dx, dy)));
+      chains.push(...shiftChains(st.chains, dx, dy));
+      colourOf.push(...st.colourOf);
+      boxes.push({ ...st.bounds, x: st.bounds.x + dx, y: st.bounds.y + dy });
+      y += st.bounds.h + cell * between(st.next, 0.35, 1.1);
+    }
     const bounds = boxes.length ? union(boxes) : { x: 0, y: 0, w: 0, h: 0 };
     return { texts, shapes, chains, colourOf, colours, bounds };
   };
@@ -795,19 +935,14 @@ function stickery(paragraphs: Paragraph[], safe: Rect, palette: Palette, measure
   // Centred in the safe area.
   const dx = safe.x + (safe.w - made.bounds.w) / 2 - made.bounds.x;
   const dy = safe.y + (safe.h - made.bounds.h) / 2 - made.bounds.y;
-  const move = (op: Op): Op => {
-    if (op.kind === "text" || op.kind === "box") return { ...op, x: op.x + dx, y: op.y + dy };
-    if (op.kind === "shape") return { ...op, polygons: op.polygons.map((p) => p.map((v, i) => v + (i % 2 ? dy : dx))) };
-    return op;
-  };
   const chains = shiftChains(made.chains, dx, dy);
   const typical = chains.length ? chains.reduce((sum, c) => sum + c[0].r, 0) / chains.length : 10;
   // Every liquid word on the cover is one layer, keyed by where it now is.
   const paste = chains.length
-    ? [pasteOp(chains, chains.length, made.colours, made.colourOf, chains.map(() => 1), GOO.finish, typical * GOO.pool)]
+    ? [pasteOp(chains, chains.length, made.colours, made.colourOf, chains.map(() => 1), GOO.finish, null, typical * GOO.pool, false)]
     : [];
   return {
-    ops: [...made.shapes.map(move), ...made.texts.map(move), ...paste],
+    ops: [...made.shapes.map((op) => moveOp(op, dx, dy)), ...made.texts.map((op) => moveOp(op, dx, dy)), ...paste],
     readable: { ...made.bounds, x: made.bounds.x + dx, y: made.bounds.y + dy },
   };
 }
@@ -831,7 +966,8 @@ export function liquidOps(scene: Scene): LiquidOp[] {
 /** The cover for a title, as ops to draw on a canvas the format's size. */
 export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const format = formatById(input.format);
-  const palette = paletteById(input.palette);
+  const palette = paletteFor({ hue: input.hue, shade: input.shade, ground: input.ground });
+  const seed = input.seed | 0;
   const { width, height, safe } = format;
   const paragraphs = parseTitle(input.title);
   const canvas = { x: width * 0.03, y: height * 0.03, w: width * 0.94, h: height * 0.94 };
@@ -839,13 +975,13 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const made: { ops: Op[]; readable: Rect; block?: Block } = (() => {
     switch (input.style) {
       case "pasty":
-        return pasty(paragraphs, safe, canvas, palette, measurer, false);
+        return pasty(paragraphs, safe, canvas, palette, measurer, false, seed);
       case "pasty-flat":
-        return pasty(paragraphs, safe, canvas, palette, measurer, true);
+        return pasty(paragraphs, safe, canvas, palette, measurer, true, seed);
       case "spread":
-        return spread(paragraphs, safe, canvas, palette, measurer);
+        return spread(paragraphs, safe, canvas, palette, measurer, seed);
       case "stickery":
-        return stickery(paragraphs, safe, palette, measurer);
+        return stickery(paragraphs, safe, palette, measurer, seed);
       case "echo":
         return echo(paragraphs, safe, palette, measurer, height);
       case "mono":

@@ -1,23 +1,28 @@
 "use client";
 
-import { DownloadSimple, FrameCorners } from "@phosphor-icons/react";
+import { DownloadSimple, FrameCorners, Shuffle } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
+import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
 import { loadDesign, saveDesign, type Design } from "@/components/reel-cover-maker/design";
 import { fontCss, fontsSnapshot, interTight, measurerFor, requestFonts, subscribeFonts } from "@/components/reel-cover-maker/fonts";
 import { FORMATS, formatById, type Format } from "@/components/reel-cover-maker/formats";
 import { GRAIN_TILE, grainPixels } from "@/components/reel-cover-maker/grain";
 import { APP_NAME } from "@/components/reel-cover-maker/meta";
 import { paint } from "@/components/reel-cover-maker/paint";
-import { PALETTES } from "@/components/reel-cover-maker/palettes";
+import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-maker/palettes";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
-import { drawLayers, drawnLayer, layerFailed, layersVersion, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
+import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
 import { buildScene, liquidOps, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
-/** How long typing must pause before the file is made ready to hand over. A tap on a style, colour or size makes it at once. */
+/**
+ * How long the picture must stay as it is before its file is made ready to
+ * hand over: typing, or a slider being dragged, makes a new picture every
+ * moment, and encoding each one would only slow the drag.
+ */
 const PREPARE_DELAY_MS = 250;
 
 /** A style thumbnail's width in canvas pixels: twice its widest on screen, for sharp text on a retina screen. */
@@ -44,7 +49,7 @@ function grain(): HTMLCanvasElement | null {
 const scenes = new Map<string, Scene>();
 
 function sceneFor(input: CoverInput, loads: number): Scene {
-  const key = JSON.stringify([input.title, input.style, input.palette, input.format, loads]);
+  const key = JSON.stringify([input.title, input.style, input.hue, input.shade, input.ground, input.format, input.seed, loads]);
   let scene = scenes.get(key);
   if (!scene) {
     scene = buildScene(input, measurerFor(loads));
@@ -134,7 +139,7 @@ function layersFor(scene: Scene | null, target: LiquidTarget | null) {
   const ops = liquidOps(scene);
   return {
     ops,
-    ready: ops.every((op) => drawnLayer(op, target) !== undefined),
+    ready: ops.every((op) => layerReady(op, target)),
     failed: ops.some((op) => layerFailed(op, target)),
   };
 }
@@ -160,7 +165,7 @@ function Thumb({ scene, format, slot }: { scene: Scene | null; format: Format; s
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    paint(ctx, scene, { scale, origin: target.origin, font: fontCss, grain: null, liquid: (op) => drawnLayer(op, target) ?? null });
+    paint(ctx, scene, { scale, origin: target.origin, font: fontCss, grain: null, liquid: (op) => liquidLayer(op, target) ?? null });
   });
   return <canvas ref={ref} className={styles.thumbCanvas} width={THUMB_WIDTH} height={320} aria-hidden="true" />;
 }
@@ -195,9 +200,8 @@ export default function ReelCoverMaker() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const holdRef = useRef<HTMLDialogElement>(null);
   const prepared = useRef<{ key: string; file: File } | null>(null);
-  /** What is on the canvas, and the title of the last picture drawn. */
+  /** What is on the canvas. */
   const painted = useRef<string | null>(null);
-  const drawnText = useRef<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
 
   const filled = hasTitle(design.text);
@@ -208,10 +212,17 @@ export default function ReelCoverMaker() {
   const method = useSyncExternalStore<SaveMethod>(subscribeTouch, currentSaveMethod, () => "download");
 
   const measurer = loads >= 0 ? measurerFor(loads) : null;
-  const scene = measurer ? sceneFor({ title, style: design.style, palette: design.palette, format: design.format }, loads) : null;
-  const thumbs = measurer
-    ? STYLES.map((style) => sceneFor({ title, style: style.id, palette: design.palette, format: design.format }, loads))
-    : null;
+  const input: CoverInput = {
+    title,
+    style: design.style,
+    hue: design.hue,
+    shade: design.shade,
+    ground: design.ground,
+    format: design.format,
+    seed: design.seed,
+  };
+  const scene = measurer ? sceneFor(input, loads) : null;
+  const thumbs = measurer ? STYLES.map((style) => sceneFor({ ...input, style: style.id }, loads)) : null;
   const name = fileName(design.text, design.format);
   // Drawn again when a liquid layer the preview waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
@@ -219,13 +230,20 @@ export default function ReelCoverMaker() {
   /** The whole picture can be drawn now: no liquid layer of it is still being drawn, and none failed. */
   const pictureReady = layers.ready && !layers.failed;
   /** What the drawn picture is of; a prepared file is handed over only if it is of the same. */
-  const key = JSON.stringify([design.text, design.style, design.palette, design.format, loads]);
+  const key = JSON.stringify([design.text, design.style, design.hue, design.shade, design.ground, design.format, design.seed, loads]);
 
   const update = (change: Partial<Design>) => {
     const next = { ...design, ...change };
     setDesign(next);
     saveDesign(next);
     setError(null);
+  };
+
+  /** Another draw of every random choice: a new seed, never the one showing. */
+  const shuffle = () => {
+    let seed = design.seed;
+    while (seed === design.seed) seed = Math.floor(Math.random() * 2 ** 30) + 1;
+    update({ seed });
   };
 
   useEffect(() => requestFonts(title), [title]);
@@ -266,14 +284,12 @@ export default function ReelCoverMaker() {
       if (canvas.height !== scene.height) canvas.height = scene.height;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op) => drawnLayer(op, mainTarget) ?? null });
+      paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op) => liquidLayer(op, mainTarget) ?? null });
       painted.current = key;
     }
     if (prepared.current?.key === key) return;
-    // Typing waits for a pause before the file is made; a tap on a style,
-    // a colour or a size, or a face arriving, does not.
-    const typing = drawnText.current !== null && drawnText.current !== design.text;
-    drawnText.current = design.text;
+    // The file waits for the picture to settle; the first one is made at once.
+    const first = prepared.current === null;
     const timer = window.setTimeout(
       () => {
         canvasFile(canvas, name).then(
@@ -283,10 +299,10 @@ export default function ReelCoverMaker() {
           () => {},
         );
       },
-      typing ? PREPARE_DELAY_MS : 0,
+      first ? 0 : PREPARE_DELAY_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [scene, name, key, design.text, pictureReady]);
+  }, [scene, name, key, pictureReady]);
 
   useEffect(() => {
     const dialog = holdRef.current;
@@ -388,9 +404,15 @@ export default function ReelCoverMaker() {
           </div>
 
           <div className={styles.field}>
-            <span className={styles.label} id="rcm-style-label">
-              Style
-            </span>
+            <div className={styles.labelRow}>
+              <span className={styles.label} id="rcm-style-label">
+                Style
+              </span>
+              <button type="button" className={styles.toggle} onClick={shuffle} title="Draw the letters another way">
+                <Shuffle size={16} weight="bold" aria-hidden="true" />
+                Shuffle
+              </button>
+            </div>
             <div className={styles.styles} role="radiogroup" aria-labelledby="rcm-style-label">
               {STYLES.map((style, i) => (
                 <label key={style.id} className={styles.style}>
@@ -411,23 +433,56 @@ export default function ReelCoverMaker() {
           </div>
 
           <div className={styles.field}>
-            <span className={styles.label} id="rcm-palette-label">
-              Colour
+            <div className={styles.labelRow}>
+              <span className={styles.label} id="rcm-colour-label">
+                Colour
+              </span>
+              <span className={styles.chip} style={{ background: sliderColour(design.hue, design.shade) }} aria-hidden="true" />
+            </div>
+            <div className={styles.sliders} role="group" aria-labelledby="rcm-colour-label">
+              <input
+                type="range"
+                className={styles.slider}
+                style={{ "--rcm-track": hueTrack(design.shade) } as CSSProperties}
+                min={0}
+                max={360}
+                step={1}
+                value={Math.round(design.hue)}
+                onChange={(event) => update({ hue: Number(event.target.value) })}
+                aria-label="Hue"
+              />
+              <input
+                type="range"
+                className={styles.slider}
+                style={{ "--rcm-track": shadeTrack(design.hue) } as CSSProperties}
+                min={0}
+                max={1}
+                step={0.01}
+                value={design.shade}
+                onChange={(event) => update({ shade: Number(event.target.value) })}
+                aria-label="Shade"
+              />
+            </div>
+            {design.style !== "stickery" && !standsOut(paletteFor(design)) && (
+              <p className={styles.hint}>Close to the background in lightness: the letters may blur once posted.</p>
+            )}
+          </div>
+
+          <div className={styles.field}>
+            <span className={styles.label} id="rcm-ground-label">
+              Background
             </span>
-            <div className={styles.swatches} role="radiogroup" aria-labelledby="rcm-palette-label">
-              {PALETTES.map((palette) => (
-                <label key={palette.id} className={styles.swatch} title={palette.name}>
+            <div className={`${styles.segments} ${styles.two}`} role="radiogroup" aria-labelledby="rcm-ground-label">
+              {(["light", "dark"] as const satisfies readonly Ground[]).map((ground) => (
+                <label key={ground} className={styles.segment}>
                   <input
                     type="radio"
-                    name="rcm-palette"
+                    name="rcm-ground"
                     className={styles.radio}
-                    checked={design.palette === palette.id}
-                    onChange={() => update({ palette: palette.id })}
+                    checked={design.ground === ground}
+                    onChange={() => update({ ground })}
                   />
-                  <span className={styles.swatchFace} style={{ background: palette.bg }}>
-                    <span className={styles.swatchDot} style={{ background: palette.ink }} />
-                  </span>
-                  <span className={styles.hidden}>{palette.name}</span>
+                  {ground === "light" ? "Light" : "Dark"}
                 </label>
               ))}
             </div>

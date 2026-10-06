@@ -18,6 +18,8 @@ const T = await import("@/components/reel-cover-maker/title");
 const L = await import("@/components/reel-cover-maker/layout");
 const S = await import("@/components/reel-cover-maker/scene");
 const P = await import("@/components/reel-cover-maker/palettes");
+const C = await import("@/components/reel-cover-maker/colour");
+const CL = await import("@/components/reel-cover-maker/collage");
 const D = await import("@/components/reel-cover-maker/design");
 const V = await import("@/components/reel-cover-maker/save");
 const G = await import("@/components/reel-cover-maker/grain");
@@ -99,6 +101,17 @@ const measurer = {
     };
   },
 };
+
+/** Colours to set covers in: near-black letters on the light ground, and a few others. */
+const INK = { hue: 0, shade: 0.02, ground: "light", seed: 0 };
+const COLOURS = {
+  green: { hue: 140, shade: 0.42 },
+  blue: { hue: 255, shade: 0.45 },
+  red: { hue: 25, shade: 0.42 },
+  purple: { hue: 305, shade: 0.45 },
+};
+/** A cover for a title in a style and size, in near-black unless told otherwise. */
+const cover = (title, style, format = "reel", colour = {}, m = measurer) => S.buildScene({ title, style, format, ...INK, ...colour }, m);
 
 /* Titles to set: words of every length, emphasis, line breaks, accents, emoji. */
 
@@ -359,7 +372,7 @@ check("every style keeps every word inside the safe area, in every size, over 41
   for (const format of F.FORMATS) {
     for (const style of S.STYLES) {
       for (const title of titlesFor(style.id)) {
-        const scene = S.buildScene({ title, style: style.id, palette: "black", format: format.id }, measurer);
+        const scene = cover(title, style.id, format.id);
         scenes += 1;
         assert.ok(inside(format.safe, scene.readable), `${style.id} ${format.id} "${title}" readable area leaves the safe area`);
         for (const { op, rect } of readableInk(scene)) {
@@ -377,7 +390,7 @@ check("no word is dropped or doubled: the drawn text is the typed text", () => {
   for (const format of F.FORMATS) {
     for (const style of S.STYLES.filter((s) => !LIQUID_STYLES.has(s.id))) {
       for (const title of TITLES) {
-        const scene = S.buildScene({ title, style: style.id, palette: "green", format: format.id }, measurer);
+        const scene = cover(title, style.id, format.id, COLOURS.green);
         const typed = stripSpaces(T.plainTitle(title));
         const expected = style.id === "echo" ? typed.toLocaleUpperCase() : typed;
         assert.equal(stripSpaces(mainText(scene)), expected, `${style.id} ${format.id} "${title}"`);
@@ -390,7 +403,7 @@ check("even the longest unbroken title stays inside the safe area", () => {
   for (const format of F.FORMATS) {
     for (const style of S.STYLES) {
       for (const title of PATHOLOGICAL) {
-        const scene = S.buildScene({ title, style: style.id, palette: "black", format: format.id }, measurer);
+        const scene = cover(title, style.id, format.id);
         for (const { rect } of readableInk(scene)) assert.ok(inside(format.safe, rect, 1), `${style.id} ${format.id} "${title}"`);
         assert.ok(inside(format.safe, scene.readable, 1), `${style.id} ${format.id} "${title}" readable area`);
       }
@@ -400,7 +413,7 @@ check("even the longest unbroken title stays inside the safe area", () => {
 
 check("Echo repeats the title in outline toward both edges, never a copy wholly off the cover", () => {
   for (const format of F.FORMATS) {
-    const scene = S.buildScene({ title: "FOCUS", style: "echo", palette: "black", format: format.id }, measurer);
+    const scene = cover("FOCUS", "echo", format.id);
     const copies = scene.ops.filter((op) => op.kind === "text" && op.outline);
     const main = scene.ops.find((op) => op.kind === "text" && !op.outline);
     assert.ok(copies.some((op) => op.y < main.y) && copies.some((op) => op.y > main.y), `${format.id} echoes one way only`);
@@ -414,7 +427,7 @@ check("Echo repeats the title in outline toward both edges, never a copy wholly 
 
 check("Mono ends with its cursor after the last letter, and the block sits in the middle", () => {
   const format = F.formatById("reel");
-  const scene = S.buildScene({ title: "hello world", style: "mono", palette: "black", format: "reel" }, measurer);
+  const scene = cover("hello world", "mono", "reel");
   const caret = scene.ops.at(-1);
   const lastText = scene.ops.filter((op) => op.kind === "text").at(-1);
   assert.equal(caret.kind, "box");
@@ -424,56 +437,109 @@ check("Mono ends with its cursor after the last letter, and the block sits in th
 });
 
 check("Mono's highlight covers an accented capital, and its cursor stays in when a word is broken", () => {
-  const scene = S.buildScene({ title: "*ÉÅ*", style: "mono", palette: "black", format: "reel" }, measurer);
+  const scene = cover("*ÉÅ*", "mono", "reel");
   const box = scene.ops.find((op) => op.kind === "box");
   const text = scene.ops.find((op) => op.kind === "text");
   assert.ok(box.y <= text.y - measurer.bounds(text.face, text.text).ascent * text.size);
   for (const title of ["https://example.com/very/long/url/path/that/goes", "x".repeat(49)]) {
-    const broken = S.buildScene({ title, style: "mono", palette: "black", format: "reel" }, measurer);
+    const broken = cover(title, "mono", "reel");
     const caret = broken.ops.at(-1);
     assert.equal(caret.kind, "box");
     assert.ok(inside(F.formatById("reel").safe, caret, 0.01), `"${title}" cursor outside`);
   }
 });
 
-check("the first op fills the whole cover with the palette's ground", () => {
-  for (const style of S.STYLES) {
-    const scene = S.buildScene({ title: "x", style: style.id, palette: "blue", format: "post-4x5" }, measurer);
-    assert.deepEqual(scene.ops[0], { kind: "fill", color: P.paletteById("blue").bg });
+check("the first op fills the whole cover with the chosen ground", () => {
+  for (const ground of ["light", "dark"]) {
+    for (const style of S.STYLES) {
+      const scene = cover("x", style.id, "post-4x5", { ...COLOURS.blue, ground });
+      assert.deepEqual(scene.ops[0], { kind: "fill", color: P.GROUNDS[ground] });
+    }
   }
 });
 
 console.log("colour");
 
-check("nine colours, named for the letters, as asked: green, yellow, blue, orange, purple, black, white, brown, a dark red", () => {
-  assert.deepEqual(P.PALETTES.map((p) => p.name), ["Green", "Yellow", "Blue", "Orange", "Purple", "Black", "White", "Brown", "Red"]);
-  assert.equal(new Set(P.PALETTES.map((p) => p.id)).size, P.PALETTES.length);
-  for (const p of P.PALETTES) for (const c of [p.bg, p.ink, p.accent, ...p.sticker]) assert.match(c, /^#[0-9A-F]{6}$/i, `${p.id} ${c}`);
-  // The red is a dark one.
-  assert.ok(P.luminance(P.paletteById("red").ink) < 0.1);
+const HUES = Array.from({ length: 24 }, (_, i) => i * 15);
+const SHADES = Array.from({ length: 21 }, (_, i) => i / 20);
+
+check("every hue and shade the sliders reach is a real sRGB colour, as a six-digit hex", () => {
+  for (const hue of HUES) for (const shade of SHADES) assert.match(C.sliderColour(hue, shade), /^#[0-9A-F]{6}$/, `${hue} ${shade}`);
+  assert.equal(C.sliderColour(360, 0.5), C.sliderColour(0, 0.5), "the hue wraps round");
 });
 
-check("the letters read on their plain ground at 4.5:1, an emphasised word at 3:1", () => {
-  for (const p of P.PALETTES) {
-    assert.ok(P.contrast(p.ink, p.bg) >= 4.5, `${p.id} letters on ground ${P.contrast(p.ink, p.bg).toFixed(2)}`);
-    assert.ok(P.contrast(p.accent, p.bg) >= 3, `${p.id} accent on ground ${P.contrast(p.accent, p.bg).toFixed(2)}`);
-    assert.notEqual(p.accent, p.ink, `${p.id} emphasis would not show`);
+check("shade runs from near-black to near-white at every hue, always lighter as it rises", () => {
+  for (const hue of HUES) {
+    const lum = SHADES.map((shade) => P.luminance(C.sliderColour(hue, shade)));
+    for (let i = 1; i < lum.length; i += 1) assert.ok(lum[i] > lum[i - 1], `hue ${hue}: shade ${SHADES[i]} is not lighter`);
+    assert.ok(lum[0] < 0.03 && lum.at(-1) > 0.8, `hue ${hue} runs ${lum[0].toFixed(3)} to ${lum.at(-1).toFixed(3)}`);
   }
 });
 
-check("a sticker's words read on either of its colours at 4.5:1", () => {
-  for (const p of P.PALETTES) {
-    for (const fill of p.sticker) assert.ok(P.contrast(P.readableOn(fill), fill) >= 4.5, `${p.id} on ${fill}`);
+check("in the middle of the shade, the hue slider runs through the colours, not shades of one", () => {
+  const [r, g, b] = [0, 120, 240].map((hue) => P.rgb(C.sliderColour(hue, 0.55)));
+  assert.ok(r[0] > r[1] && r[0] > r[2], "hue 0 is not red");
+  assert.ok(g[1] > g[0] && g[1] > g[2], "hue 120 is not green");
+  assert.ok(b[2] > b[0] && b[2] > b[1], "hue 240 is not blue");
+});
+
+check("the default is a deep sauce red, and it reads on the light ground at 4.5:1", () => {
+  const palette = P.paletteFor(P.DEFAULT_COLOUR);
+  const [r, g, b] = P.rgb(palette.ink);
+  assert.ok(r > 150 && g < 80 && b < 80, palette.ink);
+  assert.ok(P.contrast(palette.ink, palette.bg) >= 4.5);
+});
+
+check("a sticker's border shows on either ground: dark on light, light on dark, at 4.5:1", () => {
+  for (const ground of ["light", "dark"]) {
+    const palette = P.paletteFor({ ...COLOURS.green, ground });
+    assert.ok(P.contrast(palette.outline, palette.bg) >= 4.5, `${ground}: border ${palette.outline} on ${palette.bg}`);
   }
 });
 
-check("Mono's highlighted words read on their highlight at 4.5:1", () => {
-  for (const p of P.PALETTES) {
-    const scene = S.buildScene({ title: "a *b*", style: "mono", palette: p.id, format: "reel" }, measurer);
+check("an emphasised word is another shade of the colour, further from the ground", () => {
+  for (const ground of ["light", "dark"]) {
+    for (const hue of HUES) {
+      for (const shade of [0.3, 0.5, 0.7]) {
+        const palette = P.paletteFor({ hue, shade, ground });
+        assert.notEqual(palette.accent, palette.ink, `${ground} ${hue} ${shade}`);
+        assert.ok(P.contrast(palette.accent, palette.bg) >= P.contrast(palette.ink, palette.bg), `${ground} ${hue} ${shade}: the accent is closer to the ground`);
+      }
+    }
+  }
+});
+
+check("words on a sticker or a highlight read on it at 4.5:1, whatever the colour", () => {
+  for (const ground of ["light", "dark"]) {
+    for (const hue of HUES) {
+      for (const shade of SHADES) {
+        const palette = P.paletteFor({ hue, shade, ground });
+        for (const fill of [...palette.sticker, palette.accent]) assert.ok(P.contrast(P.readableOn(fill), fill) >= 4.5, `${ground} ${hue} ${shade} on ${fill}`);
+      }
+    }
+  }
+});
+
+check("Mono's highlighted words read on their highlight", () => {
+  for (const hue of HUES) {
+    const scene = cover("a *b*", "mono", "reel", { hue, shade: 0.5 });
     const mark = scene.ops.find((op) => op.kind === "box");
     const marked = scene.ops.filter((op) => op.kind === "text").at(-1);
-    assert.ok(P.contrast(marked.color, mark.color) >= 4.5, `${p.id} highlighted text`);
+    assert.ok(P.contrast(marked.color, mark.color) >= 4.5, `hue ${hue}`);
   }
+});
+
+check("the page warns when the letters sit too close to the ground in lightness, and only then", () => {
+  assert.equal(P.standsOut(P.paletteFor({ hue: 24, shade: 0.5, ground: "light" })), true);
+  assert.equal(P.standsOut(P.paletteFor({ hue: 24, shade: 0.97, ground: "light" })), false);
+  assert.equal(P.standsOut(P.paletteFor({ hue: 24, shade: 0.02, ground: "dark" })), false);
+  assert.equal(P.standsOut(P.paletteFor({ hue: 90, shade: 0.8, ground: "dark" })), true);
+});
+
+check("the slider tracks run through every hue at the shade, and every shade of the hue", () => {
+  assert.equal(C.hueTrack(0.5).match(/#[0-9A-F]{6}/g).length, 13);
+  assert.equal(C.shadeTrack(200).match(/#[0-9A-F]{6}/g).length, 11);
+  assert.ok(C.shadeTrack(200).startsWith("linear-gradient(to right, "));
 });
 
 check("contrast is WCAG's: black on white is 21, a colour on itself 1", () => {
@@ -485,15 +551,16 @@ check("contrast is WCAG's: black on white is 21, a colour on itself 1", () => {
 console.log("memory");
 
 check("a design round-trips through storage", () => {
-  const design = { text: "How I *plan*", style: "spread", palette: "purple", format: "post-4x5" };
+  const design = { text: "How I *plan*", style: "spread", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345 };
   assert.deepEqual(D.readDesign(D.writeDesign(design)), design);
 });
 
 check("whatever storage holds, the maker opens with something it understands", () => {
   for (const raw of [null, "", "not json", "null", "42", "[1,2]", '"text"', "{}"]) assert.deepEqual(D.readDesign(raw), D.DEFAULT_DESIGN, String(raw));
-  const odd = D.readDesign(JSON.stringify({ text: 7, style: "vaporwave", palette: "green", format: "square" }));
-  assert.deepEqual(odd, { ...D.DEFAULT_DESIGN, palette: "green" });
-  // What the last version stored: its styles and colours are gone, and fall back.
+  const odd = D.readDesign(JSON.stringify({ text: 7, style: "vaporwave", hue: 400, shade: -1, ground: "pink", format: "square", seed: 1.5 }));
+  assert.deepEqual(odd, D.DEFAULT_DESIGN);
+  assert.deepEqual(D.readDesign(JSON.stringify({ hue: 0, shade: 1, ground: "dark", seed: -7 })), { ...D.DEFAULT_DESIGN, hue: 0, shade: 1, ground: "dark", seed: -7 });
+  // What the last version stored: nine named colours, gone, and styles since removed; the title is kept.
   const old = D.readDesign(JSON.stringify({ text: "kept", style: "poster", palette: "cobalt", format: "reel" }));
   assert.deepEqual(old, { ...D.DEFAULT_DESIGN, text: "kept" });
   for (const style of ["glow", "sticker"]) assert.equal(D.readDesign(JSON.stringify({ style })).style, D.DEFAULT_DESIGN.style);
@@ -681,7 +748,7 @@ function recorder() {
     closePath: () => {},
     fill: () => calls.push({ kind: "fill", style: ctx.fillStyle }),
     stroke: () => calls.push({ kind: "stroke", style: ctx.strokeStyle, width: ctx.lineWidth }),
-    drawImage: (image, x, y) => calls.push({ kind: "drawImage", image, at: [x, y], m: [...m] }),
+    drawImage: (image, ...args) => calls.push({ kind: "drawImage", image, at: args.length > 2 ? args.slice(4, 6) : args, from: args.length > 2 ? args.slice(0, 4) : null, m: [...m] }),
     createRadialGradient: () => ({ stops: [], addColorStop(o, c) { this.stops.push([o, c]); } }),
     createPattern: () => ({ pattern: true }),
     get depth() {
@@ -695,7 +762,7 @@ const font = (face, size) => `${size}px ${face}`;
 
 check("every word is drawn where the scene puts it, at any scale and from any origin", () => {
   for (const style of S.STYLES) {
-    const scene = S.buildScene({ title: "How I *actually* save money", style: style.id, palette: "black", format: "reel" }, measurer);
+    const scene = cover("How I *actually* save money", style.id, "reel");
     for (const [scale, origin] of [[1, { x: 0, y: 0 }], [0.25, { x: 0, y: 240 }]]) {
       const ctx = recorder();
       paint(ctx, scene, { scale, origin, font, grain: null });
@@ -730,8 +797,20 @@ check("every word is drawn where the scene puts it, at any scale and from any or
   }
 });
 
+check("a liquid layer is copied from its part of the lit canvas to its place, without the scene's scale", () => {
+  const scene = cover("kite", "pasty");
+  const ctx = recorder();
+  const image = { lit: true };
+  paint(ctx, scene, { scale: 0.5, origin: { x: 0, y: 240 }, font, grain: null, liquid: () => ({ image, sx: 3, sy: 5, w: 10, h: 12, x: 40, y: 50 }) });
+  const [call] = ctx.calls.filter((c) => c.kind === "drawImage");
+  assert.equal(call.image, image);
+  assert.deepEqual(call.from, [3, 5, 10, 12]);
+  assert.deepEqual(call.at, [40, 50]);
+  assert.deepEqual(call.m, [1, 0, 0, 1, 0, 0]);
+});
+
 check("grain is drawn only when there is a tile to draw", () => {
-  const scene = S.buildScene({ title: "grain", style: "editorial", palette: "green", format: "reel" }, measurer);
+  const scene = cover("grain", "editorial", "reel", COLOURS.green);
   const without = recorder();
   paint(without, scene, { scale: 1, font, grain: null });
   const withTile = recorder();
@@ -742,7 +821,7 @@ check("grain is drawn only when there is a tile to draw", () => {
 
 console.log("strokes");
 
-const FONT_IDS = ["elfin", "felix", "script", "sans"];
+const FONT_IDS = ["drip", "script", "sans"];
 
 check("every printable letter, figure and mark has strokes in every hand", () => {
   for (const font of FONT_IDS) {
@@ -774,14 +853,27 @@ check("each hand's metrics are its own, measured from its glyphs", () => {
     const m = ST.strokeMetrics(font);
     assert.ok(m.cap > m.xHeight && m.xHeight > 0.2 && m.ascent >= m.cap && m.descent > 0.1 && m.space > 0, `${font} ${JSON.stringify(m)}`);
   }
-  assert.notEqual(ST.strokeMetrics("elfin").xHeight, ST.strokeMetrics("felix").xHeight);
+  assert.notEqual(ST.strokeMetrics("drip").xHeight, ST.strokeMetrics("script").xHeight);
+});
+
+check("Drip draws every Latin-1 letter, accents built over the letter and an i's dot left off under one", () => {
+  for (let c = 0xc0; c <= 0xff; c += 1) {
+    const ch = String.fromCharCode(c);
+    if (ch === "\u00d7" || ch === "\u00f7") continue;
+    assert.ok(ST.strokeGlyphs("drip", ch).length >= 1, `Drip has no ${ch}`);
+  }
+  const dots = (ch) => ST.strokeGlyphs("drip", ch)[0].strokes.filter((st) => st.length === 2).length;
+  assert.equal(dots("i"), 1);
+  assert.equal(dots("\u00ed"), 0, "an i with an acute keeps its dot");
+  assert.equal(dots("\u00ef"), 2, "an i with two dots has the diaeresis's two and not its own");
+  for (const ch of ["\u00a3", "\u20ac", "\u00b0"]) assert.ok(ST.strokeGlyphs("drip", ch).length, `Drip has no ${ch}`);
 });
 
 console.log("paste");
 
-const RECIPE = { weight: 0.07, pressure: 0.85, bulb: 0.9, wobble: 0.03, smooth: 2, drip: 1, dripLength: [0.2, 0.6], droplets: 1 };
+const RECIPE = { weight: 0.07, pressure: 0.85, bulb: 0.9, wobble: 0.03, smooth: 2, bow: 0.05, wave: 0.03, drip: 1, dripLength: [0.2, 0.6], droplets: 1 };
 const AREA = { x: 0, y: 0, w: 1080, h: 1920 };
-const placed = (ch, seed, extra = {}) => ({ glyph: ST.strokeGlyphs("elfin", ch)[0], x: 300, y: 900, sx: 300, sy: 300, angle: 0.05, skew: 0, seed, ...extra });
+const placed = (ch, seed, extra = {}) => ({ glyph: ST.strokeGlyphs("drip", ch)[0], x: 300, y: 900, sx: 300, sy: 300, angle: 0.05, skew: 0, seed, ...extra });
 
 check("corner cutting keeps a stroke's ends and rounds its corners", () => {
   const out = LQ.chaikin([[0, 0], [10, 0], [10, 10]], 2);
@@ -803,25 +895,44 @@ check("a letter's paste is the same every time from its seed, and another seed i
   assert.notDeepEqual(a, LQ.pasteGlyph(placed("k", 12), RECIPE, 1500, AREA));
 });
 
-check("drips never run below their floor, droplets land in their area, no bead is thinner than a third of the paste", () => {
+check("drips never run below their floor, droplets land in their area, no bead is thinner than two fifths of the paste", () => {
   const area = { x: 100, y: 500, w: 800, h: 800 };
+  let drips = 0;
   for (let seed = 1; seed <= 300; seed += 1) {
-    const ch = "abcdefghijklmnopqrstuvwxyz"[seed % 26];
+    const ch = "abcdefghijklmnopqrstuvwxyzHIKLMNT"[seed % 33];
     const floor = 1000 + (seed % 7) * 20;
     const paste = LQ.pasteGlyph(placed(ch, seed), RECIPE, floor, area);
     const r0 = RECIPE.weight * 300;
     for (const chain of paste.chains) {
-      for (const b of chain) assert.ok(b.r >= r0 * 0.34 && Number.isFinite(b.x) && Number.isFinite(b.y), `${ch} ${seed} bead`);
+      for (const b of chain) assert.ok(b.r >= r0 * 0.39 && Number.isFinite(b.x) && Number.isFinite(b.y), `${ch} ${seed} bead`);
     }
-    // The drips are the chains after the glyph's own strokes.
-    for (const chain of paste.chains.slice(ST.strokeGlyphs("elfin", ch)[0].strokes.length)) {
-      for (const b of chain) assert.ok(b.y + b.r <= floor + 1e-6, `${ch} ${seed}: a drip below its floor`);
+    // The drips are the chains after the glyph's own strokes; each starts at its stem's foot.
+    for (const chain of paste.chains.slice(paste.strokes)) {
+      drips += 1;
+      for (const b of chain.slice(1)) assert.ok(b.y + b.r <= floor + 1e-6, `${ch} ${seed}: a drip below its floor`);
+      assert.ok(chain.at(-1).y > chain[0].y, `${ch} ${seed}: a drip that does not fall`);
     }
     for (const drop of paste.droplets) {
       const [d] = drop;
       assert.ok(d.x - d.r >= area.x && d.x + d.r <= area.x + area.w && d.y - d.r >= area.y && d.y + d.r <= area.y + area.h);
     }
   }
+  assert.ok(drips > 60, `only ${drips} drips in 300 letters`);
+});
+
+check("a stem is never ruled straight: the hand bows it and sways it, by its seed", () => {
+  const bare = { ...RECIPE, bow: 0, wave: 0, wobble: 0, drip: 0 };
+  const straight = LQ.pasteGlyph(placed("l", 4, { angle: 0 }), bare, 1500, AREA).chains[0];
+  const drawn = LQ.pasteGlyph(placed("l", 4, { angle: 0 }), { ...bare, bow: 0.05, wave: 0.03 }, 1500, AREA).chains[0];
+  const spread = (chain) => Math.max(...chain.slice(0, 20).map((b) => b.x)) - Math.min(...chain.slice(0, 20).map((b) => b.x));
+  assert.ok(spread(drawn) > spread(straight) + 2, `the stem strays ${spread(drawn).toFixed(1)}px against ${spread(straight).toFixed(1)}px`);
+});
+
+check("a letter drawn taller is drawn with the same paste, so its counters stay open", () => {
+  const short = LQ.pasteGlyph(placed("o", 9), RECIPE, 1500, AREA).chains[0];
+  const tall = LQ.pasteGlyph(placed("o", 9, { sy: 450 }), RECIPE, 1500, AREA).chains[0];
+  const mean = (chain) => chain.reduce((sum, b) => sum + b.r, 0) / chain.length;
+  assert.ok(Math.abs(mean(tall) - mean(short)) < mean(short) * 0.05);
 });
 
 console.log("paste, drawn");
@@ -862,9 +973,12 @@ check("a smooth union is never less than the larger, and is the larger when the 
 });
 
 const TARGET = { width: 400, height: 400, scale: 1, origin: { x: 0, y: 0 } };
-const one = (finish, chains = [[{ x: 200, y: 200, r: 40 }]]) =>
-  LR.renderLiquid({ chains, colours: ["#9E1B1B"], colourOf: chains.map(() => 0), tone: chains.map(() => 1), finish, pool: 12, seed: 3 }, TARGET);
+const GROUND = "#F2EEE6";
+const paintOf = (finish, chains, extra = {}) => ({ chains, colourOf: chains.map(() => 0), tone: chains.map(() => 1), finish, pool: 12, seed: 3, ...extra });
+/** One drop of paste, alone (`ground` null) or lit on a ground with its shadow. */
+const one = (finish, chains = [[{ x: 200, y: 200, r: 40 }]], ground = null) => LR.renderLiquid(paintOf(finish, chains), TARGET, { colours: ["#9E1B1B"], ground });
 const alphaAt = (img, x, y) => img.data[((y - img.y) * img.w + (x - img.x)) * 4 + 3];
+const rgbAt = (img, x, y) => [0, 1, 2].map((k) => img.data[((y - img.y) * img.w + (x - img.x)) * 4 + k]);
 
 check("a drop of paste covers its disc, and nothing far from it", () => {
   for (const finish of ["gloss", "flat", "matte"]) {
@@ -875,15 +989,42 @@ check("a drop of paste covers its disc, and nothing far from it", () => {
   }
 });
 
-check("gloss and matte paste cast a shadow down and to the right; flat casts none", () => {
-  const shadowAt = (img) => alphaAt(img, 200 + 12, 200 + 44);
-  assert.ok(shadowAt(one("gloss")) > 0);
-  assert.ok(shadowAt(one("matte")) > 0);
-  assert.equal(alphaAt(one("flat"), 200 + 12, 200 + 44), 0);
-  assert.equal(alphaAt(one("gloss"), 200 - 44, 200 - 44), 0, "no shadow up and to the left");
+check("on a ground, paste is opaque, and the layer's edge is exactly the ground, so it never shows", () => {
+  const ground = P.rgb(GROUND);
+  for (const finish of ["gloss", "matte"]) {
+    const img = one(finish, undefined, GROUND);
+    for (let x = img.x; x < img.x + img.w; x += 1) {
+      assert.deepEqual(rgbAt(img, x, img.y), ground, `${finish} top edge`);
+      assert.deepEqual(rgbAt(img, x, img.y + img.h - 1), ground, `${finish} bottom edge`);
+    }
+    for (let i = 3; i < img.data.length; i += 4) assert.equal(img.data[i], 255);
+  }
 });
 
-check("gloss paste is lit: a highlight brighter than its body, a body darker than its colour", () => {
+check("paste on a ground shades it down and to the right, away from the light, never up and to the left", () => {
+  const lum = (c) => c[0] + c[1] + c[2];
+  for (const finish of ["gloss", "matte"]) {
+    const img = one(finish, undefined, GROUND);
+    const away = rgbAt(img, Math.round(200 + 44 * 0.57), Math.round(200 + 44 * 0.82));
+    const toward = rgbAt(img, Math.round(200 - 44 * 0.57), Math.round(200 - 44 * 0.82));
+    assert.ok(lum(away) < lum(toward) - 6, `${finish}: ${away} against ${toward}`);
+  }
+  const flat = one("flat", undefined, GROUND);
+  assert.deepEqual(rgbAt(flat, 200 + 25, 200 + 36), P.rgb(GROUND), "flat paste casts no shadow");
+});
+
+check("gel's shadow is a stain of its colour, never grey; matte paste's is grey", () => {
+  const stain = (finish) => {
+    const [r, g, b] = rgbAt(one(finish, undefined, GROUND), Math.round(200 + 43 * 0.57), Math.round(200 + 43 * 0.82));
+    return r - (g + b) / 2;
+  };
+  const [gr, gg, gb] = P.rgb(GROUND);
+  const bare = gr - (gg + gb) / 2;
+  assert.ok(stain("gloss") > bare + 3, `gel shadow ${stain("gloss")} against ground ${bare}`);
+  assert.ok(Math.abs(stain("matte") - bare) < 3, `matte shadow ${stain("matte")}`);
+});
+
+check("gel is lit: a highlight far brighter than its body, a body darker than its colour", () => {
   const img = one("gloss");
   let brightest = 0;
   let darkest = 255;
@@ -897,6 +1038,18 @@ check("gloss paste is lit: a highlight brighter than its body, a body darker tha
   }
   assert.ok(brightest > 200, `highlight ${brightest}`);
   assert.ok(darkest < 0x9e, `body ${darkest}`);
+});
+
+check("a knife cuts a stroke's free ends square, but never an O, which has none", () => {
+  const bar = [Array.from({ length: 11 }, (_, i) => ({ x: 100 + i * 20, y: 200, r: 30 }))];
+  const round = LR.renderLiquid(paintOf("flat", bar), TARGET, { colours: ["#9E1B1B"], ground: null });
+  const square = LR.renderLiquid(paintOf("flat", bar, { square: true }), TARGET, { colours: ["#9E1B1B"], ground: null });
+  // Past the end, off the stroke's axis: inside a round end's corner region, outside a square one.
+  assert.ok(alphaAt(round, 100 - 22, 200) > 0 && alphaAt(square, 100 - 22, 200) === 0, "the end is not cut");
+  assert.ok(alphaAt(square, 100 - 10, 200 + 18) > 0, "the cut took the end's corner");
+  const ring = [Array.from({ length: 25 }, (_, i) => ({ x: 200 + 100 * Math.cos((i / 24) * Math.PI * 2), y: 200 + 100 * Math.sin((i / 24) * Math.PI * 2), r: 22 }))];
+  const o = LR.renderLiquid(paintOf("flat", ring, { square: true }), TARGET, { colours: ["#9E1B1B"], ground: null });
+  assert.equal(alphaAt(o, 300, 200), 255, "the O was cut where it closes");
 });
 
 check("two strokes closer than the pooling distance join; farther apart they stay two", () => {
@@ -926,33 +1079,33 @@ console.log("liquid letters");
 
 const SPEC = {
   box: F.formatById("reel").safe,
-  fonts: [
-    { id: "elfin", share: 0.55 },
-    { id: "felix", share: 0.45, capitals: true },
-  ],
-  maxSize: 620,
+  fonts: [{ id: "drip", share: 1 }],
+  maxSize: 640,
   minSize: 64,
-  gap: -0.03,
+  gap: -0.04,
   maxLines: 7,
-  stretch: 1.9,
-  tracking: 0.02,
-  inkGap: 0.17,
-  jitter: { scale: 0.11, angle: 0.08, rise: 0.045, squash: 0.08 },
+  stretch: 1.25,
+  tracking: 0.01,
+  inkGap: 0.12,
+  jitter: { scale: 0.15, angle: 0.075, rise: 0.05, squash: 0.1 },
   upper: false,
+  swapCase: 0.3,
   salt: "pasty",
 };
+const DRIP = new Set(Object.keys({ ...Object.fromEntries([..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"].map((c) => [c, 1])) }));
+const letterOf = (glyph) => [...DRIP].find((c) => ST.strokeGlyphs("drip", c)[0] === glyph);
 
 check("every character typed becomes a glyph, or plain text when no hand can draw it", () => {
   for (const title of TITLES) {
     const layout = LL.liquidLayout(T.parseTitle(title), SPEC);
-    const expected = T.graphemes(T.plainTitle(title).replace(/ /g, "")).reduce((n, g) => n + Math.max(1, ST.strokeGlyphs("elfin", g).length), 0);
+    const expected = T.graphemes(T.plainTitle(title).replace(/ /g, "")).reduce((n, g) => n + Math.max(1, ST.strokeGlyphs("drip", g).length), 0);
     assert.equal(layout.glyphs.length + layout.missing.length, expected, title);
   }
   assert.equal(LL.liquidLayout(T.parseTitle("Week 👍"), SPEC).missing.map((m) => m.text).join(""), "👍");
 });
 
 check("a word is drawn the same wherever it goes, and the same letter differently in another word", () => {
-  const kOf = (title) => LL.liquidLayout(T.parseTitle(title), SPEC).glyphs.find((g) => g.glyph === ST.strokeGlyphs("elfin", "k")[0] || g.glyph === ST.strokeGlyphs("felix", "k")[0]);
+  const kOf = (title) => LL.liquidLayout(T.parseTitle(title), SPEC).glyphs.find((g) => /k/i.test(letterOf(g.glyph) ?? ""));
   const alone = kOf("kite");
   const later = kOf("kite surfing");
   assert.equal(alone.seed, later.seed);
@@ -962,21 +1115,21 @@ check("a word is drawn the same wherever it goes, and the same letter differentl
   assert.notEqual(other.angle, alone.angle);
 });
 
-check("Felix draws only capitals, its lowercase being too tight to read as paste", () => {
-  const felixLower = new Set([..."abcdefghijklmnopqrstuvwxyz"].map((c) => ST.strokeGlyphs("felix", c)[0]));
-  const felixCaps = new Set([..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"].map((c) => ST.strokeGlyphs("felix", c)[0]));
-  for (const title of TITLES) {
-    for (const g of LL.liquidLayout(T.parseTitle(title), SPEC).glyphs) {
-      assert.ok(!felixLower.has(g.glyph), `"${title}" drew a Felix lowercase letter`);
+check("the hand mixes its cases now and then, as a sign painter's does, but never draws an i as an I", () => {
+  let swapped = 0;
+  let letters = 0;
+  for (let i = 0; i < 200; i += 1) {
+    const word = `kitchen${i}`.replace(/\d/g, (d) => "abcdefghij"[d]);
+    for (const [k, g] of LL.liquidLayout(T.parseTitle(word), SPEC).glyphs.entries()) {
+      const drawn = letterOf(g.glyph);
+      letters += 1;
+      if (drawn !== word[k]) swapped += 1;
+      if (word[k] === "i") assert.notEqual(drawn, "I", `${word}: an I for an i`);
     }
   }
-  // A word's hand is seeded by the word, so the share is counted over many different words.
-  let felix = 0;
-  for (let i = 0; i < 300; i += 1) {
-    const [first] = LL.liquidLayout(T.parseTitle(`Word${i}`), SPEC).glyphs;
-    if (felixCaps.has(first.glyph)) felix += 1;
-  }
-  assert.ok(felix > 300 * 0.3 && felix < 300 * 0.6, `Felix drew ${felix} of 300 words' capitals`);
+  assert.ok(swapped > letters * 0.18 && swapped < letters * 0.36, `${swapped} of ${letters} letters in the other case`);
+  const typed = LL.liquidLayout(T.parseTitle("plain"), { ...SPEC, swapCase: 0 }).glyphs.map((g) => letterOf(g.glyph)).join("");
+  assert.equal(typed, "plain");
 });
 
 check("letters never come closer than the ink gap, so paste never fills the space between them", () => {
@@ -1045,14 +1198,17 @@ check("a ring of words makes a sticker with no hole; words far apart make two", 
   assert.equal(SP.steppedOutline([{ x: 0, y: 0, w: 50, h: 50 }, { x: 600, y: 0, w: 50, h: 50 }], { cell: 20, pad: 10 }).length, 2);
 });
 
-check("Stickery: a sticker per typed line, the colours in turn, starred words in liquid letters", () => {
+check("Stickery: a sticker per typed line, the colours in turn, starred words in liquid letters, a border that shows", () => {
   const format = F.formatById("reel");
-  for (const palette of P.PALETTES) {
-    const scene = S.buildScene({ title: "things *aren't*\n*what* they seem\nand *more*", style: "stickery", palette: palette.id, format: "reel" }, measurer);
+  for (const colour of [COLOURS.green, COLOURS.blue, { hue: 60, shade: 0.85, ground: "dark" }, { hue: 330, shade: 0.7, ground: "dark" }]) {
+    const palette = P.paletteFor({ ...INK, ...colour });
+    const scene = cover("things *aren't*\n*what* they seem\nand *more*", "stickery", "reel", colour);
     const shapes = scene.ops.filter((op) => op.kind === "shape");
     assert.deepEqual(shapes.map((s) => s.color), [palette.sticker[0], palette.sticker[1], palette.sticker[0]]);
+    for (const shape of shapes) assert.ok(P.contrast(shape.stroke, scene.ops[0].color) >= 4.5, `a border lost on the ${colour.ground ?? "light"} ground`);
     // One layer holds every liquid word; each of the three stickers carries some of it.
     const [paste] = scene.ops.filter((op) => op.kind === "liquid");
+    assert.equal(paste.ground, null, "Stickery's paste lies on its stickers, not the ground");
     const carried = shapes.filter((s) => paste.chains.some((c) => s.polygons.some((p) => SP.insidePolygon(p, c[0].x, c[0].y))));
     assert.equal(carried.length, 3, "a starred word is missing from its sticker");
     const plain = scene.ops.filter((op) => op.kind === "text").map((op) => op.text);
@@ -1066,8 +1222,25 @@ check("Stickery: a sticker per typed line, the colours in turn, starred words in
   }
 });
 
+check("Stickery is laid out by the title and the shuffle: the same seed the same, another seed elsewhere, nothing all to one side", () => {
+  const title = "things *aren't*\n*what* they seem\nand *more*\nthan *this*";
+  const lefts = (scene) => scene.ops.filter((op) => op.kind === "shape").map((op) => Math.round(SP.polygonBounds(op.polygons).x));
+  assert.deepEqual(lefts(cover(title, "stickery")), lefts(cover(title, "stickery")));
+  const seeds = [0, 1, 2, 3, 4, 5].map((seed) => lefts(cover(title, "stickery", "reel", { seed })));
+  assert.ok(new Set(seeds.map((l) => l.join())).size >= 5, "the shuffle does not move the stickers");
+  for (const l of seeds) assert.ok(new Set(l).size > 1, `every sticker starts at ${l[0]}`);
+  // Stickers stacked close: a step or so apart, never touching.
+  const scene = cover(title, "stickery");
+  const boxes = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
+  const cell = scene.ops.find((op) => op.kind === "shape").strokeWidth / 0.13;
+  for (let i = 1; i < boxes.length; i += 1) {
+    const gap = boxes[i].y - (boxes[i - 1].y + boxes[i - 1].h);
+    assert.ok(gap >= 0 && gap <= cell * 1.2, `stickers ${i - 1} and ${i} are ${gap.toFixed(0)}px apart`);
+  }
+});
+
 check("Stickery with no stars: each sticker's longest word is the liquid one", () => {
-  const scene = S.buildScene({ title: "do what you desire\nit is what it is", style: "stickery", palette: "blue", format: "reel" }, measurer);
+  const scene = cover("do what you desire\nit is what it is", "stickery", "reel", COLOURS.blue);
   const [paste] = scene.ops.filter((op) => op.kind === "liquid");
   const shapes = scene.ops.filter((op) => op.kind === "shape");
   assert.equal(shapes.filter((s) => paste.chains.some((c) => s.polygons.some((p) => SP.insidePolygon(p, c[0].x, c[0].y)))).length, 2);
@@ -1085,10 +1258,12 @@ function closest(a, b) {
   return best;
 }
 
-check("kerned by their paste, neighbouring letters never touch, however they swell and lean", () => {
+check("kerned by their paste, letters keep a thin gap, now and then touching so their paste bridges, never overlapping", () => {
+  let pairs = 0;
+  let touching = 0;
   for (const style of ["pasty", "pasty-flat", "spread"]) {
     for (const title of ["Hello", "kite", "morning routine", "Take up space", "How I *actually* plan my week", ...TITLES.slice(0, 40)]) {
-      const op = liquidOf(S.buildScene({ title, style, palette: "red", format: "reel" }, measurer));
+      const op = liquidOf(cover(title, style, "reel", COLOURS.red));
       if (!op) continue;
       const byGlyph = new Map();
       op.chains.slice(0, op.letters).forEach((c, i) => {
@@ -1100,16 +1275,26 @@ check("kerned by their paste, neighbouring letters never touch, however they swe
       for (let i = 1; i < glyphs.length; i += 1) {
         if (glyphs[i].line !== glyphs[i - 1].line) continue;
         const gap = closest(glyphs[i - 1].chains, glyphs[i].chains);
+        if (style !== "spread") {
+          pairs += 1;
+          // The two letters' own paste, for how near is near.
+          const own = [...glyphs[i - 1].chains, ...glyphs[i].chains].flat();
+          const r = own.reduce((sum, b) => sum + b.r, 0) / own.length;
+          if (gap < r * 0.05) touching += 1;
+          else assert.ok(gap > r * 0.2 || style !== "pasty", `${style} "${title}": letters ${i - 1} and ${i} ${gap.toFixed(1)}px apart, bridged by accident`);
+        }
+        // A touching pair meets, it does not overlap: the pooling makes the bridge.
         assert.ok(gap >= -0.5, `${style} "${title}": letters ${i - 1} and ${i} overlap by ${(-gap).toFixed(1)}px`);
       }
     }
   }
+  assert.ok(touching > pairs * 0.05 && touching < pairs * 0.45, `${touching} of ${pairs} pairs touch`);
 });
 
 check("a line's paste, its drips included, never reaches the line below", () => {
   let lines = 0;
   for (const title of TITLES.filter((t) => t.includes("\n")).slice(0, 60)) {
-    const op = liquidOf(S.buildScene({ title, style: "pasty", palette: "red", format: "reel" }, measurer));
+    const op = liquidOf(cover(title, "pasty", "reel", COLOURS.red));
     if (!op) continue;
     const byLine = new Map();
     op.chains.slice(0, op.letters).forEach((c, i) => {
@@ -1134,7 +1319,7 @@ check("a line's paste, its drips included, never reaches the line below", () => 
 check("a droplet lands whole on the cover, never cut by its edge", () => {
   for (const format of F.FORMATS) {
     for (const title of TITLES.slice(0, 80)) {
-      const op = liquidOf(S.buildScene({ title, style: "pasty", palette: "red", format: format.id }, measurer));
+      const op = liquidOf(cover(title, "pasty", format.id, COLOURS.red));
       if (!op) continue;
       for (const drop of op.chains.slice(op.letters)) {
         for (const b of drop) assert.ok(b.x - b.r >= 0 && b.y - b.r >= 0 && b.x + b.r <= format.width && b.y + b.r <= format.height, `${format.id} "${title}"`);
@@ -1144,7 +1329,7 @@ check("a droplet lands whole on the cover, never cut by its edge", () => {
 });
 
 check("a word too long for any line is broken between letters, not shrunk to a sliver", () => {
-  const scene = S.buildScene({ title: "W".repeat(60), style: "pasty", palette: "red", format: "reel" }, measurer);
+  const scene = cover("W".repeat(60), "pasty", "reel", COLOURS.red);
   const op = liquidOf(scene);
   assert.ok(new Set(op.lineOf).size >= 3, "it was not broken");
   const tallest = Math.max(...op.chains.slice(0, op.letters).flat().map((b) => b.r));
@@ -1152,25 +1337,30 @@ check("a word too long for any line is broken between letters, not shrunk to a s
   assert.ok(inside(F.formatById("reel").safe, scene.readable, 1));
 });
 
-check("a layer is known by its paste: moved paste is another layer, the same paste the same", () => {
-  const a = liquidOf(S.buildScene({ title: "kite", style: "pasty", palette: "red", format: "reel" }, measurer));
-  const b = liquidOf(S.buildScene({ title: "kite", style: "pasty", palette: "red", format: "reel" }, measurer));
+check("a layer is known by its paste: moved paste is another layer, the same paste the same, a new colour only new light", () => {
+  const a = liquidOf(cover("kite", "pasty", "reel", COLOURS.red));
+  const b = liquidOf(cover("kite", "pasty", "reel", COLOURS.red));
   assert.equal(a.key, b.key);
   const moved = a.chains.map((c) => c.map((bead) => ({ ...bead, x: bead.x + 0.5 })));
-  assert.notEqual(S.pasteKey(moved, a.colours, a.colourOf, a.tone, a.finish, a.pool), a.key);
-  assert.notEqual(S.pasteKey(a.chains, ["#000000"], a.colourOf, a.tone, a.finish, a.pool), a.key);
+  assert.notEqual(S.pasteKey(moved, a.colourOf, a.tone, a.finish, a.pool), a.key);
+  // The colours are light on the paste, not the paste: dragging a slider makes nothing again.
+  const recoloured = liquidOf(cover("kite", "pasty", "reel", { hue: 200, shade: 0.7, ground: "dark" }));
+  assert.equal(recoloured.key, a.key);
+  assert.notDeepEqual(recoloured.colours, a.colours);
+  assert.equal(recoloured.ground, P.GROUNDS.dark);
+  assert.notEqual(liquidOf(cover("kite", "pasty", "reel", { seed: 9 })).key, a.key, "the shuffle drew the same paste");
   // Stickery's words move with the plain words beside them, whose widths depend on the face.
   const wide = { ...measurer, width: (face, text) => measurer.width(face, text) * (face === "sans" ? 1.15 : 1) };
-  const one = liquidOf(S.buildScene({ title: "*actually* save money on groceries every week", style: "stickery", palette: "blue", format: "reel" }, measurer));
-  const two = liquidOf(S.buildScene({ title: "*actually* save money on groceries every week", style: "stickery", palette: "blue", format: "reel" }, wide));
-  assert.notEqual(one.key, two.key);
+  const first = liquidOf(cover("*actually* save money on groceries every week", "stickery", "reel", COLOURS.blue));
+  const second = liquidOf(cover("*actually* save money on groceries every week", "stickery", "reel", COLOURS.blue, wide));
+  assert.notEqual(first.key, second.key);
 });
 
 check("Stickery with many lines still fits, its stickers apart, its words not dwarfed by their steps", () => {
   const format = F.formatById("reel");
   for (const count of [1, 4, 8, 16, 26]) {
     const title = Array.from({ length: count }, (_, i) => `*${String.fromCharCode(97 + (i % 26))}*`).join("\n");
-    const scene = S.buildScene({ title, style: "stickery", palette: "green", format: "reel" }, measurer);
+    const scene = cover(title, "stickery", "reel", COLOURS.green);
     assert.ok(inside(format.safe, scene.readable, 1), `${count} lines leave the safe area`);
     const shapes = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
     assert.equal(shapes.length, count);
@@ -1184,12 +1374,79 @@ check("Stickery with many lines still fits, its stickers apart, its words not dw
 });
 
 check("a long line wraps inside its sticker rather than becoming a strip", () => {
-  const scene = S.buildScene({ title: "this is a rather long line of plain words with one *liquid* word in it", style: "stickery", palette: "purple", format: "reel" }, measurer);
+  const scene = cover("this is a rather long line of plain words with one *liquid* word in it", "stickery", "reel", COLOURS.purple);
   const [shape] = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
   assert.ok(shape.h > shape.w * 0.3, `the sticker is ${shape.w.toFixed(0)} by ${shape.h.toFixed(0)}`);
   const plain = scene.ops.filter((op) => op.kind === "text");
   assert.ok(new Set(plain.map((op) => Math.round(op.y))).size >= 2, "the plain words did not wrap");
   assert.ok(Math.min(...plain.map((op) => op.size)) > 30);
+});
+
+console.log("collage");
+
+const COLLAGE = { box: { x: 100, y: 300, w: 880, h: 880 }, font: "sans", weight: 0.09, letterGap: 0.045, lineGap: 0.05, wordGap: 0.22, condense: 0.8, maxSize: 900, minSize: 56, jitter: { scale: 0, angle: 0, rise: 0, squash: 0 }, upper: true, salt: "spread" };
+/** Each line's ink: left and right of its paste, top and bottom of its capitals. */
+function collageLines(layout) {
+  const lines = new Map();
+  for (const g of layout.glyphs) {
+    const box = ST.glyphBox(g.glyph);
+    const r = COLLAGE.weight * g.em;
+    const ink = { x0: g.x + box.x0 * g.sx - r, x1: g.x + box.x1 * g.sx + r, y0: g.y + box.y0 * g.sy - r, y1: g.y + box.y1 * g.sy + r };
+    const l = lines.get(g.line) ?? { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, count: 0 };
+    lines.set(g.line, { x0: Math.min(l.x0, ink.x0), x1: Math.max(l.x1, ink.x1), y0: Math.min(l.y0, ink.y0), y1: Math.max(l.y1, ink.y1), count: l.count + 1 });
+  }
+  return [...lines.values()];
+}
+
+check("Spread packs a title into a square, as a collage: full lines run its width, the block about as tall as wide", () => {
+  const titles = ["Art is different", "How I actually save money", "The art of doing less", "Less is more says the sign", "this is so satisfying to watch", "what nobody tells you about money in Singapore"];
+  for (const title of titles) {
+    const layout = CL.collageLayout(T.parseTitle(title), COLLAGE);
+    const lines = collageLines(layout);
+    const side = COLLAGE.box.w;
+    const widest = Math.max(...lines.map((l) => l.x1 - l.x0));
+    for (const l of lines) {
+      const width = l.x1 - l.x0;
+      // A full line runs the width; a small one is a short word, centred.
+      if (width > widest * 0.7) assert.ok(Math.abs(width - widest) < widest * 0.04, `"${title}": a line ${width.toFixed(0)}px of ${widest.toFixed(0)}`);
+      else assert.ok(Math.abs((l.x0 + l.x1) / 2 - (COLLAGE.box.x + side / 2)) < 2, `"${title}": a small line off centre`);
+    }
+    const height = Math.max(...lines.map((l) => l.y1)) - Math.min(...lines.map((l) => l.y0));
+    assert.ok(height / widest > 0.75 && height / widest < 1.25, `"${title}" is ${widest.toFixed(0)} by ${height.toFixed(0)}`);
+    assert.ok(widest <= side + 1 && height <= side + 1, `"${title}" leaves its square`);
+    // Every letter kept, in order.
+    const letters = layout.glyphs.length + layout.missing.length;
+    assert.equal(letters, T.plainTitle(title).replace(/ /g, "").length, title);
+  }
+});
+
+check("Spread breaks a long word only into pieces of three letters or more, and the shuffle lays it out another way", () => {
+  const plans = new Set();
+  for (let seed = 0; seed < 12; seed += 1) {
+    const layout = CL.collageLayout(T.parseTitle("Art is different"), { ...COLLAGE, salt: `spread#${seed}` });
+    const counts = new Map();
+    for (const g of layout.glyphs) counts.set(`${g.word}:${g.line}`, (counts.get(`${g.word}:${g.line}`) ?? 0) + 1);
+    for (const [key, n] of counts) {
+      const word = Number(key.split(":")[0]);
+      const pieces = [...counts.keys()].filter((k) => Number(k.split(":")[0]) === word).length;
+      if (pieces > 1) assert.ok(n >= 3, `seed ${seed}: a piece of ${n} letters`);
+    }
+    plans.add(collageLines(layout).map((l) => l.count).join(","));
+  }
+  assert.ok(plans.size >= 2, "the shuffle always lays the title out alike");
+  const a = CL.collageLayout(T.parseTitle("Art is different"), COLLAGE);
+  assert.deepEqual(a, CL.collageLayout(T.parseTitle("Art is different"), COLLAGE));
+});
+
+check("the liquid styles lie on the cover's ground and are lit on it; Spread's ends are cut square", () => {
+  for (const ground of ["light", "dark"]) {
+    for (const style of ["pasty", "pasty-flat", "spread"]) {
+      const op = liquidOf(cover("Art is different", style, "reel", { ...COLOURS.green, ground }));
+      assert.equal(op.ground, P.GROUNDS[ground], style);
+      assert.equal(op.square, style === "spread", style);
+      assert.equal(op.finish, style === "pasty" ? "gloss" : "matte", style);
+    }
+  }
 });
 
 console.log("page");
