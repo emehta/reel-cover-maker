@@ -61,6 +61,7 @@ export interface LiquidMissing {
   x: number;
   y: number;
   size: number;
+  line: number;
   emphasis: boolean;
 }
 
@@ -153,6 +154,24 @@ function letters(word: Paragraph[number], spec: LiquidSpec): Word {
   return { letters: out, width };
 }
 
+/** A word in pieces no wider than `most` em, each piece's letters starting from its own left. */
+function breakWord(word: Word, most: number, tracking: number): Word[] {
+  if (word.width <= most || word.letters.length < 2) return [word];
+  const { letters: all } = word;
+  // Where the letters from `from` up to (not including) `to` end, from where the first starts.
+  const endOf = (from: number, to: number) => (to < all.length ? all[to].at - tracking : word.width) - all[from].at;
+  const pieces: Word[] = [];
+  let from = 0;
+  while (from < all.length) {
+    let to = from + 1;
+    while (to < all.length && endOf(from, to + 1) <= most) to += 1;
+    const origin = all[from].at;
+    pieces.push({ letters: all.slice(from, to).map((l) => ({ ...l, at: l.at - origin })), width: endOf(from, to) });
+    from = to;
+  }
+  return pieces;
+}
+
 /** The words shared between `n` lines in order, the widest line as narrow as it can be. */
 function partition(widths: number[], space: number, n: number): number[][] {
   const count = widths.length;
@@ -188,7 +207,10 @@ export function liquidLayout(paragraphs: Paragraph[], spec: LiquidSpec): LiquidL
   const ascent = Math.max(...metrics.map((m) => (spec.upper ? m.cap * 1.12 : m.ascent)));
   const descent = Math.max(...metrics.map((m) => (spec.upper ? 0.05 : m.descent)));
   const space = Math.max(...metrics.map((m) => m.space)) * 0.62;
-  const typed = paragraphs.map((p) => p.map((w) => letters(w, spec)));
+  // A word wider than the box at the smallest size is broken between
+  // letters, as a word too long for a line is anywhere else.
+  const most = spec.box.w / spec.minSize;
+  const typed = paragraphs.map((p) => p.flatMap((w) => breakWord(letters(w, spec), most, spec.tracking)));
   if (!typed.some((p) => p.length)) return { glyphs: [], missing: [], floors: [], sizes: [], size: 0 };
 
   type Line = Word[];
@@ -269,7 +291,7 @@ export function liquidLayout(paragraphs: Paragraph[], spec: LiquidSpec): LiquidL
             emphasis: l.emphasis,
           });
         } else {
-          missing.push({ text: l.text, x: lx, y: baseline, size: size * 0.8, emphasis: l.emphasis });
+          missing.push({ text: l.text, x: lx, y: baseline, size: size * 0.8, line: li, emphasis: l.emphasis });
         }
         if (l.hasInk) lineInk = Math.max(lineInk, lx + l.inkX1 * l.sx * size);
       }

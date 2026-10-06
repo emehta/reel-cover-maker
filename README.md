@@ -103,24 +103,31 @@ drawn from scratch for every title:
 3. **Paste.** Each stroke becomes a chain of beads, each a point with a
    radius: rounded at the plotter's corners, wobbling a little, swelling and
    pinching with the pressure, bulging at a free end. Drips hang from a
-   stroke's low points, as far as the line below, and droplets spatter
-   around. Letters are spaced by their ink, so paste never fills the gap
-   between two of them.
-4. **Shape.** Each chain is the union of tapered capsules between its beads,
+   stroke's low points, stopping short of the next line's ink, and droplets
+   spatter around.
+4. **Kerning by paste.** Paste swells, so each letter is moved right of its
+   neighbours until no bead of it comes near theirs, drips included, and
+   each line down until it clears the line above. Paste never fills the gap
+   between two letters or two lines.
+5. **Shape.** Each chain is the union of tapered capsules between its beads,
    measured as an exact signed distance. Chains join by a smooth union, so
    where strokes meet the paste pools into a fillet, as liquid does.
-5. **Light.** How deep a pixel sits inside its stroke, against the stroke's
+6. **Light.** How deep a pixel sits inside its stroke, against the stroke's
    radius, is how high the paste stands there. That height is lit from the
    top left: wet and glossy with sharp highlights and a soft shadow (Pasty),
    flat (Pasty Flat, Stickery), or matte, ridged along each stroke by the
    knife and rough at the edge (Spread).
-6. **Off the page's thread.** The pixels are worked out in a web worker, a
+7. **Off the page's thread.** The pixels are worked out in a web worker, a
    few hundred milliseconds at full size, the preview first and then the
-   thumbnails; a newer title replaces an older one still waiting.
+   thumbnails; a newer title replaces an older one still waiting. If the
+   worker fails or stops answering, the page draws them itself. Drawn layers
+   are kept up to a budget in bytes, and a layer is known by its paste, so
+   it is never drawn where paste that has since moved used to be.
 
 Stickery's stickers are every letter's box, padded and snapped out to a
 coarse grid, with holes filled and gaps a cell wide closed, traced as a
-polygon of straight steps.
+polygon of straight steps. The grid, the padding and the space between
+stickers scale with the words, and a long line wraps inside its sticker.
 
 | File | What it does |
 | --- | --- |

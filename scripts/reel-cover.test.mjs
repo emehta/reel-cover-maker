@@ -1051,7 +1051,10 @@ check("Stickery: a sticker per typed line, the colours in turn, starred words in
     const scene = S.buildScene({ title: "things *aren't*\n*what* they seem\nand *more*", style: "stickery", palette: palette.id, format: "reel" }, measurer);
     const shapes = scene.ops.filter((op) => op.kind === "shape");
     assert.deepEqual(shapes.map((s) => s.color), [palette.sticker[0], palette.sticker[1], palette.sticker[0]]);
-    assert.equal(scene.ops.filter((op) => op.kind === "liquid").length, 3, "one liquid run per starred word");
+    // One layer holds every liquid word; each of the three stickers carries some of it.
+    const [paste] = scene.ops.filter((op) => op.kind === "liquid");
+    const carried = shapes.filter((s) => paste.chains.some((c) => s.polygons.some((p) => SP.insidePolygon(p, c[0].x, c[0].y))));
+    assert.equal(carried.length, 3, "a starred word is missing from its sticker");
     const plain = scene.ops.filter((op) => op.kind === "text").map((op) => op.text);
     assert.deepEqual(plain, ["things", "they", "seem", "and"]);
     assert.ok(inside(format.safe, scene.readable, 1));
@@ -1065,9 +1068,128 @@ check("Stickery: a sticker per typed line, the colours in turn, starred words in
 
 check("Stickery with no stars: each sticker's longest word is the liquid one", () => {
   const scene = S.buildScene({ title: "do what you desire\nit is what it is", style: "stickery", palette: "blue", format: "reel" }, measurer);
-  assert.equal(scene.ops.filter((op) => op.kind === "liquid").length, 2);
+  const [paste] = scene.ops.filter((op) => op.kind === "liquid");
+  const shapes = scene.ops.filter((op) => op.kind === "shape");
+  assert.equal(shapes.filter((s) => paste.chains.some((c) => s.polygons.some((p) => SP.insidePolygon(p, c[0].x, c[0].y)))).length, 2);
   const plain = scene.ops.filter((op) => op.kind === "text").map((op) => op.text);
   assert.deepEqual(plain, ["do", "what", "you", "it", "is", "it", "is"]);
+});
+
+console.log("paste, set");
+
+const liquidOf = (scene) => scene.ops.find((op) => op.kind === "liquid");
+/** The closest two beads of two sets of chains come, edge to edge (below zero they overlap). */
+function closest(a, b) {
+  let best = Infinity;
+  for (const ca of a) for (const p of ca) for (const cb of b) for (const q of cb) best = Math.min(best, Math.hypot(p.x - q.x, p.y - q.y) - p.r - q.r);
+  return best;
+}
+
+check("kerned by their paste, neighbouring letters never touch, however they swell and lean", () => {
+  for (const style of ["pasty", "pasty-flat", "spread"]) {
+    for (const title of ["Hello", "kite", "morning routine", "Take up space", "How I *actually* plan my week", ...TITLES.slice(0, 40)]) {
+      const op = liquidOf(S.buildScene({ title, style, palette: "red", format: "reel" }, measurer));
+      if (!op) continue;
+      const byGlyph = new Map();
+      op.chains.slice(0, op.letters).forEach((c, i) => {
+        const g = op.glyphOf[i];
+        if (!byGlyph.has(g)) byGlyph.set(g, { line: op.lineOf[i], chains: [] });
+        byGlyph.get(g).chains.push(c);
+      });
+      const glyphs = [...byGlyph.entries()].sort((p, q) => p[0] - q[0]).map(([, v]) => v);
+      for (let i = 1; i < glyphs.length; i += 1) {
+        if (glyphs[i].line !== glyphs[i - 1].line) continue;
+        const gap = closest(glyphs[i - 1].chains, glyphs[i].chains);
+        assert.ok(gap >= -0.5, `${style} "${title}": letters ${i - 1} and ${i} overlap by ${(-gap).toFixed(1)}px`);
+      }
+    }
+  }
+});
+
+check("a line's paste, its drips included, never reaches the line below", () => {
+  let lines = 0;
+  for (const title of TITLES.filter((t) => t.includes("\n")).slice(0, 60)) {
+    const op = liquidOf(S.buildScene({ title, style: "pasty", palette: "red", format: "reel" }, measurer));
+    if (!op) continue;
+    const byLine = new Map();
+    op.chains.slice(0, op.letters).forEach((c, i) => {
+      if (!byLine.has(op.lineOf[i])) byLine.set(op.lineOf[i], []);
+      byLine.get(op.lineOf[i]).push(c);
+    });
+    const ids = [...byLine.keys()].sort((p, q) => p - q);
+    for (let i = 1; i < ids.length; i += 1) {
+      lines += 1;
+      const above = byLine.get(ids[i - 1]);
+      const below = byLine.get(ids[i]);
+      // Only the line above's drips are held back; its letters and the line below's may sit close.
+      const lowest = Math.max(...above.flat().map((b) => b.y + b.r));
+      const top = Math.min(...below.flat().map((b) => b.y - b.r));
+      if (lowest <= top) continue;
+      assert.ok(closest(above, below) >= -0.5 || lowest - top < 0, `"${title}": line ${ids[i - 1]} runs into line ${ids[i]}`);
+    }
+  }
+  assert.ok(lines > 20);
+});
+
+check("a droplet lands whole on the cover, never cut by its edge", () => {
+  for (const format of F.FORMATS) {
+    for (const title of TITLES.slice(0, 80)) {
+      const op = liquidOf(S.buildScene({ title, style: "pasty", palette: "red", format: format.id }, measurer));
+      if (!op) continue;
+      for (const drop of op.chains.slice(op.letters)) {
+        for (const b of drop) assert.ok(b.x - b.r >= 0 && b.y - b.r >= 0 && b.x + b.r <= format.width && b.y + b.r <= format.height, `${format.id} "${title}"`);
+      }
+    }
+  }
+});
+
+check("a word too long for any line is broken between letters, not shrunk to a sliver", () => {
+  const scene = S.buildScene({ title: "W".repeat(60), style: "pasty", palette: "red", format: "reel" }, measurer);
+  const op = liquidOf(scene);
+  assert.ok(new Set(op.lineOf).size >= 3, "it was not broken");
+  const tallest = Math.max(...op.chains.slice(0, op.letters).flat().map((b) => b.r));
+  assert.ok(tallest > 4, `paste ${tallest.toFixed(1)}px thick`);
+  assert.ok(inside(F.formatById("reel").safe, scene.readable, 1));
+});
+
+check("a layer is known by its paste: moved paste is another layer, the same paste the same", () => {
+  const a = liquidOf(S.buildScene({ title: "kite", style: "pasty", palette: "red", format: "reel" }, measurer));
+  const b = liquidOf(S.buildScene({ title: "kite", style: "pasty", palette: "red", format: "reel" }, measurer));
+  assert.equal(a.key, b.key);
+  const moved = a.chains.map((c) => c.map((bead) => ({ ...bead, x: bead.x + 0.5 })));
+  assert.notEqual(S.pasteKey(moved, a.colours, a.colourOf, a.tone, a.finish, a.pool), a.key);
+  assert.notEqual(S.pasteKey(a.chains, ["#000000"], a.colourOf, a.tone, a.finish, a.pool), a.key);
+  // Stickery's words move with the plain words beside them, whose widths depend on the face.
+  const wide = { ...measurer, width: (face, text) => measurer.width(face, text) * (face === "sans" ? 1.15 : 1) };
+  const one = liquidOf(S.buildScene({ title: "*actually* save money on groceries every week", style: "stickery", palette: "blue", format: "reel" }, measurer));
+  const two = liquidOf(S.buildScene({ title: "*actually* save money on groceries every week", style: "stickery", palette: "blue", format: "reel" }, wide));
+  assert.notEqual(one.key, two.key);
+});
+
+check("Stickery with many lines still fits, its stickers apart, its words not dwarfed by their steps", () => {
+  const format = F.formatById("reel");
+  for (const count of [1, 4, 8, 16, 26]) {
+    const title = Array.from({ length: count }, (_, i) => `*${String.fromCharCode(97 + (i % 26))}*`).join("\n");
+    const scene = S.buildScene({ title, style: "stickery", palette: "green", format: "reel" }, measurer);
+    assert.ok(inside(format.safe, scene.readable, 1), `${count} lines leave the safe area`);
+    const shapes = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
+    assert.equal(shapes.length, count);
+    for (let i = 1; i < shapes.length; i += 1) assert.ok(shapes[i].y >= shapes[i - 1].y + shapes[i - 1].h, `${count} lines: stickers ${i - 1} and ${i} overlap`);
+    const op = liquidOf(scene);
+    const paste = op.chains.flat();
+    const inkHeight = Math.max(...paste.map((b) => b.y + b.r)) - Math.min(...paste.map((b) => b.y - b.r));
+    assert.equal(scene.ops.filter((o) => o.kind === "liquid").length, 1, "every liquid word is one layer");
+    assert.ok(inkHeight > 0);
+  }
+});
+
+check("a long line wraps inside its sticker rather than becoming a strip", () => {
+  const scene = S.buildScene({ title: "this is a rather long line of plain words with one *liquid* word in it", style: "stickery", palette: "purple", format: "reel" }, measurer);
+  const [shape] = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
+  assert.ok(shape.h > shape.w * 0.3, `the sticker is ${shape.w.toFixed(0)} by ${shape.h.toFixed(0)}`);
+  const plain = scene.ops.filter((op) => op.kind === "text");
+  assert.ok(new Set(plain.map((op) => Math.round(op.y))).size >= 2, "the plain words did not wrap");
+  assert.ok(Math.min(...plain.map((op) => op.size)) > 30);
 });
 
 console.log("page");

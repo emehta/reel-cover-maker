@@ -11,7 +11,7 @@ import { APP_NAME } from "@/components/reel-cover-maker/meta";
 import { paint } from "@/components/reel-cover-maker/paint";
 import { PALETTES } from "@/components/reel-cover-maker/palettes";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
-import { drawLayers, drawnLayer, layersVersion, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
+import { drawLayers, drawnLayer, layerFailed, layersVersion, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
 import { buildScene, liquidOps, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
@@ -128,11 +128,15 @@ function fullSize(scene: Scene): LiquidTarget {
   return { width: scene.width, height: scene.height, scale: 1, origin: { x: 0, y: 0 } };
 }
 
-/** The liquid layers of a scene for a canvas: every one drawn, or false while any is being drawn. */
+/** The liquid layers of a scene for a canvas: whether every one is drawn, and whether any could not be. */
 function layersFor(scene: Scene | null, target: LiquidTarget | null) {
-  if (!scene || !target) return { ops: [], ready: false };
+  if (!scene || !target) return { ops: [], ready: false, failed: false };
   const ops = liquidOps(scene);
-  return { ops, ready: ops.every((op) => drawnLayer(op, target) !== undefined) };
+  return {
+    ops,
+    ready: ops.every((op) => drawnLayer(op, target) !== undefined),
+    failed: ops.some((op) => layerFailed(op, target)),
+  };
 }
 
 /** A style's swatch: the title in that style, as the profile grid would show it. */
@@ -148,10 +152,9 @@ function Thumb({ scene, format, slot }: { scene: Scene | null; format: Format; s
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas || !scene) return;
-    if (!ready) {
-      void drawLayers(ops, target, slot);
-      return;
-    }
+    // Asked every time: what this canvas shows is kept, what it waits on is drawn.
+    drawLayers(ops, target, slot);
+    if (!ready) return;
     if (canvas.width !== THUMB_WIDTH) canvas.width = THUMB_WIDTH;
     if (canvas.height !== target.height) canvas.height = target.height;
     const ctx = canvas.getContext("2d");
@@ -212,8 +215,9 @@ export default function ReelCoverMaker() {
   const name = fileName(design.text, design.format);
   // Drawn again when a liquid layer the preview waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
-  /** The whole picture can be drawn now: no liquid layer of it is still being drawn. */
-  const pictureReady = layersFor(scene, scene && fullSize(scene)).ready;
+  const layers = layersFor(scene, scene && fullSize(scene));
+  /** The whole picture can be drawn now: no liquid layer of it is still being drawn, and none failed. */
+  const pictureReady = layers.ready && !layers.failed;
   /** What the drawn picture is of; a prepared file is handed over only if it is of the same. */
   const key = JSON.stringify([design.text, design.style, design.palette, design.format, loads]);
 
@@ -252,11 +256,11 @@ export default function ReelCoverMaker() {
     const canvas = canvasRef.current;
     if (!canvas || !scene) return;
     const mainTarget = fullSize(scene);
-    if (!pictureReady) {
-      // The last picture stays up until this one's liquid letters are drawn.
-      void drawLayers(liquidOps(scene), mainTarget, "main");
-      return;
-    }
+    // Asked every time: what the preview shows is kept, what it waits on is drawn.
+    // The canvas's size is set only here, as it is painted, so the last
+    // picture stays up, whole, until this one is ready.
+    drawLayers(liquidOps(scene), mainTarget, "main");
+    if (!pictureReady) return;
     if (painted.current !== key) {
       if (canvas.width !== scene.width) canvas.width = scene.width;
       if (canvas.height !== scene.height) canvas.height = scene.height;
@@ -380,6 +384,7 @@ export default function ReelCoverMaker() {
               spellCheck
             />
             {scene?.truncated && <p className={styles.note}>Too long for the cover: the end is cut.</p>}
+            {layers.failed && <p className={styles.note}>This style could not be drawn here. Try another.</p>}
           </div>
 
           <div className={styles.field}>
@@ -455,8 +460,6 @@ export default function ReelCoverMaker() {
               <canvas
                 ref={canvasRef}
                 className={styles.canvas}
-                width={format.width}
-                height={format.height}
                 role="img"
                 aria-label={`${format.label} preview`}
               />

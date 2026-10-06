@@ -119,8 +119,10 @@ const smoothstep = (a: number, b: number, x: number) => {
 };
 
 export interface GlyphPaste {
-  /** The glyph's own strokes, drips included. */
+  /** The glyph's own strokes, then its drips. */
   chains: Chain[];
+  /** How many of `chains` are strokes: the rest are drips. */
+  strokes: number;
   /** Loose droplets: ornament, not letter. */
   droplets: Chain[];
 }
@@ -206,6 +208,7 @@ export function pasteGlyph(
     }
   });
 
+  const strokes = chains.length;
   // Drips, most often one, from the lowest candidates first.
   if (lows.length && next() < recipe.drip) {
     lows.sort((a, b) => b.y - a.y);
@@ -256,7 +259,7 @@ export function pasteGlyph(
     }
     droplets.push(drop);
   }
-  return { chains, droplets };
+  return { chains, strokes, droplets };
 }
 
 /** The box around beads, their radii included. */

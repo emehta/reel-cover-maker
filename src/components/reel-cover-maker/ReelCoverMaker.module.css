@@ -173,6 +173,8 @@
   display: block;
   width: 100%;
   height: 100%;
+  /* While a new size is being drawn, the last picture shows whole, not stretched. */
+  object-fit: contain;
   border-radius: 3px;
   box-shadow: var(--rcm-shadow);
 }
