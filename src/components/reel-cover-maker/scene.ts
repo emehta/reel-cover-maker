@@ -1123,15 +1123,26 @@ function stickery(
         for (const seg of l.segments) {
           // A script's apostrophe sits wide of its letters ("aren 't"), so a
           // word is set in pieces at its apostrophes, each a twentieth of an
-          // em of clear paper from the ink before it.
+          // em of clear paper from the ink beside it.
           const pieces = seg.text.split(/(['\u2019])/u).filter(Boolean);
           let x = seg.x - pull;
           const start = x;
           let end = x;
           pieces.forEach((piece, k) => {
             if (k > 0) {
-              const before = inkBox(seg.face, pieces[k - 1], x, l.baseline, seg.size);
-              x = before.x + before.w + seg.size * 0.05 + measurer.bounds(seg.face, piece).left * seg.size;
+              // Kerned by the ink at the same height (an apostrophe floats
+              // high over an n's low exit), or by the two boxes where the
+              // measurer cannot see the ink.
+              const gap = seg.size * 0.05;
+              const before = inkStrips(seg.face, pieces[k - 1], x, l.baseline, seg.size);
+              const here = inkStrips(seg.face, piece, 0, l.baseline, seg.size);
+              let at = -Infinity;
+              for (const b of before) for (const h of here) if (h.y < b.y + b.h && b.y < h.y + h.h) at = Math.max(at, b.x + b.w + gap - h.x);
+              if (!Number.isFinite(at)) {
+                const box = inkBox(seg.face, pieces[k - 1], x, l.baseline, seg.size);
+                at = box.x + box.w + gap + measurer.bounds(seg.face, piece).left * seg.size;
+              }
+              x = at;
             }
             words.push({ kind: "text", text: piece, face: seg.face, size: seg.size, x, y: l.baseline, color: ink });
             // The word's own ink, strip by strip, so the plain words can settle among its letters.

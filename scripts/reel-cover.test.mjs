@@ -1500,15 +1500,16 @@ check("a sticker with no funky word sets its words the size of its neighbours', 
       for (const v of alone) assert.ok(v >= Math.min(...beside) * 0.75 && v <= Math.max(...beside) * 1.34, `${lettering} ${seed}: "can say" at ${v.toFixed(1)} beside ${beside.map((b) => b.toFixed(1)).join(", ")}`);
     }
   }
-  // A typeface sets "aren't" in pieces at its apostrophe, each a twentieth of an em of clear paper from the ink before it.
+  // A typeface sets "aren't" in pieces at its apostrophe, each a twentieth of an em of clear paper from the ink beside it.
   for (const lettering of ["yesteryear", "leckerli", "damion", "yellowtail"]) {
     const funky = textOps(cover("things *aren't*", "stickery", "reel", { lettering })).filter((op) => !op.face.startsWith("plain-"));
     assert.deepEqual(funky.map((op) => op.text), ["aren", "'", "t"], lettering);
+    const ink = (op) => measurer.columns(op.face, op.text).map((c) => ({ x0: op.x + c.x * op.size, x1: op.x + (c.x + c.w) * op.size, top: c.top, bottom: c.bottom }));
     for (let i = 1; i < funky.length; i += 1) {
       const [a, b] = [funky[i - 1], funky[i]];
-      const right = a.x + measurer.bounds(a.face, a.text).right * a.size;
-      const left = b.x - measurer.bounds(b.face, b.text).left * b.size;
-      assert.ok(Math.abs(left - right - 0.05 * a.size) < 0.01 * a.size, `${lettering}: "${a.text}" to "${b.text}" ${((left - right) / a.size).toFixed(3)} em`);
+      let gap = Infinity;
+      for (const p of ink(a)) for (const q of ink(b)) if (q.top < p.bottom && p.top < q.bottom) gap = Math.min(gap, q.x0 - p.x1);
+      assert.ok(Math.abs(gap - 0.05 * a.size) < 0.01 * a.size, `${lettering}: "${a.text}" to "${b.text}" ${(gap / a.size).toFixed(3)} em`);
     }
   }
 });
