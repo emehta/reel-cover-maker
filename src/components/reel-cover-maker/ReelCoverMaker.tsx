@@ -4,6 +4,8 @@ import { Check, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
+import { Camera } from "@/components/reel-cover-maker/Camera";
+import { PhotoSurface } from "@/components/reel-cover-maker/CoverSurface";
 import { loadDesign, saveDesign, type Design } from "@/components/reel-cover-maker/design";
 import { Dropdown } from "@/components/reel-cover-maker/Dropdown";
 import { PLAIN_FACES } from "@/components/reel-cover-maker/faces";
@@ -11,7 +13,11 @@ import { facesFor, fontCss, fontsSnapshot, interTight, measurerFor, requestFonts
 import { FORMATS, formatById, type Format } from "@/components/reel-cover-maker/formats";
 import { GRAIN_TILE, grainPixels } from "@/components/reel-cover-maker/grain";
 import { APP_NAME } from "@/components/reel-cover-maker/meta";
-import { paint } from "@/components/reel-cover-maker/paint";
+import { paint, type PaintOptions } from "@/components/reel-cover-maker/paint";
+import { DEFAULT_ADJUST, DEFAULT_FRAME, keptSize, sourceRect } from "@/components/reel-cover-maker/photo";
+import { adjustedPhoto } from "@/components/reel-cover-maker/photo-gl";
+import { forgetPhoto, loadPhoto, savePhoto } from "@/components/reel-cover-maker/photo-store";
+import { PhotoControls } from "@/components/reel-cover-maker/PhotoControls";
 import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-maker/palettes";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
 import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
@@ -32,6 +38,69 @@ const THUMB_WIDTH = 240;
 
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
 
+/** The longest side a photo is kept at: sharp at a reel cover's size zoomed in twice, without holding a phone camera's 48 megapixels. */
+const PHOTO_SIDE = 2560;
+
+/** The photo behind the cover, decoded and kept at `PHOTO_SIDE`, with a small picture of it for the panel. */
+interface Photo {
+  image: HTMLCanvasElement;
+  w: number;
+  h: number;
+  thumb: string;
+  /** Changes with every photo, so a canvas knows it must paint again. */
+  id: number;
+}
+
+let photoCount = 0;
+
+/**
+ * A photo file read and kept: turned as the camera held it (its EXIF
+ * orientation), its longer side brought down to `PHOTO_SIDE`. Null for a
+ * file the browser cannot open (a HEIC on a computer that cannot read one).
+ */
+async function decodePhoto(file: Blob): Promise<Photo | null> {
+  let source: ImageBitmap | HTMLImageElement;
+  let url: string | null = null;
+  try {
+    source = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    try {
+      url = URL.createObjectURL(file);
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      source = img;
+    } catch {
+      if (url) URL.revokeObjectURL(url);
+      return null;
+    }
+  }
+  const [w0, h0] = source instanceof HTMLImageElement ? [source.naturalWidth, source.naturalHeight] : [source.width, source.height];
+  if (!w0 || !h0) return null;
+  const { w, h } = keptSize(w0, h0, PHOTO_SIDE);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(source, 0, 0, w, h);
+  if (source instanceof ImageBitmap) source.close();
+  if (url) URL.revokeObjectURL(url);
+  const small = keptSize(w, h, 192);
+  const thumbCanvas = document.createElement("canvas");
+  thumbCanvas.width = small.w;
+  thumbCanvas.height = small.h;
+  thumbCanvas.getContext("2d")?.drawImage(canvas, 0, 0, small.w, small.h);
+  photoCount += 1;
+  return { image: canvas, w, h, thumb: thumbCanvas.toDataURL("image/jpeg", 0.85), id: photoCount };
+}
+
+/** Whether a drag over the page carries files, which it may be dropping as the photo. */
+function carriesFiles(event: { dataTransfer: DataTransfer | null }): boolean {
+  return !!event.dataTransfer && [...event.dataTransfer.types].includes("Files");
+}
+
 let grainTile: HTMLCanvasElement | null = null;
 
 /** The grain, made once and kept: the same tile under every cover. */
@@ -51,7 +120,7 @@ function grain(): HTMLCanvasElement | null {
 const scenes = new Map<string, Scene>();
 
 function sceneFor(input: CoverInput, loads: number): Scene {
-  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, input.hue, input.shade, input.ground, input.format, input.seed, loads]);
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, input.hue, input.shade, input.ground, input.format, input.seed, input.photo, loads]);
   let scene = scenes.get(key);
   if (!scene) {
     scene = buildScene(input, measurerFor(loads));
@@ -147,7 +216,7 @@ function layersFor(scene: Scene | null, target: LiquidTarget | null) {
 }
 
 /** A style's swatch: the title in that style, as the profile grid would show it. */
-function Thumb({ scene, format, slot }: { scene: Scene | null; format: Format; slot: string }) {
+function Thumb({ scene, format, slot, photoFor }: { scene: Scene | null; format: Format; slot: string; photoFor: (scene: Scene) => PaintOptions["photo"] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   // Drawn again when a liquid layer it waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
@@ -167,7 +236,7 @@ function Thumb({ scene, format, slot }: { scene: Scene | null; format: Format; s
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    paint(ctx, scene, { scale, origin: target.origin, font: fontCss, grain: null, liquid: (op) => liquidLayer(op, target) ?? null });
+    paint(ctx, scene, { scale, origin: target.origin, font: fontCss, grain: null, liquid: (op, part) => liquidLayer(op, target, part) ?? null, photo: photoFor(scene) });
   });
   return <canvas ref={ref} className={styles.thumbCanvas} width={THUMB_WIDTH} height={320} aria-hidden="true" />;
 }
@@ -197,6 +266,12 @@ export default function ReelCoverMaker() {
   const [showGrid, setShowGrid] = useState(false);
   const [held, setHeld] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<Photo | null>(null);
+  /** Whether the photo kept from last time has been looked for: the cover waits for it, so it never flashes up without it. */
+  const [photoChecked, setPhotoChecked] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  /** A file is being dragged over the preview. */
+  const [dropping, setDropping] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -206,6 +281,9 @@ export default function ReelCoverMaker() {
   /** What is on the canvas. */
   const painted = useRef<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
+  const takePhotoRef = useRef<(file: Blob) => void>(() => {});
+  const photoForRef = useRef<(scene: Scene) => PaintOptions["photo"]>(() => null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
 
   const filled = hasTitle(design.text);
   const title = filled ? design.text : PLACEHOLDER_TITLE;
@@ -227,6 +305,7 @@ export default function ReelCoverMaker() {
     ground: design.ground,
     format: design.format,
     seed: design.seed,
+    photo: photo !== null,
   };
   const scene = measurer ? sceneFor(input, loads) : null;
   const thumbs = measurer ? STYLES.map((style) => sceneFor({ ...input, style: style.id }, loads)) : null;
@@ -234,16 +313,68 @@ export default function ReelCoverMaker() {
   // Drawn again when a liquid layer the preview waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
   const layers = layersFor(scene, scene && fullSize(scene));
-  /** The whole picture can be drawn now: no liquid layer of it is still being drawn, and none failed. */
-  const pictureReady = layers.ready && !layers.failed;
+  /** The whole picture can be drawn now: no liquid layer of it is still being drawn, none failed, and the photo is in. */
+  const pictureReady = layers.ready && !layers.failed && photoChecked;
   /** What the drawn picture is of; a prepared file is handed over only if it is of the same. */
-  const key = JSON.stringify([design.text, design.style, design.lettering, design.plainFace, design.pastyLettering, design.hue, design.shade, design.ground, design.format, design.seed, loads]);
+  const key = JSON.stringify([
+    design.text,
+    design.style,
+    design.lettering,
+    design.plainFace,
+    design.pastyLettering,
+    design.hue,
+    design.shade,
+    design.ground,
+    design.format,
+    design.seed,
+    loads,
+    photo?.id ?? 0,
+    design.photoFrame,
+    design.photoAdjust,
+  ]);
 
   const update = (change: Partial<Design>) => {
-    const next = { ...design, ...change };
-    setDesign(next);
-    saveDesign(next);
+    setDesign((current) => {
+      const next = { ...current, ...change };
+      saveDesign(next);
+      return next;
+    });
     setError(null);
+  };
+
+  /** The photo as a canvas paints it, framed for the scene's size and adjusted; null with no photo. */
+  const photoFor = (s: Scene): PaintOptions["photo"] => {
+    if (!photo) return null;
+    const frame = design.photoFrame;
+    return { image: adjustedPhoto(photo.image, photo.w, photo.h, design.photoAdjust), ...sourceRect(photo.w, photo.h, s.width, s.height, frame), flip: frame.flip };
+  };
+
+  /** A file chosen, taken or dropped, as the new photo, framed whole and unadjusted; kept for next time. */
+  const takePhoto = async (file: Blob) => {
+    setError(null);
+    const made = await decodePhoto(file);
+    if (!made) {
+      setError("That picture could not be opened. Try a JPEG or a PNG.");
+      return;
+    }
+    setPhoto(made);
+    update({ photoFrame: DEFAULT_FRAME, photoAdjust: DEFAULT_ADJUST });
+    made.image.toBlob((blob) => {
+      if (blob) void savePhoto(blob);
+    }, "image/jpeg", 0.92);
+  };
+
+  const removePhoto = () => {
+    setPhoto(null);
+    void forgetPhoto();
+    update({ photoFrame: DEFAULT_FRAME, photoAdjust: DEFAULT_ADJUST });
+  };
+
+  /** The computer's camera, opened here; false on a phone (or with no camera to ask for), where the file field's own camera serves. */
+  const openCamera = () => {
+    if (window.matchMedia(TOUCH_QUERY).matches || !navigator.mediaDevices?.getUserMedia) return false;
+    setCameraOpen(true);
+    return true;
   };
 
   /** Another draw of every random choice: a new seed, never the one showing. */
@@ -299,10 +430,45 @@ export default function ReelCoverMaker() {
     else if (c.right > r.right) row.scrollBy({ left: c.right - r.right + 16 });
   }, [design.style]);
 
+  // The photo kept from last time, read back before the cover is first drawn.
+  useEffect(() => {
+    let gone = false;
+    void loadPhoto().then(async (blob) => {
+      const made = blob ? await decodePhoto(blob) : null;
+      if (gone) return;
+      if (made) setPhoto(made);
+      setPhotoChecked(true);
+    });
+    return () => {
+      gone = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    takePhotoRef.current = (file) => void takePhoto(file);
+  });
+
+  // A picture pasted anywhere on the page is taken as the photo; pasted text goes where it always went.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const file = [...(event.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+      if (!file) return;
+      event.preventDefault();
+      takePhotoRef.current(file);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
   // A computer is here to type; a phone's keyboard should wait to be asked for.
   useEffect(() => {
     if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus({ preventScroll: true });
   }, []);
+
+  // The photo as the canvas paints it now, for the drawing below; the key it draws under already names the photo, its frame and its adjustments.
+  useEffect(() => {
+    photoForRef.current = photoFor;
+  });
 
   // Draw the cover, then make its file, so a tap on Save can share it at
   // once: Safari refuses a share that waits on anything. Only a change to
@@ -322,7 +488,7 @@ export default function ReelCoverMaker() {
       if (canvas.height !== scene.height) canvas.height = scene.height;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op) => liquidLayer(op, mainTarget) ?? null });
+      paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op, part) => liquidLayer(op, mainTarget, part) ?? null, photo: photoForRef.current(scene) });
       painted.current = key;
     }
     if (prepared.current?.key === key) return;
@@ -441,6 +607,17 @@ export default function ReelCoverMaker() {
             {layers.failed && <p className={styles.note}>This style could not be drawn here. Try another.</p>}
           </div>
 
+          <PhotoControls
+            thumb={photo?.thumb ?? null}
+            frame={design.photoFrame}
+            adjust={design.photoAdjust}
+            onFile={(file) => void takePhoto(file)}
+            onCamera={openCamera}
+            onRemove={removePhoto}
+            onFrame={(photoFrame) => update({ photoFrame })}
+            onAdjust={(photoAdjust) => update({ photoAdjust })}
+          />
+
           <div className={styles.field}>
             <div className={styles.labelRow}>
               <span className={styles.label} id="rcm-style-label">
@@ -462,7 +639,7 @@ export default function ReelCoverMaker() {
                     onChange={() => update({ style: style.id })}
                   />
                   <span className={styles.thumb}>
-                    <Thumb scene={thumbs?.[i] ?? null} format={format} slot={`thumb-${style.id}`} />
+                    <Thumb scene={thumbs?.[i] ?? null} format={format} slot={`thumb-${style.id}`} photoFor={photoFor} />
                   </span>
                   <span className={styles.styleName}>{style.name}</span>
                 </label>
@@ -535,7 +712,7 @@ export default function ReelCoverMaker() {
                 aria-label="Shade"
               />
             </div>
-            {design.style !== "stickery" && !standsOut(paletteFor(design)) && (
+            {design.style !== "stickery" && !photo && !standsOut(paletteFor(design)) && (
               <p className={styles.hint}>Close to the background in lightness: the letters may blur once posted.</p>
             )}
           </div>
@@ -576,7 +753,26 @@ export default function ReelCoverMaker() {
           </div>
         </div>
 
-        <section className={styles.preview} aria-label="Preview">
+        <section
+          className={styles.preview}
+          aria-label="Preview"
+          onDragOver={(event) => {
+            if (!carriesFiles(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+            setDropping(true);
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false);
+          }}
+          onDrop={(event) => {
+            if (!carriesFiles(event)) return;
+            event.preventDefault();
+            setDropping(false);
+            const file = [...event.dataTransfer.files].find((f) => f.type.startsWith("image/"));
+            if (file) void takePhoto(file);
+          }}
+        >
           <div className={styles.previewTop}>
             <div className={`${styles.segments} ${styles.compact}`} role="radiogroup" aria-label="Background">
               {(["light", "dark"] as const satisfies readonly Ground[]).map((ground) => (
@@ -602,11 +798,36 @@ export default function ReelCoverMaker() {
                 role="img"
                 aria-label={`${format.label} preview`}
               />
+              {photo && scene && (
+                <PhotoSurface
+                  surfaceRef={surfaceRef}
+                  width={scene.width}
+                  height={scene.height}
+                  photo={photo}
+                  frame={design.photoFrame}
+                  onFrame={(photoFrame) => update({ photoFrame })}
+                />
+              )}
               {showGrid && <GridMask format={format} />}
+              {dropping && (
+                <div className={styles.dropHint} aria-hidden="true">
+                  Drop to use as the photo
+                </div>
+              )}
             </div>
           </div>
         </section>
       </div>
+
+      {cameraOpen && (
+        <Camera
+          onCapture={(file) => {
+            setCameraOpen(false);
+            void takePhoto(file);
+          }}
+          onClose={() => setCameraOpen(false)}
+        />
+      )}
 
       <dialog ref={holdRef} className={styles.dialog} onClose={() => setHeld(null)} aria-label="Save the cover">
         {held && (

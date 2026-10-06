@@ -1,7 +1,9 @@
 /**
  * What the maker remembers between visits: the title being worked on, the
  * style, Stickery's lettering and plain face, Pasty's lettering, the colour
- * (hue, shade and ground), the size, and the shuffle, so
+ * (hue, shade and ground), the size, the shuffle, and how the photo behind
+ * the cover is framed and adjusted (the photo itself is kept in
+ * photo-store.ts, being too big for here), so
  * the next cover matches the last one on the grid. Kept in this browser
  * only.
  *
@@ -13,6 +15,7 @@
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
 import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, type Ground } from "@/components/reel-cover-maker/palettes";
+import { DEFAULT_ADJUST, DEFAULT_FRAME, readAdjust, readFrame, type PhotoAdjust, type PhotoFrame } from "@/components/reel-cover-maker/photo";
 import {
   DEFAULT_LETTERING,
   DEFAULT_PASTY_LETTERING,
@@ -38,6 +41,8 @@ export interface Design {
   format: FormatId;
   /** The shuffle: every random choice a style makes is seeded by it as well as by the title. */
   seed: number;
+  photoFrame: PhotoFrame;
+  photoAdjust: PhotoAdjust;
 }
 
 export const STORAGE_KEY = "reel-cover-maker:v1";
@@ -53,6 +58,8 @@ export const DEFAULT_DESIGN: Design = {
   ground: DEFAULT_COLOUR.ground,
   format: DEFAULT_FORMAT,
   seed: 0,
+  photoFrame: DEFAULT_FRAME,
+  photoAdjust: DEFAULT_ADJUST,
 };
 
 const number = (value: unknown, lo: number, hi: number): number | null =>
@@ -78,6 +85,8 @@ export function readDesign(raw: string | null): Design {
     ground: isGround(stored.ground) ? stored.ground : DEFAULT_DESIGN.ground,
     format: isFormatId(stored.format) ? stored.format : DEFAULT_DESIGN.format,
     seed: Number.isInteger(stored.seed) && Math.abs(stored.seed as number) < 2 ** 31 ? (stored.seed as number) : DEFAULT_DESIGN.seed,
+    photoFrame: readFrame(stored.photoFrame),
+    photoAdjust: readAdjust(stored.photoAdjust),
   };
 }
 

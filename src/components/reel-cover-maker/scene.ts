@@ -67,6 +67,12 @@ export interface LiquidOp {
   ground: string | null;
   /** How far apart two strokes may be and still pool together, in pixels of the picture. */
   pool: number;
+  /**
+   * With no ground of its own, the paste still casts its shadow on what is
+   * under it (a photo): a second layer, multiplied onto the picture before
+   * the paste is laid over it.
+   */
+  shadow: boolean;
   seed: number;
   /** What the paste is, its colours aside, for a cache of made layers: a new colour is only light again. */
   key: string;
@@ -91,7 +97,9 @@ export type Op =
       outline?: number;
     }
   | LiquidOp
-  | { kind: "turn"; cx: number; cy: number; angle: number; ops: Op[] };
+  | { kind: "turn"; cx: number; cy: number; angle: number; ops: Op[] }
+  /** The owner's photo, framed to cover the whole picture: drawn by the page, which holds it. */
+  | { kind: "photo" };
 
 export interface Scene {
   width: number;
@@ -111,6 +119,8 @@ export interface CoverInput {
   plainFace?: PlainFaceId;
   /** Pasty's and Pasty Flat's lettering: Drip, or Goo as a teardrop or evened out. */
   pastyLettering?: PastyLetteringId;
+  /** A photo behind the letters, in place of the plain ground. */
+  photo?: boolean;
   hue: number;
   shade: number;
   ground: Ground;
@@ -771,12 +781,13 @@ function pasteOp(
   pool: number,
   glyphOf: number[] = [],
   lineOf: number[] = [],
+  shadow = false,
 ): LiquidOp {
   const key = pasteKey(chains, colourOf, tone, finish, pool);
-  return { kind: "liquid", chains, letters, glyphOf, lineOf, colours, colourOf, tone, finish, ground, pool, seed: hashString(key), key };
+  return { kind: "liquid", chains, letters, glyphOf, lineOf, colours, colourOf, tone, finish, ground, pool, shadow, seed: hashString(key), key };
 }
 
-function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: string | null, withDroplets: boolean): LiquidOp {
+function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: string | null, withDroplets: boolean, shadow = false): LiquidOp {
   const chains = withDroplets ? [...set.chains, ...set.droplets] : set.chains;
   const typical = set.chains.length ? set.chains.reduce((sum, c) => sum + c[0].r, 0) / set.chains.length : 10;
   return pasteOp(
@@ -790,6 +801,7 @@ function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: strin
     typical * style.pool,
     set.glyphOf,
     set.lineOf,
+    shadow,
   );
 }
 
@@ -833,12 +845,13 @@ function shuffled(style: LiquidStyle, seed: number): LiquidStyle {
 }
 
 /** Paste squeezed into letters: wet, glossy gel, or thick matte paste spread with a knife. */
-function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, matte: boolean, seed: number, lettering: PastyLetteringId) {
+function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, matte: boolean, seed: number, lettering: PastyLetteringId, photo: boolean) {
   const base = lettering === "drip" ? (matte ? PASTY_MATTE : PASTY) : pastyGoo(PASTE_LETTERINGS[lettering], matte);
   const style = shuffled(base, seed);
   const set = setLiquid(paragraphs, safe, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
   return {
-    ops: [liquidOp(set, style, [palette.ink, palette.accent], palette.bg, true), ...set.missing] as Op[],
+    // On a photo the paste has no ground of its own: its shadow falls on the photo instead.
+    ops: [liquidOp(set, style, [palette.ink, palette.accent], photo ? null : palette.bg, true, photo), ...set.missing] as Op[],
     readable: set.readable,
   };
 }
@@ -1480,9 +1493,9 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const made: { ops: Op[]; readable: Rect; block?: Block } = (() => {
     switch (input.style) {
       case "pasty":
-        return pasty(paragraphs, safe, canvas, palette, measurer, false, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING);
+        return pasty(paragraphs, safe, canvas, palette, measurer, false, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING, input.photo === true);
       case "pasty-flat":
-        return pasty(paragraphs, safe, canvas, palette, measurer, true, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING);
+        return pasty(paragraphs, safe, canvas, palette, measurer, true, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING, input.photo === true);
       case "stickery":
         return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE);
       case "echo":
@@ -1497,7 +1510,7 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   return {
     width,
     height,
-    ops: [{ kind: "fill", color: palette.bg }, ...made.ops],
+    ops: [{ kind: "fill", color: palette.bg }, ...(input.photo ? [{ kind: "photo" } as Op] : []), ...made.ops],
     readable: made.readable,
     truncated: made.block?.truncated ?? false,
   };

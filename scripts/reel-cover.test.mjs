@@ -29,6 +29,7 @@ const LQ = await import("@/components/reel-cover-maker/liquid");
 const LR = await import("@/components/reel-cover-maker/liquid-render");
 const LL = await import("@/components/reel-cover-maker/liquid-layout");
 const SP = await import("@/components/reel-cover-maker/stepped");
+const PH = await import("@/components/reel-cover-maker/photo");
 const N = await import("@/components/reel-cover-maker/noise");
 const { createFontGate } = await import("@/components/reel-cover-maker/font-gate");
 const { prepaintScript } = await import("@/components/reel-cover-maker/theme");
@@ -1783,6 +1784,126 @@ check("the liquid styles lie on the cover's ground and are lit on it", () => {
       assert.equal(op.finish, style === "pasty" ? "gloss" : "matte", style);
     }
   }
+});
+
+console.log("photo");
+
+check("a photo always covers the whole cover: fitted by its shorter side, zoomed into a window that never runs off it", () => {
+  for (const [pw, ph] of [[4000, 3000], [3000, 4000], [1080, 1920], [600, 600]]) {
+    for (const format of F.FORMATS) {
+      const { width: cw, height: ch } = format;
+      const fit = PH.sourceRect(pw, ph, cw, ch, PH.DEFAULT_FRAME);
+      // At zoom 1 the window has the cover's shape and reaches one pair of the photo's edges.
+      assert.ok(Math.abs(fit.sw / fit.sh - cw / ch) < 1e-6, `${pw}x${ph} on ${format.id}: the window is not the cover's shape`);
+      assert.ok(Math.abs(fit.sw - pw) < 1e-6 || Math.abs(fit.sh - ph) < 1e-6, `${pw}x${ph} on ${format.id}: neither side fits`);
+      for (const zoom of [1, 1.7, 3, PH.MAX_ZOOM]) {
+        for (const [cx, cy] of [[0, 0], [0.5, 0.5], [1, 1], [0.9, 0.1]]) {
+          const r = PH.sourceRect(pw, ph, cw, ch, { zoom, cx, cy, flip: false });
+          assert.ok(r.sx >= -1e-9 && r.sy >= -1e-9 && r.sx + r.sw <= pw + 1e-9 && r.sy + r.sh <= ph + 1e-9, `${format.id} zoom ${zoom} at ${cx},${cy} runs off the photo`);
+          assert.ok(Math.abs(r.sw - fit.sw / zoom) < 1e-6, `zoom ${zoom} does not narrow the window`);
+        }
+      }
+    }
+  }
+});
+
+check("a photo dragged follows the finger, mirrored with it, and zooms about the point under the pointer", () => {
+  const [pw, ph, cw, ch] = [4000, 3000, 1080, 1350];
+  const frame = { zoom: 2, cx: 0.5, cy: 0.5, flip: false };
+  const moved = PH.panFrame(frame, 100, 50, pw, ph, cw, ch);
+  assert.ok(moved.cx < frame.cx && moved.cy < frame.cy, "dragging right and down did not show more of the left and top");
+  // The photo's point under the finger is under it still: 100 cover pixels across.
+  const before = PH.sourceRect(pw, ph, cw, ch, frame);
+  const after = PH.sourceRect(pw, ph, cw, ch, moved);
+  assert.ok(Math.abs((before.sx - after.sx) / (before.sw / cw) - 100) < 1e-6);
+  const mirrored = PH.panFrame({ ...frame, flip: true }, 100, 0, pw, ph, cw, ch);
+  assert.ok(mirrored.cx > frame.cx, "a mirrored photo dragged right moved the wrong way");
+  // Never off the photo, however far it is dragged.
+  const far = PH.sourceRect(pw, ph, cw, ch, PH.panFrame(frame, 1e6, -1e6, pw, ph, cw, ch));
+  assert.ok(far.sx === 0 && Math.abs(far.sy + far.sh - ph) < 1e-6);
+  for (const flip of [false, true]) {
+    for (const at of [{ x: 200, y: 300 }, { x: 900, y: 1200 }, { x: 540, y: 675 }]) {
+      const f = { zoom: 1.5, cx: 0.4, cy: 0.6, flip };
+      const z = PH.zoomFrame(f, 1.8, at, pw, ph, cw, ch);
+      const a = PH.sourceRect(pw, ph, cw, ch, f);
+      const b = PH.sourceRect(pw, ph, cw, ch, z);
+      const u = flip ? 1 - at.x / cw : at.x / cw;
+      const pa = { x: a.sx + u * a.sw, y: a.sy + (at.y / ch) * a.sh };
+      const pb = { x: b.sx + u * b.sw, y: b.sy + (at.y / ch) * b.sh };
+      assert.ok(Math.hypot(pa.x - pb.x, pa.y - pb.y) < 0.5, `flip ${flip}: the point under the pointer moved ${Math.hypot(pa.x - pb.x, pa.y - pb.y).toFixed(2)}px`);
+      assert.ok(Math.abs(z.zoom - 2.7) < 1e-9);
+    }
+  }
+  assert.equal(PH.zoomFrame({ ...frame, zoom: 4 }, 10, { x: 0, y: 0 }, pw, ph, cw, ch).zoom, PH.MAX_ZOOM);
+  assert.equal(PH.zoomFrame(frame, 0.01, { x: 0, y: 0 }, pw, ph, cw, ch).zoom, 1);
+});
+
+check("a photo's adjustments do what they say, and nothing when nothing is set", () => {
+  const pixel = (r, g, b, adjust) => {
+    const data = new Uint8ClampedArray([r, g, b, 200]);
+    PH.adjustPixels(data, { ...PH.DEFAULT_ADJUST, ...adjust });
+    return [...data];
+  };
+  const lum = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  for (const c of [[0, 0, 0], [255, 255, 255], [120, 60, 200], [33, 180, 90]]) assert.deepEqual(pixel(...c, {}), [...c, 200], "a neutral photo changed");
+  const grey = [128, 128, 128];
+  assert.ok(lum(pixel(...grey, { exposure: 1 })) > 160 && lum(pixel(...grey, { exposure: -1 })) < 100, "exposure");
+  assert.ok(lum(pixel(...grey, { brightness: 0.5 })) > 150 && lum(pixel(...grey, { brightness: -0.5 })) < 110, "brightness");
+  const dark = pixel(40, 40, 40, { contrast: 0.6 });
+  const light = pixel(215, 215, 215, { contrast: 0.6 });
+  assert.ok(dark[0] < 30 && light[0] > 225, "contrast did not spread the values");
+  const flat = pixel(40, 200, 90, { contrast: -1 });
+  assert.ok(flat.slice(0, 3).every((v) => Math.abs(v - 128) <= 1), `contrast at -1 is ${flat}`);
+  const mono = pixel(200, 60, 30, { saturation: -1 });
+  assert.ok(Math.abs(mono[0] - mono[1]) <= 1 && Math.abs(mono[1] - mono[2]) <= 1, `saturation at -1 left colour: ${mono}`);
+  const vivid = pixel(160, 110, 100, { saturation: 0.8 });
+  assert.ok(vivid[0] - vivid[2] > 60 - 1, "saturation did not deepen the colour");
+  const warm = pixel(...grey, { temperature: 1 });
+  const cool = pixel(...grey, { temperature: -1 });
+  assert.ok(warm[0] > warm[2] + 20 && cool[2] > cool[0] + 20, "temperature");
+  const magenta = pixel(...grey, { tint: 1 });
+  assert.ok(magenta[1] < magenta[0] - 10, "tint");
+  // Hue turns the colour round: half a turn either way is the same, a full turn is where it began.
+  assert.deepEqual(pixel(200, 60, 30, { hue: 180 }), pixel(200, 60, 30, { hue: -180 }));
+  const red = pixel(200, 40, 40, { hue: 120 });
+  assert.ok(red[1] > red[0], `a red turned a third is not green: ${red}`);
+  const dimmed = pixel(200, 200, 200, { dim: 1 });
+  assert.ok(Math.abs(dimmed[0] - 70) <= 1, `dim at full is ${dimmed[0]}`);
+  // Read back held to its range; the label reads as the slider means.
+  assert.deepEqual(PH.readAdjust({ exposure: 9, hue: -400, dim: "a lot", contrast: 0.25 }), { ...PH.DEFAULT_ADJUST, exposure: 2, hue: -180, contrast: 0.25 });
+  assert.deepEqual(PH.readFrame({ zoom: 50, cx: -1, cy: 2, flip: "yes" }), { zoom: PH.MAX_ZOOM, cx: 0, cy: 1, flip: false });
+  assert.equal(PH.adjustLabel("exposure", 0.5), "+0.5 EV");
+  assert.equal(PH.adjustLabel("contrast", -0.12), "-12%");
+  assert.equal(PH.adjustLabel("hue", 30), "30°");
+  assert.equal(PH.adjustLabel("dim", 0.4), "40%");
+});
+
+check("on a photo the paste has no ground: its shadow is a layer of its own, white where it falls on nothing", () => {
+  const scene = cover("Hello", "pasty", "post-4x5", { photo: true });
+  assert.deepEqual(scene.ops.slice(0, 2).map((op) => op.kind), ["fill", "photo"]);
+  const op = liquidOf(scene);
+  assert.equal(op.ground, null);
+  assert.equal(op.shadow, true);
+  const plain = liquidOf(cover("Hello", "pasty", "post-4x5"));
+  assert.equal(plain.shadow, false);
+  assert.ok(!cover("Hello", "pasty", "post-4x5").ops.some((o) => o.kind === "photo"));
+  // The field is the same paste either way; only how it is lit changes.
+  assert.equal(op.key, plain.key);
+  for (const finish of ["gloss", "matte"]) {
+    const field = LR.liquidField(paintOf(finish, [Array.from({ length: 9 }, (_, i) => ({ x: 200 + i * 15, y: 200, r: 30 }))]), TARGET);
+    const shadow = LR.shadeField(field, { colours: ["#9E1B1B"], ground: null, shadow: true });
+    const at = (x, y) => {
+      const o = ((y - shadow.y) * shadow.w + (x - shadow.x)) * 4;
+      return [shadow.data[o], shadow.data[o + 1], shadow.data[o + 2], shadow.data[o + 3]];
+    };
+    // Every pixel is opaque, to multiply by; far from the paste, white; down and to the right of it (away from the light), darker.
+    for (let i = 3; i < shadow.data.length; i += 4) assert.equal(shadow.data[i], 255);
+    assert.deepEqual(at(shadow.x + 2, shadow.y + 2), [255, 255, 255, 255], `${finish}: shadow where none falls`);
+    const below = at(260, 236);
+    assert.ok(below[0] < 250, `${finish}: no shadow beside the paste (${below})`);
+  }
+  // Stickery's paste lies on its stickers: no shadow, photo or none.
+  assert.equal(liquidOf(cover("*Hello*", "stickery", "post-4x5", { photo: true, lettering: "goo" })).shadow, false);
 });
 
 console.log("page");

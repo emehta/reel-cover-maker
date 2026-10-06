@@ -106,16 +106,16 @@ function toCanvas(image: ImageData): HTMLCanvasElement | null {
  * the GPU it is one canvas shared by every layer, lit again for the next);
  * null if it holds nothing, undefined if its field is not made yet.
  */
-export function liquidLayer(op: LiquidOp, target: LiquidTarget): LiquidLayer | null | undefined {
+export function liquidLayer(op: LiquidOp, target: LiquidTarget, part: "paste" | "shadow" = "paste"): LiquidLayer | null | undefined {
   const key = layerKey(op, target);
   if (!drawn.has(key)) return undefined;
   const field = drawn.get(key);
   if (!field) return null;
-  const shading = { colours: op.colours, ground: op.ground };
+  const shading = { colours: op.colours, ground: op.ground, shadow: part === "shadow" };
   const gpu = shadeOnGpu(field, shading, op.seed);
   if (gpu) return { image: gpu.canvas, sx: gpu.sx, sy: gpu.sy, w: field.w, h: field.h, x: field.x, y: field.y };
   // No WebGL 2: lit here, and kept, since that is slow.
-  const litKey = `${key}|${op.colours.join(",")}|${op.ground ?? "-"}`;
+  const litKey = `${key}|${op.colours.join(",")}|${op.ground ?? "-"}|${part}`;
   let canvas = lit.get(litKey);
   if (!canvas) {
     const image = shadeField(field, shading);

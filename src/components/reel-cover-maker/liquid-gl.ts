@@ -42,6 +42,7 @@ uniform usampler2D uField;
 uniform vec3 uColours[4];
 uniform vec3 uGround;
 uniform int uHasGround;
+uniform int uShadow;
 uniform int uFinish;
 uniform float uRadius;
 uniform ivec2 uSize;
@@ -110,6 +111,27 @@ void main() {
   float slope = max(length(vec2(dx, dy)), 0.25);
   // A pixel and a half of smooth edge, so a curve never steps.
   float cover = smoothstep(-0.75, 0.75, d / slope);
+
+  // What the ground (or a photo, multiplied by it) is darkened by here: the
+  // paste's shadow. Light reaching the ground through gel is coloured by
+  // it, so its shadow is a soft stain of its colour, never a grey drop.
+  vec3 shade = vec3(1.0);
+  float cut = 0.0;
+  float contact = 0.0;
+  if (uFinish != 1 && cover < 1.0) {
+    cut = shadowAt(p, 0.0);
+    contact = exp(-max(0.0, -d) / (uRadius * 0.26));
+    if (uFinish == 0) {
+      vec3 tint = mix(vec3(1.0), clamp(C * 1.6, 0.0, 1.0), 0.75);
+      shade = mix(vec3(1.0), tint * 0.82, cut * 0.7) * (1.0 - 0.22 * contact);
+    } else {
+      shade = vec3(1.0 - 0.45 * cut - 0.22 * contact);
+    }
+  }
+  if (uShadow == 1) {
+    outColor = vec4(encode(shade), 1.0);
+    return;
+  }
   vec3 paste = vec3(0.0);
 
   if (cover > 0.0) {
@@ -160,22 +182,8 @@ void main() {
     outColor = vec4(encode(paste) * cover, cover);
     return;
   }
-  vec3 ground = uGround;
-  bool touched = cover > 0.0;
-  if (uFinish != 1 && cover < 1.0) {
-    float cut = shadowAt(p, 0.0);
-    float contact = exp(-max(0.0, -d) / (uRadius * 0.26));
-    if (uFinish == 0) {
-      // Light reaching the ground through gel is coloured by it, so its
-      // shadow is a soft stain of its colour, never a grey drop shadow.
-      vec3 tint = mix(vec3(1.0), clamp(C * 1.6, 0.0, 1.0), 0.75);
-      ground *= mix(vec3(1.0), tint * 0.82, cut * 0.7);
-      ground *= 1.0 - 0.22 * contact;
-    } else {
-      ground *= 1.0 - 0.45 * cut - 0.22 * contact;
-    }
-    touched = touched || cut > 0.002 || contact > 0.002;
-  }
+  vec3 ground = uGround * shade;
+  bool touched = cover > 0.0 || cut > 0.002 || contact > 0.002;
   // The edge blended as it is seen, in the display's own values, as type
   // is: blended in linear light, a pale paste on a dark ground came out
   // nearly whole in a pixel only partly covered, and its curves stepped.
@@ -237,7 +245,7 @@ function setUp(): Gpu | null {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    const names = ["uField", "uColours", "uGround", "uHasGround", "uFinish", "uRadius", "uSize", "uSeed"];
+    const names = ["uField", "uColours", "uGround", "uHasGround", "uShadow", "uFinish", "uRadius", "uSize", "uSeed"];
     const uniforms = Object.fromEntries(names.map((n) => [n, gl.getUniformLocation(program, n)]));
     canvas.addEventListener("webglcontextlost", (event) => {
       event.preventDefault();
@@ -294,6 +302,7 @@ export function shadeOnGpu(field: LiquidField, shading: Shading, seed: number): 
   gl.uniform3fv(uniforms.uColours, new Float32Array(colours));
   gl.uniform3fv(uniforms.uGround, new Float32Array(shading.ground ? linear(shading.ground) : [0, 0, 0]));
   gl.uniform1i(uniforms.uHasGround, shading.ground ? 1 : 0);
+  gl.uniform1i(uniforms.uShadow, shading.shadow ? 1 : 0);
   gl.uniform1i(uniforms.uFinish, FINISH[field.finish]);
   gl.uniform1f(uniforms.uRadius, Math.max(0.5, field.radius));
   gl.uniform2i(uniforms.uSize, field.w, field.h);

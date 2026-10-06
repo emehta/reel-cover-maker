@@ -313,6 +313,12 @@ export interface Shading {
   colours: string[];
   /** The ground the paste sits on, drawn into the picture with its shadows; null for paste alone on a transparent ground. */
   ground: string | null;
+  /**
+   * With no ground: the shadow the paste casts, instead of the paste, as
+   * what to multiply the picture under it by (white where it falls on
+   * nothing), so it darkens a photo as it darkened the ground.
+   */
+  shadow?: boolean;
 }
 
 const toLinear = (c: number) => {
@@ -403,6 +409,29 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
       // A pixel and a half of smooth edge, so a curve never steps.
       const e = clamp01((d / slope + 0.75) / 1.5);
       const cover = e * e * (3 - 2 * e);
+      // What the ground (or a photo, multiplied by it) is darkened by here: the paste's shadow, as liquid-gl.ts has it.
+      const shade = (): Vec => {
+        if (finish === "flat" || cover >= 1) return [1, 1, 1];
+        const cut = shadowAt(x, y, 0);
+        const contact = Math.exp(-Math.max(0, -d) / (radius * 0.26));
+        if (finish === "gloss") {
+          return C.map((c) => {
+            const tint = 1 + (Math.min(1, c * 1.6) - 1) * 0.75;
+            return (1 + (tint * 0.82 - 1) * cut * 0.7) * (1 - 0.22 * contact);
+          }) as Vec;
+        }
+        const f = 1 - 0.45 * cut - 0.22 * contact;
+        return [f, f, f];
+      };
+      if (shading.shadow) {
+        const f = shade();
+        const o = i * 4;
+        out[o] = Math.round(toSrgb(f[0]));
+        out[o + 1] = Math.round(toSrgb(f[1]));
+        out[o + 2] = Math.round(toSrgb(f[2]));
+        out[o + 3] = 255;
+        continue;
+      }
       let paste: Vec = [0, 0, 0];
       if (cover > 0) {
         if (finish === "flat") {
@@ -443,22 +472,10 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
         out[o + 3] = Math.round(cover * 255);
         continue;
       }
-      // The ground, in the paste's shadow, as liquid-gl.ts has it.
-      let ground: Vec = groundColour;
-      let touched = cover > 0;
-      if (finish !== "flat" && cover < 1) {
-        const cut = shadowAt(x, y, 0);
-        const contact = Math.exp(-Math.max(0, -d) / (radius * 0.26));
-        if (finish === "gloss") {
-          ground = ground.map((g, k) => {
-            const tint = 1 + (Math.min(1, C[k] * 1.6) - 1) * 0.75;
-            return g * (1 + (tint * 0.82 - 1) * cut * 0.7) * (1 - 0.22 * contact);
-          }) as Vec;
-        } else {
-          ground = ground.map((g) => g * (1 - 0.45 * cut - 0.22 * contact)) as Vec;
-        }
-        touched ||= cut > 0.002 || contact > 0.002;
-      }
+      // The ground, in the paste's shadow.
+      const f = shade();
+      const ground = groundColour.map((g, k) => g * f[k]) as Vec;
+      const touched = cover > 0 || f.some((v) => v < 0.9995);
       noise = (Math.imul(noise ^ (noise >>> 15), 0x2c1b3c6d) + 0x9e3779b9) | 0;
       const dither = touched ? (((noise >>> 8) & 255) / 255 - 0.5) * 0.9 : 0;
       // Blended in the display's own values, as liquid-gl.ts blends it.

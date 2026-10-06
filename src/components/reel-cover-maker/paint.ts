@@ -4,7 +4,8 @@
  * The scene is in pixels of the picture Instagram is given; `scale` maps
  * them to the canvas, so the same scene fills a 1080-wide download and a
  * thumbnail a tenth of that. A liquid layer is the exception: it is made
- * pixel by pixel for the canvas it is going on, and handed in lit.
+ * pixel by pixel for the canvas it is going on, and handed in lit; and the
+ * owner's photo is handed in too, with the window of it to show.
  */
 
 import type { FaceId } from "@/components/reel-cover-maker/faces";
@@ -18,6 +19,8 @@ export type PaintTarget = Pick<
   | "setTransform"
   | "translate"
   | "rotate"
+  | "scale"
+  | "globalCompositeOperation"
   | "fillRect"
   | "fillText"
   | "strokeText"
@@ -50,8 +53,15 @@ export interface PaintOptions {
   font: (face: FaceId, size: number) => string;
   /** A tile of grain at the picture's own scale, or null to leave grain out. */
   grain: CanvasImageSource | null;
-  /** A liquid layer lit for this canvas: the part of `image` to copy, and where to, in this canvas's pixels; null while it is being made. */
-  liquid?: (op: LiquidOp) => { image: CanvasImageSource; sx: number; sy: number; w: number; h: number; x: number; y: number } | null;
+  /**
+   * A liquid layer lit for this canvas: the part of `image` to copy, and
+   * where to, in this canvas's pixels; null while it is being made. The
+   * paste, or the shadow it casts with no ground of its own, to be
+   * multiplied onto what is under it.
+   */
+  liquid?: (op: LiquidOp, part: "paste" | "shadow") => { image: CanvasImageSource; sx: number; sy: number; w: number; h: number; x: number; y: number } | null;
+  /** The photo behind the letters and the window of it that covers the picture, in its own pixels; mirrored if `flip`. */
+  photo?: { image: CanvasImageSource; sx: number; sy: number; sw: number; sh: number; flip: boolean } | null;
 }
 
 function roundedRect(ctx: PaintTarget, x: number, y: number, w: number, h: number, radius: number) {
@@ -94,11 +104,29 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
     }
     case "liquid": {
       // Drawn by the worker into canvas pixels; placed without the scene's scale.
-      const layer = options.liquid?.(op);
-      if (!layer) return;
+      // Each layer is drawn as soon as it is handed over: on the GPU the next is lit in the same canvas.
+      const place = (part: "paste" | "shadow", blend: GlobalCompositeOperation) => {
+        const layer = options.liquid?.(op, part);
+        if (!layer) return;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalCompositeOperation = blend;
+        ctx.drawImage(layer.image, layer.sx, layer.sy, layer.w, layer.h, layer.x, layer.y, layer.w, layer.h);
+        ctx.restore();
+      };
+      if (op.shadow) place("shadow", "multiply");
+      place("paste", "source-over");
+      return;
+    }
+    case "photo": {
+      const photo = options.photo;
+      if (!photo) return;
       ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(layer.image, layer.sx, layer.sy, layer.w, layer.h, layer.x, layer.y, layer.w, layer.h);
+      if (photo.flip) {
+        ctx.translate(scene.width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(photo.image, photo.sx, photo.sy, photo.sw, photo.sh, 0, 0, scene.width, scene.height);
       ctx.restore();
       return;
     }
