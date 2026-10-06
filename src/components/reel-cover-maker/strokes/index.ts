@@ -10,15 +10,15 @@
  */
 
 import { DRIP } from "@/components/reel-cover-maker/strokes/drip";
+import { GOO } from "@/components/reel-cover-maker/strokes/goo";
 import { SANS } from "@/components/reel-cover-maker/strokes/sans";
-import { SCRIPT } from "@/components/reel-cover-maker/strokes/script";
 import type { StrokeFontData } from "@/components/reel-cover-maker/strokes/types";
 
-export type StrokeFontId = "drip" | "script" | "sans";
+export type StrokeFontId = "drip" | "goo" | "sans";
 
 export const STROKE_FONTS: Record<StrokeFontId, StrokeFontData> = {
   drip: DRIP,
-  script: SCRIPT,
+  goo: GOO,
   sans: SANS,
 };
 
@@ -66,7 +66,7 @@ function lookup(font: StrokeFontData, character: string): StrokeGlyph | null {
   const [advance, strokes] = entry;
   return {
     advance: advance / font.upm,
-    strokes: strokes.map((flat) => flat.map((v) => v / font.upm)),
+    strokes: strokes.map((s) => s.map((v) => v / font.upm)),
   };
 }
 

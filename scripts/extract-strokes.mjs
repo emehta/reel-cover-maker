@@ -24,7 +24,6 @@ const OUT = join(ROOT, "src/components/reel-cover-maker/strokes");
 
 /** Which fonts, under which id, and what each is for. */
 const WANTED = [
-  { file: "HersheyScript1.svg", id: "script", note: "joined script, for Stickery's liquid words" },
   { file: "HersheySans1.svg", id: "sans", note: "plain capitals, for Spread" },
 ];
 

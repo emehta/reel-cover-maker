@@ -18,18 +18,18 @@ import {
   Fraunces,
   Instrument_Serif,
   Inter_Tight,
+  Damion,
   Jost,
-  Kaushan_Script,
   Leckerli_One,
   Libre_Caslon_Text,
   Newsreader,
   Outfit,
-  Pacifico,
   Sofia_Sans_Condensed,
   Space_Mono,
+  Yellowtail,
   Yesteryear,
 } from "next/font/google";
-import { CORE_FACE_IDS, type FaceId, type Measurer } from "@/components/reel-cover-maker/faces";
+import { CORE_FACE_IDS, type FaceId, type InkColumn, type Measurer } from "@/components/reel-cover-maker/faces";
 import { createFontGate, type FontGate } from "@/components/reel-cover-maker/font-gate";
 
 const instrumentSerif = Instrument_Serif({ weight: "400", style: ["normal", "italic"], subsets: ["latin"] });
@@ -51,9 +51,9 @@ const caslon = Libre_Caslon_Text({ weight: "400", subsets: ["latin"] });
 
 // Stickery's funky words, where they are set in a brush script.
 const yesteryear = Yesteryear({ weight: "400", subsets: ["latin"] });
-const pacifico = Pacifico({ weight: "400", subsets: ["latin"] });
 const leckerli = Leckerli_One({ weight: "400", subsets: ["latin"] });
-const kaushan = Kaushan_Script({ weight: "400", subsets: ["latin"] });
+const damion = Damion({ weight: "400", subsets: ["latin"] });
+const yellowtail = Yellowtail({ weight: "400", subsets: ["latin"] });
 
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
   serif: { family: instrumentSerif.style.fontFamily, weight: 400, italic: false },
@@ -71,9 +71,9 @@ const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }>
   "plain-crimson": { family: crimson.style.fontFamily, weight: 400, italic: false },
   "plain-caslon": { family: caslon.style.fontFamily, weight: 400, italic: false },
   "funky-yesteryear": { family: yesteryear.style.fontFamily, weight: 400, italic: false },
-  "funky-pacifico": { family: pacifico.style.fontFamily, weight: 400, italic: false },
   "funky-leckerli": { family: leckerli.style.fontFamily, weight: 400, italic: false },
-  "funky-kaushan": { family: kaushan.style.fontFamily, weight: 400, italic: false },
+  "funky-damion": { family: damion.style.fontFamily, weight: 400, italic: false },
+  "funky-yellowtail": { family: yellowtail.style.fontFamily, weight: 400, italic: false },
 };
 
 /** The CSS font for a face at a size in pixels, as a canvas reads it. */
@@ -167,6 +167,8 @@ export function measurerFor(loadsSeen: number): Measurer {
   if (measurer && measurer.loads === loadsSeen) return measurer.measurer;
   const ctx = document.createElement("canvas").getContext("2d");
   const widths = new Map<string, number>();
+  const shapes = new Map<string, InkColumn[]>();
+  const sheet = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
   const metrics = new Map<FaceId, { cap: number; ascent: number; descent: number }>();
   const bounds = new Map<string, { ascent: number; descent: number; left: number; right: number }>();
   const measure = (face: FaceId, text: string) => {
@@ -195,6 +197,46 @@ export function measurerFor(loadsSeen: number): Measurer {
         metrics.set(face, m);
       }
       return m;
+    },
+    columns(face, text) {
+      const key = `${face}\u0000${text}`;
+      let cols = shapes.get(key);
+      if (!cols) {
+        cols = [];
+        const b = made.bounds(face, text);
+        if (sheet && text.trim()) {
+          // Drawn at the measuring size, read back, and cut into slices a
+          // twenty-fifth of an em wide: fine enough to find the dip between
+          // two tall letters, coarse enough to cost nothing.
+          const pad = 4;
+          const left = Math.ceil(b.left * MEASURE_SIZE) + pad;
+          const width = Math.max(1, Math.ceil((b.left + b.right) * MEASURE_SIZE) + pad * 2);
+          const above = Math.ceil(b.ascent * MEASURE_SIZE) + pad;
+          const height = Math.max(1, above + Math.ceil(b.descent * MEASURE_SIZE) + pad);
+          sheet.canvas.width = width;
+          sheet.canvas.height = height;
+          sheet.clearRect(0, 0, width, height);
+          sheet.font = fontCss(face, MEASURE_SIZE);
+          sheet.fillStyle = "#000";
+          sheet.fillText(text, left, above);
+          const alpha = sheet.getImageData(0, 0, width, height).data;
+          const slice = MEASURE_SIZE / 25;
+          for (let x0 = 0; x0 < width; x0 += slice) {
+            let top = Infinity;
+            let bottom = -Infinity;
+            for (let x = Math.floor(x0); x < Math.min(width, Math.floor(x0 + slice)); x += 1) {
+              for (let y = 0; y < height; y += 1) {
+                if (alpha[(y * width + x) * 4 + 3] < 96) continue;
+                if (y < top) top = y;
+                if (y > bottom) bottom = y;
+              }
+            }
+            if (top <= bottom) cols.push({ x: (x0 - left) / MEASURE_SIZE, w: slice / MEASURE_SIZE, top: (top - above) / MEASURE_SIZE, bottom: (bottom + 1 - above) / MEASURE_SIZE });
+          }
+        }
+        shapes.set(key, cols);
+      }
+      return cols;
     },
     bounds(face, text) {
       const key = `${face}\u0000${text}`;

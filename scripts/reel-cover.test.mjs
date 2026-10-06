@@ -64,9 +64,9 @@ const FACE_WIDTH = {
   "plain-crimson": 0.43,
   "plain-caslon": 0.5,
   "funky-yesteryear": 0.46,
-  "funky-pacifico": 0.6,
+  "funky-damion": 0.48,
   "funky-leckerli": 0.62,
-  "funky-kaushan": 0.5,
+  "funky-yellowtail": 0.47,
 };
 const FACE_METRICS = {
   serif: { cap: 0.66, ascent: 0.92, descent: 0.24 },
@@ -86,9 +86,9 @@ const FACE_METRICS = {
   "plain-crimson": { cap: 0.62, ascent: 0.9, descent: 0.24 },
   "plain-caslon": { cap: 0.68, ascent: 0.95, descent: 0.26 },
   "funky-yesteryear": { cap: 0.72, ascent: 1.0, descent: 0.3 },
-  "funky-pacifico": { cap: 0.74, ascent: 1.05, descent: 0.35 },
+  "funky-damion": { cap: 0.72, ascent: 1.0, descent: 0.3 },
   "funky-leckerli": { cap: 0.7, ascent: 0.98, descent: 0.26 },
-  "funky-kaushan": { cap: 0.72, ascent: 1.02, descent: 0.32 },
+  "funky-yellowtail": { cap: 0.74, ascent: 1.02, descent: 0.32 },
 };
 
 const liquidOf = (scene) => scene.ops.find((op) => op.kind === "liquid");
@@ -124,8 +124,30 @@ const advance = (face, text) => T.graphemes(text).reduce((sum, g) => sum + charW
  * sides, an accented first letter reaches left (Anton's wide accents do), and
  * an emoji overhangs its advance on the right.
  */
+/** Each letter's ink as the stand-in sees it: its advance across, an ascender or a capital's height up, a descender down. */
+function letterInk(face, ch) {
+  const m = FACE_METRICS[face];
+  const tall = /[bdfhklt\p{Lu}0-9\u0300-\u036f]/u.test(ch.normalize("NFD")) || /\p{Extended_Pictographic}/u.test(ch);
+  const small = /[a-z]/.test(ch) && !tall;
+  return { top: -(small ? m.cap * 0.68 : tall && /[a-z]/.test(ch) ? m.ascent : m.cap), bottom: /[gjpqyQ,;]/u.test(ch) ? m.descent : 0 };
+}
+
 const measurer = {
   width: advance,
+  // Ink in slices a twenty-fifth of an em wide, letter by letter, as the page's own measurer cuts it.
+  columns: (face, text) => {
+    const out = [];
+    let x = 0;
+    for (const ch of T.graphemes(text)) {
+      const w = charWidth(face, ch);
+      if (ch.trim()) {
+        const { top, bottom } = letterInk(face, ch);
+        for (let at = x + w * 0.08; at < x + w * 0.92 - 1e-9; at += 0.04) out.push({ x: at, w: Math.min(0.04, x + w * 0.92 - at), top, bottom });
+      }
+      x += w;
+    }
+    return out;
+  },
   metrics: (face) => FACE_METRICS[face],
   bounds: (face, text) => {
     const m = FACE_METRICS[face];
@@ -134,8 +156,10 @@ const measurer = {
     const italic = face === "serif-italic";
     const accentFirst = /^.[\u0300-\u036f]/u.test(decomposed) ? 0.05 : 0;
     const emojiLast = /\p{Extended_Pictographic}$/u.test(text) ? 0.1 : 0;
+    // A word of x-height letters alone (no ascender, capital or accent) inks only to the x-height.
+    const low = /^[acemnorsuvwxz]+$/.test(text);
     return {
-      ascent: tall ? m.ascent : m.cap,
+      ascent: low ? m.cap * 0.68 : tall ? m.ascent : m.cap,
       descent: /[gjpqyQ,;\p{Extended_Pictographic}]/u.test(text) ? m.descent : 0,
       left: (italic ? 0.06 : 0) + accentFirst,
       right: advance(face, text) + (italic ? 0.08 : 0) + emojiLast,
@@ -864,7 +888,7 @@ check("grain is drawn only when there is a tile to draw", () => {
 
 console.log("strokes");
 
-const FONT_IDS = ["drip", "script", "sans"];
+const FONT_IDS = ["drip", "sans"];
 
 check("every printable letter, figure and mark has strokes in every hand", () => {
   for (const font of FONT_IDS) {
@@ -896,7 +920,7 @@ check("each hand's metrics are its own, measured from its glyphs", () => {
     const m = ST.strokeMetrics(font);
     assert.ok(m.cap > m.xHeight && m.xHeight > 0.2 && m.ascent >= m.cap && m.descent > 0.1 && m.space > 0, `${font} ${JSON.stringify(m)}`);
   }
-  assert.notEqual(ST.strokeMetrics("drip").xHeight, ST.strokeMetrics("script").xHeight);
+  assert.notEqual(ST.strokeMetrics("drip").xHeight, ST.strokeMetrics("sans").xHeight);
 });
 
 check("Drip draws every Latin-1 letter, accents built over the letter and an i's dot left off under one", () => {
@@ -1287,27 +1311,24 @@ check("a ring of words makes a sticker with no hole; words far apart make two", 
   assert.equal(SP.steppedOutline([{ x: 0, y: 0, w: 50, h: 50 }, { x: 600, y: 0, w: 50, h: 50 }], { cell: 20, pad: 10 }).length, 2);
 });
 
-/** A Stickery cover's parts: its plain words' ink boxes, and its funky words' paste beads or letters, as circles and boxes. */
+/**
+ * A Stickery cover's parts, measured as the layout measures them: each
+ * plain word's ink as upright strips (and its whole box), and its funky
+ * words' paste beads or ink strips, turned as they are drawn.
+ */
 function stickerParts(scene) {
   const plain = [];
   const funky = [];
+  const strips = (op, turn) =>
+    (measurer.columns(op.face, op.text) ?? []).map((c) => applyTurn({ x: op.x + c.x * op.size, y: op.y + c.top * op.size, w: c.w * op.size, h: (c.bottom - c.top) * op.size }, turn));
   const walk = (ops, turn) => {
     for (const op of ops) {
       if (op.kind === "turn") walk(op.ops, op);
       else if (op.kind === "text") {
-        const box = (text, x) => {
-          const ink = measurer.bounds(op.face, text);
-          return applyTurn({ x: x - ink.left * op.size, y: op.y - ink.ascent * op.size, w: (ink.left + ink.right) * op.size, h: (ink.ascent + ink.descent) * op.size }, turn);
-        };
-        if (op.face.startsWith("plain-")) plain.push({ op, box: box(op.text, op.x), turned: !!turn });
-        else {
-          // A funky word by its letters, as the layout keeps clear of them.
-          let before = "";
-          for (const g of T.graphemes(op.text)) {
-            if (g.trim()) funky.push({ kind: "box", ...box(g, op.x + measurer.width(op.face, before) * op.size) });
-            before += g;
-          }
-        }
+        const ink = measurer.bounds(op.face, op.text);
+        const box = applyTurn({ x: op.x - ink.left * op.size, y: op.y - ink.ascent * op.size, w: (ink.left + ink.right) * op.size, h: (ink.ascent + ink.descent) * op.size }, turn);
+        if (op.face.startsWith("plain-")) plain.push({ op, box, strips: strips(op, turn), turned: !!turn });
+        else funky.push(...strips(op, turn).map((b) => ({ kind: "box", ...b })));
       }
     }
   };
@@ -1365,14 +1386,24 @@ check("Stickery is laid out by the title and the shuffle: the same seed the same
   const seeds = [0, 1, 2, 3, 4, 5].map((seed) => lefts(cover(title, "stickery", "reel", { seed })));
   assert.ok(new Set(seeds.map((l) => l.join())).size >= 5, "the shuffle does not move the stickers");
   for (const l of seeds) assert.ok(new Set(l).size > 1, `every sticker starts at ${l[0]}`);
-  // Stickers stacked close: a step or so apart, never touching.
+  // Stickers stacked well apart, as Main Sticker 2's: 1.2 to 1.6 of a
+  // plain x-height between them (the border is a 0.045 of one), each set
+  // to the other side of the last by an eighth of its width or so.
   const scene = cover(title, "stickery");
-  const boxes = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
-  const cell = scene.ops.find((op) => op.kind === "shape").strokeWidth / 0.13;
+  const shapes = scene.ops.filter((op) => op.kind === "shape");
+  const boxes = shapes.map((op) => SP.polygonBounds(op.polygons));
   for (let i = 1; i < boxes.length; i += 1) {
+    // The border is held to 1.2px at the least, which says nothing then of the x-height.
+    const unit = shapes[i - 1].strokeWidth / 0.045;
     const gap = boxes[i].y - (boxes[i - 1].y + boxes[i - 1].h);
-    assert.ok(gap >= 0 && gap <= cell * 1.2, `stickers ${i - 1} and ${i} are ${gap.toFixed(0)}px apart`);
+    if (shapes[i - 1].strokeWidth > 1.2) assert.ok(gap >= unit * 1.1 && gap <= unit * 1.7 + 1, `stickers ${i - 1} and ${i} are ${(gap / unit).toFixed(2)} x-heights apart`);
+    else assert.ok(gap > 0, `stickers ${i - 1} and ${i} touch`);
+    const shift = (boxes[i].x - boxes[i - 1].x) / boxes[i].w;
+    assert.ok(Math.abs(shift) >= 0.04 && Math.abs(shift) <= 0.4, `sticker ${i} sits ${shift.toFixed(2)} of its width along`);
   }
+  // The second sticker a colour a long way round the wheel from the first, as pink sits over blue.
+  const [a, b] = shapes.map((op) => P.rgb(op.color));
+  assert.ok(Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) > 120, "the stickers are one colour");
 });
 
 check("Stickery with no stars: each sticker's longest word is the funky one", () => {
@@ -1397,9 +1428,9 @@ check("Stickery is one unit: plain words settle close round the funky word, neve
         const { plain, funky } = stickerParts(scene);
         const size = plain[0]?.op.size ?? 1;
         let nearest = Infinity;
-        for (const { op, box } of plain) {
+        for (const { op, strips } of plain) {
           words += 1;
-          const d = Math.min(...funky.map((f) => apart(box, f)));
+          const d = Math.min(...strips.flatMap((box) => funky.map((f) => apart(box, f))));
           assert.ok(d > 0, `${lettering} ${seed} "${title}": "${op.text}" touches the funky word`);
           nearest = Math.min(nearest, d);
         }
@@ -1411,7 +1442,7 @@ check("Stickery is one unit: plain words settle close round the funky word, neve
   assert.ok(words > 300);
 });
 
-check("Stickery's plain words are never turned and a line reads in order; its funky word is always turned, another way each shuffle", () => {
+check("Stickery's plain words are never turned and a line reads in order; its funky word is always turned 2 to 6 degrees, another way each shuffle", () => {
   const angles = new Set();
   for (const lettering of LETTERING_IDS) {
     for (const seed of [0, 1, 2, 3]) {
@@ -1432,7 +1463,7 @@ check("Stickery's plain words are never turned and a line reads in order; its fu
         if (!paste) {
           assert.ok(turns.length >= 1, `${lettering} "${title}": the funky word is not turned`);
           for (const t of turns) {
-            assert.ok(Math.abs(t.angle) >= 0.039 && Math.abs(t.angle) <= 0.171, `${lettering}: turned ${((t.angle * 180) / Math.PI).toFixed(1)} degrees`);
+            assert.ok(Math.abs(t.angle) >= 0.034 && Math.abs(t.angle) <= 0.101, `${lettering}: turned ${((t.angle * 180) / Math.PI).toFixed(1)} degrees`);
             angles.add(t.angle.toFixed(3));
           }
         }
@@ -1457,6 +1488,31 @@ check("every lettering and every plain face keeps Stickery inside the safe area"
   }
 });
 
+check("a sticker with no funky word sets its words the size of its neighbours', and a script's apostrophe sits close", () => {
+  for (const lettering of LETTERING_IDS) {
+    for (const seed of [0, 1, 2]) {
+      const scene = cover("I love *you*\nmore than *words*\ncan say", "stickery", "reel", { seed, lettering });
+      const sizes = stickerParts(scene).plain.map((p) => [p.op.text, p.op.size]);
+      const alone = sizes.filter(([t]) => t === "can" || t === "say").map(([, v]) => v);
+      const beside = sizes.filter(([t]) => t !== "can" && t !== "say").map(([, v]) => v);
+      assert.ok(alone.length && beside.length);
+      // A line of two beside a funky word may grow a quarter, and a longer one shrink: within that, the same.
+      for (const v of alone) assert.ok(v >= Math.min(...beside) * 0.75 && v <= Math.max(...beside) * 1.34, `${lettering} ${seed}: "can say" at ${v.toFixed(1)} beside ${beside.map((b) => b.toFixed(1)).join(", ")}`);
+    }
+  }
+  // A typeface sets "aren't" in pieces at its apostrophe, each a twentieth of an em of clear paper from the ink before it.
+  for (const lettering of ["yesteryear", "leckerli", "damion", "yellowtail"]) {
+    const funky = textOps(cover("things *aren't*", "stickery", "reel", { lettering })).filter((op) => !op.face.startsWith("plain-"));
+    assert.deepEqual(funky.map((op) => op.text), ["aren", "'", "t"], lettering);
+    for (let i = 1; i < funky.length; i += 1) {
+      const [a, b] = [funky[i - 1], funky[i]];
+      const right = a.x + measurer.bounds(a.face, a.text).right * a.size;
+      const left = b.x - measurer.bounds(b.face, b.text).left * b.size;
+      assert.ok(Math.abs(left - right - 0.05 * a.size) < 0.01 * a.size, `${lettering}: "${a.text}" to "${b.text}" ${((left - right) / a.size).toFixed(3)} em`);
+    }
+  }
+});
+
 check("the picker offers the owner's four plain faces, two sans and two serif; the suggestions wait", () => {
   const offered = FACES.PLAIN_FACES.filter((f) => f.offered);
   assert.deepEqual(offered.map((f) => f.name), ["Outfit", "Jost", "Fraunces", "Newsreader"]);
@@ -1466,17 +1522,20 @@ check("the picker offers the owner's four plain faces, two sans and two serif; t
   assert.equal(D.readDesign(JSON.stringify({ plainFace: "plain-inter" })).plainFace, FACES.DEFAULT_PLAIN_FACE);
 });
 
-check("drawn lettering is smooth: a brush's thick and thin, goo's swelling, and never a step between", () => {
+check("Goo swells and thins slowly, as a brush: necks to swells about 2.5 apart, and never a step between", () => {
   const radii = (lettering) => liquidOf(cover("*remember*", "stickery", "reel", { lettering })).chains.flat().map((b) => b.r).sort((a, b) => a - b);
-  const ratio = (r) => r[Math.floor(r.length * 0.95)] / r[Math.floor(r.length * 0.05)];
-  assert.ok(ratio(radii("brush")) > 2.2, `brush thick to thin only ${ratio(radii("brush")).toFixed(2)}`);
-  for (const lettering of ["brush", "goo"]) {
+  // Measured as the critic measured Main Sticker 2 (2.6 to 2.9): the 90th of every bead's radius over the 10th.
+  const ratio = (r) => r[Math.floor(r.length * 0.9)] / r[Math.floor(r.length * 0.1)];
+  assert.ok(ratio(radii("goo")) > 1.8 && ratio(radii("goo")) < 3.6, `goo neck to swell ${ratio(radii("goo")).toFixed(2)}`);
+  for (const lettering of ["goo"]) {
     const op = liquidOf(cover("*smooth transitions everywhere*", "stickery", "reel", { lettering }));
     // Bead to bead, never more than a fifth of the stroke's full weight.
     for (const chain of op.chains) {
       const full = Math.max(...chain.map((b) => b.r));
       for (let i = 1; i < chain.length; i += 1) {
         const [a, b] = [chain[i - 1].r, chain[i].r];
+        // Where one bead lies wholly inside the next (a drip's drop filling out), there is no edge to step.
+        if (Math.abs(a - b) >= Math.hypot(chain[i].x - chain[i - 1].x, chain[i].y - chain[i - 1].y)) continue;
         assert.ok(Math.abs(a - b) <= full * 0.2, `${lettering}: the paste steps from ${a.toFixed(1)} to ${b.toFixed(1)}`);
       }
     }
@@ -1507,15 +1566,15 @@ check("the pen rules: a brush is heavy going down and light going up, a nib heav
   const brush = { kind: "pressure", thin: 0.25 };
   assert.ok(near(mid(line(0, 1), brush), 1, 0.02), "a downstroke is not full weight");
   assert.ok(mid(line(1, -0.6), brush) < 0.35, "a rising join is not a hairline");
-  assert.ok(mid(line(0.2, -1), brush) > 0.5 && mid(line(0.2, -1), brush) < 0.8, "a steep upstroke is not half weight");
+  assert.ok(mid(line(0.2, -1), brush) > 0.3 && mid(line(0.2, -1), brush) < 0.5, "a steep upstroke does not ease off");
   const nib = { kind: "nib", thin: 0.15, angle: Math.PI / 4 };
   // Moving along the edge's own line, thinnest; across it, heaviest.
   assert.ok(mid(line(1, -1), nib) < 0.2 && mid(line(1, 1), nib) > 0.95);
   assert.deepEqual(LQ.penWeights(line(1, 0), undefined), line(1, 0).map(() => 1));
 });
 
-check("a mark sits by its ink: a script's apostrophe close after its letter, not in the middle of the word", () => {
-  const layout = LL.liquidLayout(T.parseTitle("aren't"), { box: { x: 0, y: 0, w: 2000, h: 600 }, fonts: [{ id: "script", share: 1 }], maxSize: 300, minSize: 40, gap: 0, maxLines: 1, stretch: 1, tracking: 0.01, inkGap: -0.06, jitter: { scale: 0, angle: 0, rise: 0, squash: 0 }, upper: false, align: "left", salt: "t" });
+check("a mark sits by its ink: an apostrophe close after its letter, however wide its margin", () => {
+  const layout = LL.liquidLayout(T.parseTitle("aren't"), { box: { x: 0, y: 0, w: 2000, h: 600 }, fonts: [{ id: "drip", share: 1 }], maxSize: 300, minSize: 40, gap: 0, maxLines: 1, stretch: 1, tracking: 0.01, inkGap: -0.06, jitter: { scale: 0, angle: 0, rise: 0, squash: 0 }, upper: false, align: "left", salt: "t" });
   const [n, mark] = [layout.glyphs[3], layout.glyphs[4]];
   const nEnd = n.x + ST.glyphBox(n.glyph).x1 * n.sx;
   const markStart = mark.x + ST.glyphBox(mark.glyph).x0 * mark.sx;

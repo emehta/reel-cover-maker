@@ -31,19 +31,28 @@ on top, so it stays in sight while you type).
     two lines, and a short one set small between them ("ART / is / DIFFE /
     RENT").
   - **Stickery**: each line you type is a sticker with stepped, cut paper
-    edges, in turn the colour and its pale tint, with a border that shows on
-    either background. No side runs straight from corner to corner. Starred
-    words are funky, the rest plain; with no stars, each sticker's longest
-    word is the funky one. The funky word is set first, turned to an angle
-    of its own, and the plain words are fitted round it as one unit: those
-    before it dropped onto it word by word, those after it lifted up under
-    it, each until it comes a small, random distance from the funky word's
-    actual strokes, so "do what you" settles along the top of "want", each
-    word at its own height, without ever touching. Plain words are never
-    turned, and a line still reads in order. The funky lettering is a brush
-    script typeface (Yesteryear, Pacifico, Leckerli One or Kaushan Script)
-    or drawn: Goo, melted letters running together, or a brush pen, both
-    drawn along smooth curves through the font's points. The plain words
+    edges, in turn the colour and one a hundred degrees round the colour
+    wheel from it (pink, then blue, as Main Sticker 2's), with a border that
+    shows on either background. No side runs straight from corner to corner.
+    Starred words are funky, the rest plain; with no stars, each sticker's
+    longest word is the funky one. The funky word is set first, turned to an
+    angle of its own, and the plain words are fitted round it as one unit:
+    those before it dropped onto it word by word, those after it lifted up
+    under it, each until it comes a small, random distance from the funky
+    word's actual strokes, so "do what you" settles along the top of "want",
+    each word at its own height, without ever touching. Plain words are
+    never turned, and a line still reads in order. Above the funky word,
+    each word settles onto what is under it, within 0.9 of an x-height of
+    the others, and bobs a little, as Main Sticker 1's "do what you" does;
+    below it, the line sits level, as Main Sticker 2's "they seem" does. A
+    word space opens (to half again its width) where a stroke of the funky
+    word reaches into the line, so a t can drop between two words. The plain
+    words are sized against the funky word's x-height, a share of it each
+    lettering sets, and a long line is made smaller to stay within the funky
+    word's width. The funky lettering is a brush script typeface (Yesteryear
+    or Leckerli One, with Damion and Yellowtail suggested for being like
+    Yesteryear) or drawn: Goo, fat liquid letters running into each other
+    after Main Sticker 2's "aren't", in a hand of its own. The plain words
     are set in Outfit or Jost, or the serifs Fraunces or Newsreader.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
@@ -121,8 +130,9 @@ drawn from scratch for every title:
 1. **Centre lines.** Each letter comes from a single-line font: its glyphs
    are strokes, not outlines, the line a nozzle of paste would follow.
    Pasty draws in Drip, a hand drawn for it (`scripts/drip-font.mjs`): tall,
-   narrow, no serifs, curves where a pen would rule a line. Stickery's
-   liquid words are in Hershey Script, Spread in Hershey Sans.
+   narrow, no serifs, curves where a pen would rule a line. Stickery's Goo
+   draws in Goo (`scripts/goo-font.mjs`): a wide, round, running lowercase,
+   its capitals and marks borrowed from Drip. Spread is in Hershey Sans.
 2. **A dynamic font.** Every word is seeded by its own text and the
    shuffle; every letter by its word and its place in it, which picks its
    size, lean, rise, squash, and whether it is drawn in its other case. So a
@@ -173,16 +183,25 @@ Spread's collage tries hundreds of ways of breaking the title into lines
 keeps the ones that come out nearest a square, breaking fewest words; the
 shuffle picks among the best few.
 
-Stickery's stickers are every letter's box (the funky word's letters,
-each plain word), padded and snapped out to a coarse grid, with holes filled and gaps a cell wide closed, traced as a
-polygon of straight steps. A seeded pass then cuts a step a cell out into
-every straight run longer than twelve cells and into each piece's four
-outer sides, so no side is ruled; a step only adds paper, so no letter is
-ever uncovered. The grid, the padding and the space between stickers scale
-with the words, and a long line wraps inside its sticker. The liquid words'
-thick and thin comes from the pen (`penWeights` in `liquid.ts`): from each
-point's direction, then smoothed along the stroke, so it never steps. Only
-the plain face chosen is loaded.
+Stickery's stickers follow the ink itself: every plain word and typeface
+word as thin upright strips of its letters' ink (read from the canvas a
+twenty-fifth of an em at a time), every drawn letter bead by bead, each
+padded and snapped out to a grid, with holes filled, gaps a cell wide
+closed and pieces joined, traced as a polygon of straight steps. So the
+steps climb a leaning stroke and step round an ascender, a swash's ball
+and the end of a line. The grid is the lettering's: about half the plain
+x-height under a script, for Main Sticker 1's chunky steps, a third of it
+under Goo, for Main Sticker 2's fine staircase. The cells are shorter than
+they are wide, as a sticker's rises are shorter than its runs. A seeded
+pass then cuts a stair a cell out (from part way along to the nearer end)
+into any straight run longer than five x-heights and into each piece's
+outer sides left all but straight, so no side is ruled; a step only adds
+paper, so no letter is ever uncovered. The grid, the
+padding and the space between stickers scale with the words, and a long
+line wraps inside its sticker. Goo's thick and thin comes from the pen
+(`penWeights` in `liquid.ts`): heavy going down, lighter going up, thinnest
+where a stroke turns back, all smoothed along the stroke so it never steps.
+Only the plain face chosen is loaded.
 
 | File | What it does |
 | --- | --- |
@@ -195,7 +214,7 @@ the plain face chosen is loaded.
 | `liquid-render.ts` | The paste as a field (distance fields, smooth union, square ends, height), and its light worked out on the page |
 | `liquid-gl.ts` | The same light, in a WebGL 2 shader |
 | `liquid.worker.ts`, `liquid-client.ts` | The worker that makes the fields, and the page's queue and lighting of them |
-| `strokes/` | The single-line fonts: Drip, from `scripts/drip-font.mjs`, and two Hershey fonts from `scripts/extract-strokes.mjs`, with their licences |
+| `strokes/` | The single-line fonts: Drip and Goo, from `scripts/drip-font.mjs` and `scripts/goo-font.mjs`, and Hershey Sans from `scripts/extract-strokes.mjs`, with their licences |
 | `stepped.ts` | Stickery's stepped sticker outline |
 | `scene.ts` | Each style, as a list of fills, grain, shapes, text and liquid layers |
 | `paint.ts` | Draws a scene on a canvas at any scale, from any origin |
@@ -227,7 +246,8 @@ npm run check      # typecheck, lint and tests
 npm test           # scripts/reel-cover.test.mjs
 npm run build      # the static site, in out/
 node scripts/drip-font.mjs         # Drip again, from its drawing
-node scripts/extract-strokes.mjs   # the Hershey fonts again, from the hersheytext package
+node scripts/goo-font.mjs          # Goo again, from its drawing (after Drip: it borrows Drip's capitals)
+node scripts/extract-strokes.mjs   # Hershey Sans again, from the hersheytext package
 ```
 
 No test framework: the tests are a plain `node` script that asserts and exits

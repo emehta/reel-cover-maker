@@ -415,7 +415,10 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
       const tone = data[i * 4 + 3] / 1000;
       const base = colours[Math.min(3, data[i * 4 + 2])] ?? colours[0];
       const C = base.map((v) => Math.min(1, Math.max(0.0005, v * tone))) as Vec;
-      const cover = clamp01(d + 0.5);
+      // The edge by the depth's own slope, as liquid-gl.ts reads it.
+      const depthAt = (xx: number, yy: number) => data[(Math.min(h - 1, Math.max(0, yy)) * w + Math.min(w - 1, Math.max(0, xx))) * 4] / 256;
+      const slope = Math.max(0.25, Math.hypot((depthAt(x + 1, y) - depthAt(x - 1, y)) / 2, (depthAt(x, y + 1) - depthAt(x, y - 1)) / 2));
+      const cover = clamp01(d / slope + 0.5);
       let paste: Vec = [0, 0, 0];
       if (cover > 0) {
         if (finish === "flat") {

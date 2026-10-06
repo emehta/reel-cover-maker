@@ -37,6 +37,13 @@ export interface PlacedGlyph {
   skew: number;
   /** The size the paste's thickness follows, in pixels per em, where it is neither `sx` nor `sy`. */
   em?: number;
+  /** The first or last letter of its word. */
+  first?: boolean;
+  last?: boolean;
+  /** The character it draws, where a hand treats one its own way. */
+  char?: string;
+  /** The last letter of its whole run of words, where one swash goes. */
+  final?: boolean;
   seed: number;
 }
 
@@ -76,8 +83,28 @@ export interface PasteRecipe {
    * straight lines, which paste would otherwise follow corner by corner.
    */
   spline?: boolean;
-  /** Lowercase made taller, as a brush script's is: the x-height (in em) and how much taller, ascenders drawn up to keep their tops. */
-  xHeight?: { at: number; boost: number };
+  /**
+   * Lowercase made taller, as a brush script's is: the x-height (in em) and
+   * how much taller, ascenders drawn up to keep their tops; or, with
+   * `ascend`, ascenders drawn that many times taller above it instead.
+   */
+  xHeight?: { at: number; boost: number; ascend?: number };
+  /**
+   * One slow swell a stroke, as a brush laid on and lifted: thinnest at
+   * `neck` of the weight, as much as `amount` more at the swell, which sits
+   * where a downstroke bottoms out (weight pools there) and anywhere along
+   * any other stroke, spread over at least `reach` em. In place of the
+   * pressure's quicker swelling and pinching.
+   */
+  swell?: { neck: number; amount: readonly [number, number]; reach: number };
+  /** A drip's neck and drop, as shares of the stroke it falls from, where the hand fixes them. */
+  dripShape?: { neck: number; drop: number };
+  /** A run's last letter, if a t: its crossbar swung on to the right by this much (in em) and ended in a ball this many times the stroke. */
+  crossbar?: { length: number; ball: number };
+  /** The chance a free end swells into a ball, where not every one should: 0.45 to 0.7 when unset. */
+  balls?: number;
+  /** How far along a stroke an end's ball swells out of it, in radii: 2.6 when unset. */
+  bulbReach?: number;
   /** The chance a stem's foot runs on as a drip, and how far a drip runs, in em. */
   drip: number;
   dripLength: readonly [number, number];
@@ -272,6 +299,7 @@ export function pasteGlyph(
     const x = tall.at;
     const top = x * (1 + tall.boost);
     if (v >= -x) return v * (1 + tall.boost);
+    if (tall.ascend) return -top - (-v - x) * tall.ascend;
     const cap = Math.max(top + 0.05, 0.7);
     return -top - ((-v - x) / Math.max(1e-6, cap - x)) * (cap - top);
   };
@@ -289,7 +317,7 @@ export function pasteGlyph(
     // A dot (the i's, a full stop): one round ball, bigger than the stroke
     // (as big as a pen's full weight, where it has one).
     if (raw.length === 1 || (raw.length === 2 && Math.hypot(raw[1][0] - raw[0][0], raw[1][1] - raw[0][1]) < r0 * 0.6)) {
-      chains.push([{ x: raw[0][0], y: raw[0][1], r: r0 * strength * (recipe.pen ? between(next, 0.85, 1.05) : between(next, 1.35, 1.8)) }]);
+      chains.push([{ x: raw[0][0], y: raw[0][1], r: r0 * strength * (recipe.pen ? between(next, 0.85, 1.05) : recipe.swell ? between(next, 1.15, 1.4) : between(next, 1.35, 1.8)) }]);
       return;
     }
     const closed = Math.hypot(raw[0][0] - raw[raw.length - 1][0], raw[0][1] - raw[raw.length - 1][1]) < r0 * 0.5;
@@ -301,22 +329,36 @@ export function pasteGlyph(
     const free = (x: number, y: number) =>
       !placed.some((o, j) => j !== index && o.some(([ox, oy]) => Math.hypot(ox - x, oy - y) < r0 * 1.6));
     type End = { kind: "plain" | "blob" | "drip"; size: number };
+    // A mark's stroke (an apostrophe, a comma's tail) is too short to swell at both ends: it would read as a blob.
+    const short = total < r0 * 3;
     const endOf = (which: 0 | 1): End => {
       const i = which ? pts.length - 1 : 0;
       const [x, y] = pts[i];
-      if (closed || !free(x, y)) return { kind: "plain", size: 0 };
+      if (closed || short || !free(x, y)) return { kind: "plain", size: 0 };
       const choose = random(mixSeed(seed, 0xe0 + which));
       // Pointing down: the foot of a stem, which may run on as a drip.
       const [px, py] = pts[which ? Math.max(0, i - 4) : Math.min(pts.length - 1, 4)];
       const down = y - py > Math.abs(x - px) * 1.4;
       if (down && choose() < recipe.drip) return { kind: "drip", size: 0 };
-      return choose() < (down ? 0.7 : 0.45) ? { kind: "blob", size: recipe.bulb * between(choose, 0.4, 1) } : { kind: "plain", size: 0 };
+      const chance = recipe.balls ?? (down ? 0.7 : 0.45);
+      return choose() < chance ? { kind: "blob", size: recipe.bulb * between(choose, 0.4, 1) } : { kind: "plain", size: 0 };
     };
     const start = endOf(0);
     const end = endOf(1);
-    const reach = r0 * 2.6;
+    const reach = r0 * (recipe.bulbReach ?? 2.6);
     const swell = r0 * 6;
     const weightAt = penWeights(pts, recipe.pen);
+    // The stroke's one swell: where a downstroke bottoms out, else anywhere along it.
+    const swellAt = (() => {
+      const sw = recipe.swell;
+      if (!sw) return null;
+      const pick = random(mixSeed(seed, 0x5e1));
+      let lowest = 0;
+      for (let i = 1; i < pts.length; i += 1) if (pts[i][1] > pts[lowest][1]) lowest = i;
+      const falls = pts[pts.length - 1][1] - pts[0][1] > Math.abs(pts[pts.length - 1][0] - pts[0][0]) * 0.5;
+      const centre = falls ? at[lowest] : between(pick, 0.3, 0.8) * total;
+      return { centre, amount: between(pick, sw.amount[0], sw.amount[1]), spread: Math.max(sw.reach * size, total * 0.22), neck: sw.neck };
+    })();
     const taper = recipe.taper ?? 0;
     const freeStart = !closed && free(pts[0][0], pts[0][1]);
     const freeEnd = !closed && free(pts[pts.length - 1][0], pts[pts.length - 1][1]);
@@ -332,6 +374,7 @@ export function pasteGlyph(
       const s = at[i];
       // Thin through the middle of a long stroke, swelling and pinching as the hand pressed.
       let r = r0 * strength * weightAt[i] * (1 + recipe.pressure * 0.5 * noise1(seed, s / swell));
+      if (swellAt) r *= swellAt.neck + swellAt.amount * Math.exp(-0.5 * ((s - swellAt.centre) / swellAt.spread) ** 2);
       if (!recipe.pen) r *= 1 - recipe.pressure * 0.18 * Math.sin(Math.PI * (s / total)) ** 2 * Math.min(1, total / (r0 * 10));
       r *= 1 + start.size * (1 - smoothstep(0, reach, s)) ** 2;
       r *= 1 + end.size * (1 - smoothstep(0, reach, total - s)) ** 2;
@@ -362,10 +405,11 @@ export function pasteGlyph(
     const room = floor - (d.from.y + d.from.r);
     const length = Math.min(room, between(next, recipe.dripLength[0], recipe.dripLength[1]) * size);
     if (length < d.from.r * 1.5) continue;
-    const drop = between(next, 1.05, 1.4);
-    const neck = between(next, 0.42, 0.62);
+    const drop = recipe.dripShape?.drop ?? between(next, 1.05, 1.4);
+    const neck = recipe.dripShape?.neck ?? between(next, 0.42, 0.62);
     const drip: Chain = [];
-    const steps = Math.max(3, Math.ceil(length / (d.from.r * 0.35)));
+    // Closely sampled, so the drop swells out of the neck bead by bead rather than at a step.
+    const steps = Math.max(8, Math.ceil(length / (d.from.r * 0.15)));
     let x = d.from.x;
     for (let k = 1; k <= steps; k += 1) {
       const t = k / steps;
@@ -381,6 +425,29 @@ export function pasteGlyph(
     tip.y -= tip.r * 0.4;
     for (const b of drip) b.y = Math.min(b.y, floor - b.r);
     chains.push([d.from, ...drip]);
+  }
+
+  // A run's last letter, if a t: its crossbar swung on to the right and ended in a ball, a knob at its left end.
+  if (recipe.crossbar && g.char === "t" && g.final) {
+    const bar = chains.slice(0, strokes).findIndex((c) => {
+      if (c.length < 2) return false;
+      const [a, b] = [c[0], c[c.length - 1]];
+      return Math.abs(b.y - a.y) < Math.abs(b.x - a.x) * 0.4 && Math.abs(b.x - a.x) > r0 * 2;
+    });
+    if (bar >= 0) {
+      const c = chains[bar];
+      const [a, b] = c[0].x < c[c.length - 1].x ? [c[0], c[c.length - 1]] : [c[c.length - 1], c[0]];
+      const length = recipe.crossbar.length * size;
+      const steps = Math.max(10, Math.ceil(length / (r0 * 0.2)));
+      const run: Chain = [];
+      for (let k = 1; k <= steps; k += 1) {
+        const t = k / steps;
+        // On to the right, rising as it goes, thinning, then swelling slowly into the ball, an oval along the bar.
+        run.push({ x: b.x + length * t, y: b.y - length * 0.2 * t, r: b.r * (1 - 0.35 * smoothstep(0, 0.3, t)) + b.r * (recipe.crossbar.ball - 0.65) * smoothstep(0.2, 0.95, t) });
+      }
+      chains.push([b, ...run]);
+      chains.push([{ x: a.x - a.r * 0.2, y: a.y, r: a.r * 1.3 }]);
+    }
   }
 
   // Droplets: a few spatters around the glyph, some with a tail toward it.
@@ -429,14 +496,24 @@ export function penWeights(pts: [number, number][], pen: PasteRecipe["pen"]): nu
     const l = Math.hypot(bx - ax, by - ay) || 1;
     const tx = (bx - ax) / l;
     const ty = (by - ay) / l;
-    // A brush is pressed going down the page, and keeps half its weight
-    // going steeply up (a d's stem is one upstroke, and must not vanish);
-    // a nib is widest moving across its edge.
-    if (pen.kind === "pressure") return Math.max(smoothstep(-0.35, 0.75, ty), 0.55 * smoothstep(0.6, 0.95, -ty));
+    // A brush is pressed going down the page, and eases off going up, a
+    // steep upstroke keeping a fifth of its weight; a nib is widest moving
+    // across its edge.
+    if (pen.kind === "pressure") return Math.max(smoothstep(-0.35, 0.75, ty), 0.2 * smoothstep(0.6, 0.95, -ty));
     return Math.abs(tx * ey - ty * ex);
   });
+  // Where the stroke turns back on itself (a loop's top, a hairpin): a pen lifts there, so it thins.
+  const turns = pts.map((_, i) => {
+    if (i < 2 || i > pts.length - 3) return false;
+    const [ax, ay] = pts[i - 2];
+    const [bx, by] = pts[i];
+    const [cx, cy] = pts[i + 2];
+    const u = Math.hypot(bx - ax, by - ay) || 1;
+    const v = Math.hypot(cx - bx, cy - by) || 1;
+    return ((bx - ax) * (cx - bx) + (by - ay) * (cy - by)) / (u * v) < -0.3;
+  });
   const kernel = [1, 4, 6, 4, 1];
-  for (let pass = 0; pass < 4; pass += 1) {
+  for (let pass = 0; pass < 6; pass += 1) {
     f = f.map((_, i) => {
       let sum = 0;
       let weight = 0;
@@ -449,6 +526,13 @@ export function penWeights(pts: [number, number][], pen: PasteRecipe["pen"]): nu
       return sum / weight;
     });
   }
+  // Thinnest at the turn itself, easing back to full over a few points either side, so the neck has no step.
+  const turnAt = turns.flatMap((t, i) => (t ? [i] : []));
+  f = f.map((v, i) => {
+    if (!turnAt.length) return v;
+    const d = Math.min(...turnAt.map((j) => Math.abs(i - j)));
+    return Math.min(v, 0.2 + 0.8 * smoothstep(1, 7, d));
+  });
   return f.map((v) => pen.thin + (1 - pen.thin) * v);
 }
 

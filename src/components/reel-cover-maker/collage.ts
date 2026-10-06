@@ -247,6 +247,7 @@ export function collageLayout(paragraphs: Paragraph[], spec: CollageSpec): Liqui
         if (l.glyph) {
           glyphs.push({
             glyph: l.glyph,
+            char: l.text,
             // The ink's left edge at x: the glyph's own origin sits that far left of it.
             x: x - l.inkX0 * h,
             y: baseline,

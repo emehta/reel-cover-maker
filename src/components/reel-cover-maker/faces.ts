@@ -53,7 +53,7 @@ export function isPlainFaceId(value: unknown): value is PlainFaceId {
 }
 
 /** The typefaces Stickery's funky words may be set in, where they are a face rather than drawn paste. */
-export type FunkyFaceId = "funky-yesteryear" | "funky-pacifico" | "funky-leckerli" | "funky-kaushan";
+export type FunkyFaceId = "funky-yesteryear" | "funky-leckerli" | "funky-damion" | "funky-yellowtail";
 
 export type FaceId = CoreFaceId | PlainFaceId | FunkyFaceId;
 
@@ -80,4 +80,19 @@ export interface Measurer {
    * where the last glyph overhangs).
    */
   bounds(face: FaceId, text: string): { ascent: number; descent: number; left: number; right: number };
+  /**
+   * The ink of `text` drawn from a start point on the baseline, as columns
+   * left to right: each a slice `w` em wide from `x`, with the top and bottom
+   * of the ink in it, in em from the baseline (up negative). A slice with no
+   * ink is left out. So a word can be fitted to the real shape of another,
+   * into the dips between its tall letters, rather than to its box.
+   */
+  columns?(face: FaceId, text: string): readonly InkColumn[];
+}
+
+export interface InkColumn {
+  x: number;
+  w: number;
+  top: number;
+  bottom: number;
 }

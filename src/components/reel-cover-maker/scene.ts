@@ -14,6 +14,7 @@ import { formatById, type FormatId, type Rect } from "@/components/reel-cover-ma
 import { flow, type Block } from "@/components/reel-cover-maker/layout";
 import { collageLayout } from "@/components/reel-cover-maker/collage";
 import { boundsOf, pasteGlyph, type Chain, type PasteRecipe } from "@/components/reel-cover-maker/liquid";
+import { strokeMetrics } from "@/components/reel-cover-maker/strokes";
 import { liquidLayout, shrink, type LiquidLayout, type LiquidSpec } from "@/components/reel-cover-maker/liquid-layout";
 import type { Finish } from "@/components/reel-cover-maker/liquid-render";
 import { mixSeed, random, between, hashString } from "@/components/reel-cover-maker/noise";
@@ -282,6 +283,9 @@ function rectOf(b: { x0: number; y0: number; x1: number; y1: number }): Rect {
   return { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 };
 }
 
+/** Letters with a dot or a mark of their own, which the kerning keeps clear of their neighbours. */
+const DOTTED = /^[ij'\u2019".,:;!?]$/u;
+
 /** The least space between two words' paste, in em: a word space, measured ink to ink. */
 const WORD_GAP = 0.2;
 
@@ -296,6 +300,12 @@ interface LiquidStyle {
   kern: number;
   /** The chance two neighbouring letters are let touch, so their paste bridges, as it does now and then from a bottle. */
   merge?: number;
+  /** How far two letters let touch run into each other, in em: none, they only meet. */
+  overlap?: number;
+  /** Dots and marks kept a clear gap from their neighbours, never welded on, where letters mostly touch. */
+  clearMarks?: boolean;
+  /** The least space between two words' paste, in em, where WORD_GAP is too little for letters that run together. */
+  wordGap?: number;
   /**
    * Whether kerning may also draw letters and lines together, tucking one
    * under another's arm; otherwise it only ever pushes apart, for a layout
@@ -411,25 +421,48 @@ const SPREAD: LiquidStyle = {
 /**
  * Stickery's funky lettering: a brush script typeface, as the owner's
  * reference stickers set "Want" and "What it is", or drawn paste: gooey,
- * melted letters (their "aren't" and "what"), or a brush pen.
+ * melted letters, as they set "aren't" and "what".
  */
-export type LetteringId = "yesteryear" | "pacifico" | "leckerli" | "kaushan" | "goo" | "brush";
+export type LetteringId = "yesteryear" | "leckerli" | "damion" | "yellowtail" | "goo";
 
 export interface Lettering {
   id: LetteringId;
   name: string;
   /** The typeface it is set in; none for drawn paste. */
   face: FunkyFaceId | null;
+  /** The owner's choice; a suggestion is not, until they choose it. */
+  chosen: boolean;
+  /**
+   * The plain words' x-height against the lettering's, a short line's (a
+   * longer one is made smaller to stay within the funky word): Main Sticker
+   * 1's serif is about half its script's, Main Sticker 2's sans more than
+   * half its goo's. A script with a small x-height for its size
+   * (Yesteryear's is 0.29 of its em, Leckerli One's 0.49) takes a larger
+   * share, or its plain words look small beside it.
+   */
+  plain: number;
+  /** The sticker's grid (a step's run, and its rise) and the paper it leaves round the ink, in plain x-heights. */
+  steps: { cell: number; cellY: number; pad: number };
 }
 
-/** In the order a picker would show them. */
+/**
+ * Main Sticker 1's steps: runs of about 0.4 of the serif's x-height, rises
+ * about half that, and a quarter of it of paper round the ink (measured on
+ * the reference: margins 0.1 to 0.25 at their closest, about half an
+ * x-height on the whole, once the steps are cut).
+ */
+const SCRIPT_STEPS = { cell: 0.4, cellY: 0.22, pad: 0.25 };
+
+/**
+ * In the order a picker would show them: the owner's two (Yesteryear and
+ * Leckerli One), two suggested for being like Yesteryear, and the drawn Goo.
+ */
 export const LETTERINGS: readonly Lettering[] = [
-  { id: "yesteryear", name: "Yesteryear", face: "funky-yesteryear" },
-  { id: "pacifico", name: "Pacifico", face: "funky-pacifico" },
-  { id: "leckerli", name: "Leckerli One", face: "funky-leckerli" },
-  { id: "kaushan", name: "Kaushan Script", face: "funky-kaushan" },
-  { id: "goo", name: "Goo", face: null },
-  { id: "brush", name: "Brush pen", face: null },
+  { id: "yesteryear", name: "Yesteryear", face: "funky-yesteryear", chosen: true, plain: 0.6, steps: SCRIPT_STEPS },
+  { id: "leckerli", name: "Leckerli One", face: "funky-leckerli", chosen: true, plain: 0.47, steps: SCRIPT_STEPS },
+  { id: "damion", name: "Damion", face: "funky-damion", chosen: false, plain: 0.55, steps: SCRIPT_STEPS },
+  { id: "yellowtail", name: "Yellowtail", face: "funky-yellowtail", chosen: false, plain: 0.5, steps: SCRIPT_STEPS },
+  { id: "goo", name: "Goo", face: null, chosen: false, plain: 0.58, steps: { cell: 0.3, cellY: 0.17, pad: 0.22 } },
 ];
 
 export const DEFAULT_LETTERING: LetteringId = "yesteryear";
@@ -443,61 +476,67 @@ export function letteringFace(id: LetteringId): FunkyFaceId | null {
   return LETTERINGS.find((l) => l.id === id)?.face ?? null;
 }
 
-/** A joined script, set from the left of its line. */
-const SCRIPT: LiquidStyle["spec"] = {
-  fonts: [{ id: "script", share: 1 }],
-  maxSize: 400,
-  minSize: 40,
-  gap: 0,
-  maxLines: 4,
-  stretch: 1,
-  tracking: 0.01,
-  inkGap: -0.06,
-  jitter: { scale: 0.06, angle: 0.05, rise: 0.03, squash: 0.05 },
-  upper: false,
-  align: "left",
-  salt: "stickery",
-};
-
 const still = { bulb: 0, bow: 0, wave: 0, drip: 0, dripLength: [0, 0] as const, droplets: 0 };
 
 /**
- * The two drawn letterings. Their strokes are curves through the font's
- * points, never the straight runs between them, and their thick and thin
- * swells and thins along a stroke (liquid.ts), so they are never choppy.
+ * The drawn lettering. Its strokes are curves through the font's points,
+ * never the straight runs between them, and each swells and thins slowly
+ * along its length (liquid.ts), so it is never choppy or blobbed at random.
  */
-const PASTE_LETTERINGS: Record<"goo" | "brush", LiquidStyle> = {
-  // Melted, gooey letters run into each other: Drip's hand, heavy, swelling
-  // and pinching, its free ends balled, neighbours pooling where they meet.
+const PASTE_LETTERINGS: Record<"goo", LiquidStyle> = {
+  // Wacky brush strokes, as Main Sticker 2's "aren't" and "what": light
+  // through the stroke, heavier at its ends, which swell slowly into
+  // balls (most of them); downstrokes swelling to their
+  // feet, letters run a good way into each other, ascenders a little over
+  // half again the x-height, short teardrop drips, and a word's last t
+  // swinging its high, rising crossbar out into an oval ball. Measured
+  // against the reference on 6 Oct by a critic, stroke by stroke.
   goo: {
     spec: {
-      fonts: [{ id: "drip", share: 1 }],
+      fonts: [{ id: "goo", share: 1 }],
       maxSize: 400,
       minSize: 40,
       gap: -0.04,
       maxLines: 4,
       stretch: 1,
-      tracking: 0,
-      inkGap: 0.005,
-      jitter: { scale: 0.16, angle: 0.08, rise: 0.05, squash: 0.1 },
+      tracking: -0.01,
+      inkGap: -0.01,
+      jitter: { scale: 0.05, angle: 0.12, rise: 0.05, squash: 0.06 },
       upper: false,
+      slant: 0.27,
       align: "left",
       salt: "stickery",
     },
-    recipe: () => ({ ...still, weight: 0.06, pressure: 0.55, bulb: 0.8, wobble: 0.008, smooth: 1, spline: true, bow: 0.03, wave: 0.018 }),
+    recipe: () => ({
+      ...still,
+      weight: 0.064,
+      pressure: 0,
+      bulb: 0.55,
+      balls: 0.65,
+      bulbReach: 4,
+      wobble: 0,
+      smooth: 1,
+      spline: true,
+      bow: 0.02,
+      wave: 0,
+      pen: { kind: "pressure", thin: 0.62 },
+      xHeight: { at: 0.48, boost: 0, ascend: 1.55 },
+      swell: { neck: 0.75, amount: [0.45, 0.85], reach: 0.1 },
+      drip: 0.5,
+      dripLength: [0.06, 0.14],
+      dripShape: { neck: 0.8, drop: 2 },
+      crossbar: { length: 0.3, ball: 2.3 },
+    }),
     finish: "flat",
-    pool: 0.45,
-    // Letters kerned to all but touch, a third of them meeting so their goo runs together; words a full space apart.
-    kern: 0.012,
-    merge: 0.3,
-  },
-  // A brush pen in a joined script, its lowercase drawn taller as a brush script's is.
-  brush: {
-    spec: SCRIPT,
-    recipe: () => ({ ...still, weight: 0.064, pressure: 0.08, wobble: 0.004, smooth: 0, spline: true, xHeight: { at: 0.28, boost: 0.32 }, pen: { kind: "pressure", thin: 0.3 }, taper: 0.4 }),
-    finish: "flat",
-    pool: 0.12,
-    kern: 0,
+    // Joins filleted lightly, so a join is never a knot.
+    pool: 0.25,
+    // Nine pairs of letters in ten run into each other; words a full space apart, dots and marks kept clear.
+    kern: 0.006,
+    merge: 0.9,
+    overlap: 0.045,
+    clearMarks: true,
+    // Words further apart than WORD_GAP, or letters that run together read as one word ("whatitis").
+    wordGap: 0.32,
   },
 };
 
@@ -514,6 +553,8 @@ interface Set {
   droplets: Chain[];
   missing: Op[];
   readable: Rect;
+  /** The letters' x-height as set, in pixels of the picture. */
+  xHeight: number;
 }
 
 /**
@@ -586,7 +627,8 @@ function setLiquid(
   measurer: Measurer,
 ): Set {
   const recipe = style.recipe(letterCount(paragraphs));
-  const empty = { chains: [], glyphOf: [], lineOf: [], colourOf: [], tone: [], droplets: [], missing: [], readable: { x: box.x + box.w / 2, y: box.y + box.h / 2, w: 0, h: 0 } };
+  const empty = { chains: [], glyphOf: [], lineOf: [], colourOf: [], tone: [], droplets: [], missing: [], readable: { x: box.x + box.w / 2, y: box.y + box.h / 2, w: 0, h: 0 }, xHeight: 0 };
+  const xHeightEm = strokeMetrics(style.spec.fonts[0]?.id ?? "drip").xHeight * (1 + (recipe.xHeight?.boost ?? 0));
   let inner = box;
   let made: Set | null = null;
   for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -608,8 +650,9 @@ function setLiquid(
       const gap = recipe.weight * (layout.sizes[line] ?? 0) * 0.8;
       return below === undefined ? box.y + box.h : (lineTop.get(below) ?? box.y + box.h) - gap;
     };
-    // Each letter's whole paste, drips and all.
-    const pastes = layout.glyphs.map((g) => pasteGlyph(g, recipe, Math.min(box.y + box.h, floorOf(g.line)), canvas));
+    // Each letter's whole paste, drips and all; the run's very last letter told so, for a hand's one swash.
+    const final = layout.glyphs.reduce((best, g, i) => (g.line > layout.glyphs[best].line || (g.line === layout.glyphs[best].line && g.x > layout.glyphs[best].x) ? i : best), 0);
+    const pastes = layout.glyphs.map((g, i) => pasteGlyph({ ...g, final: i === final }, recipe, Math.min(box.y + box.h, floorOf(g.line)), canvas));
     // Kerning, line by line, by that paste. Inside a word each letter moves
     // to exactly its gap from the last two, tucking under an arm or over a
     // tail as the paste allows; between words a letter only ever moves
@@ -621,16 +664,20 @@ function setLiquid(
         if (i === 0 || layout.glyphs[i - 1].line !== g.line) lineShift = 0;
         let need = -Infinity;
         // Mostly a thin gap, wider than the pooling reaches; now and then
-        // none, and the smooth union bridges the two letters' paste.
-        const touch = random(mixSeed(g.seed, 0x70c4))() < (style.merge ?? 0);
-        const gap = touch ? 0 : style.kern * g.sy * between(random(mixSeed(g.seed, 0x9a9)), 0.75, 1.35);
+        // none, and the smooth union bridges the two letters' paste. A dot
+        // or a mark never touches: it keeps a clear gap, so an i's dot is
+        // never welded to the t beside it.
+        const dotted = (k: number) => DOTTED.test(layout.glyphs[k].char) || layout.glyphs[k].glyph.strokes.some((st) => st.length <= 4);
+        const marked = style.clearMarks === true && (dotted(i) || (i > 0 && dotted(i - 1)));
+        const touch = !marked && random(mixSeed(g.seed, 0x70c4))() < (style.merge ?? 0);
+        const gap = touch ? -(style.overlap ?? 0) * g.sy : marked ? Math.max(style.kern, 0.07) * g.sy : style.kern * g.sy * between(random(mixSeed(g.seed, 0x9a9)), 0.75, 1.35);
         let within = false;
         for (let j = Math.max(0, i - 2); j < i; j += 1) {
           const h = layout.glyphs[j];
           if (h.line !== g.line) continue;
           const same = h.word === g.word;
           within ||= same;
-          need = Math.max(need, kernBy(shiftChains(pastes[j].chains, shift[j]), shiftChains(pastes[i].chains, lineShift), same ? gap : WORD_GAP * g.sx));
+          need = Math.max(need, kernBy(shiftChains(pastes[j].chains, shift[j]), shiftChains(pastes[i].chains, lineShift), same ? gap : (style.wordGap ?? WORD_GAP) * g.sx));
         }
         // Never further left than a third of an em: a letter tucks, it does not pass its neighbour.
         lineShift += !Number.isFinite(need) ? 0 : within && style.tuck !== false ? Math.max(need, -0.33 * g.sy) : Math.max(0, need);
@@ -709,6 +756,7 @@ function setLiquid(
         ({ m }): Op => ({ kind: "text", text: m.text, face: "sans", size: m.size, x: m.x + dx, y: m.y + dy, color: textColour(m.emphasis) }),
       ),
       readable: { x: ink.x + dx, y: ink.y + dy, w: ink.w, h: ink.h },
+      xHeight: (layout.sizes.reduce((sum, v) => sum + v, 0) / Math.max(1, layout.sizes.length)) * xHeightEm,
     };
     const overX = Math.max(0, ink.w - box.w) / 2;
     const overY = Math.max(0, ink.h - box.h) / 2;
@@ -732,6 +780,7 @@ function setLiquid(
       droplets: set.droplets.map(scale),
       missing: set.missing.map((op) => (op.kind === "text" ? { ...op, x: cx + (op.x - cx) * k, y: cy + (op.y - cy) * k, size: op.size * k } : op)),
       readable: { x: cx + (r.x - cx) * k, y: cy + (r.y - cy) * k, w: r.w * k, h: r.h * k },
+      xHeight: set.xHeight * k,
     };
   }
   // A droplet is ornament, but it must land whole on the cover.
@@ -896,6 +945,40 @@ function travelAll(parts: readonly Part[], dir: 1 | -1, others: readonly Part[],
   return best;
 }
 
+/**
+ * Where the funky word's strokes reach out toward a line being set below
+ * it (`dir` -1: a drip, a descender, a t's foot) or above it (1: an
+ * ascender), half an x-height or more past the rest of its edge on that
+ * side: each a span across, [left, right], in pixels of the picture.
+ */
+function reaching(parts: readonly Part[], dir: 1 | -1, xh: number): [number, number][] {
+  if (!parts.length) return [];
+  const step = Math.max(1, xh * 0.25);
+  const all = boundsOfParts(parts);
+  const columns = Math.max(1, Math.ceil(all.w / step));
+  // The ink's furthest reach on that side, column by column: up for a line above, down for one below.
+  const edge = new Array<number>(columns).fill(NaN);
+  for (const p of parts) {
+    const [x0, x1, top, bottom] = p.kind === "circle" ? [p.x - p.r, p.x + p.r, p.y - p.r, p.y + p.r] : [p.x, p.x + p.w, p.y, p.y + p.h];
+    for (let c = Math.max(0, Math.floor((x0 - all.x) / step)); c <= Math.min(columns - 1, Math.floor((x1 - all.x) / step)); c += 1) {
+      const v = dir > 0 ? -top : bottom;
+      if (!(edge[c] >= v)) edge[c] = v;
+    }
+  }
+  const known = edge.filter((v) => Number.isFinite(v)).sort((p, q) => p - q);
+  if (!known.length) return [];
+  const typical = known[Math.floor(known.length / 2)];
+  const spans: [number, number][] = [];
+  edge.forEach((v, c) => {
+    if (!(v > typical + 0.5 * xh)) return;
+    const [a, b] = [all.x + c * step, all.x + (c + 1) * step];
+    const last = spans[spans.length - 1];
+    if (last && a - last[1] < 0.2 * xh) last[1] = b;
+    else spans.push([a, b]);
+  });
+  return spans;
+}
+
 function moveParts(parts: readonly Part[], dx: number, dy: number): Part[] {
   return parts.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
 }
@@ -906,8 +989,9 @@ function boundsOfParts(parts: readonly Part[]): Rect {
 
 /**
  * Each typed line a sticker of straight steps, in turn the chosen colour
- * and its pale tint, its funky words (starred, or the longest when nothing
- * is) with its plain ones fitted round them, as one unit. Everything, the
+ * and one a hundred degrees round the wheel from it, its funky words
+ * (starred, or the longest when nothing is) with its plain ones fitted
+ * round them, as one unit. Everything, the
  * steps and their padding included, scales with one size, the largest at
  * which it all fits.
  *
@@ -916,10 +1000,11 @@ function boundsOfParts(parts: readonly Part[]): Rect {
  * lifted up under it, each until it comes a small, random distance from the
  * funky word's actual strokes. So "do what you" settles into the dips and
  * round the tall strokes of "want", each word at its own height, and the
- * sticker wraps the two as one, with no hole between. Plain words are never
- * turned; a long run of them wraps to about the funky word's width. Each
- * sticker sits somewhere along the cover's width, its sides stepped
- * wherever they would run straight. All from the title and the shuffle.
+ * sticker wraps the two as one, its steps tracing their ink, with no hole
+ * between. Plain words are never turned; a long run of them wraps to about
+ * the funky word's width. Each sticker sits somewhere along the cover's
+ * width, its sides stepped wherever they would run straight. All from the
+ * title and the shuffle.
  */
 function stickery(
   paragraphs: Paragraph[],
@@ -945,15 +1030,48 @@ function stickery(
     return runs;
   });
   const funkyFace = letteringFace(lettering);
-  const paste = funkyFace ? null : shuffled(PASTE_LETTERINGS[lettering as "goo" | "brush"], seed);
+  const chosen = LETTERINGS.find((l) => l.id === lettering) ?? LETTERINGS[0];
+  const plainShare = chosen.plain;
+  const steps = chosen.steps;
+  const paste = funkyFace ? null : shuffled(PASTE_LETTERINGS[lettering as "goo"], seed);
   const salt = hashString(`stickery#${lettering}#${seed}#${paragraphs.map((p) => p.map((w) => w.map((s) => s.text).join("")).join(" ")).join("\n")}`);
 
   // The plain words a little under half the funky ones' size, their capitals as tall in every face.
   const plainScale = 0.42 * (0.72 / Math.max(0.5, measurer.metrics(plainFace).cap));
   const anywhere = { x: -1e5, y: -1e5, w: 2e5, h: 2e5 };
+  /**
+   * A face's x-height, in em: the middle of what its round and flat
+   * lowercase letters ink, since a script's x can be drawn short of them.
+   */
+  const xHeightOf = (face: FaceId): number => {
+    const tops = [..."xanoue"].map((c) => measurer.bounds(face, c).ascent).sort((p, q) => p - q);
+    return (tops[2] + tops[3]) / 2;
+  };
   const inkBox = (face: FaceId, text: string, x: number, baseline: number, size: number): Rect => {
     const b = measurer.bounds(face, text);
     return { x: x - b.left * size, y: baseline - b.ascent * size, w: (b.left + b.right) * size, h: (b.ascent + b.descent) * size };
+  };
+  /**
+   * A word's ink as thin upright strips, from the measurer's columns: what
+   * other words settle against and the sticker's steps go round, so both
+   * follow the letters' real shape, a dip between two tall letters
+   * included. Its box, where the measurer cannot say.
+   */
+  /** Each letter's ink box, where it sits in the word. */
+  const letterBoxes = (face: FaceId, text: string, x: number, baseline: number, size: number): Rect[] => {
+    const out: Rect[] = [];
+    let before = "";
+    for (const g of graphemes(text)) {
+      if (g.trim()) out.push(inkBox(face, g, x + measurer.width(face, before) * size, baseline, size));
+      before += g;
+    }
+    return out;
+  };
+  const inkStrips = (face: FaceId, text: string, x: number, baseline: number, size: number): Rect[] => {
+    const cols = measurer.columns?.(face, text);
+    if (cols && cols.length) return cols.map((c) => ({ x: x + c.x * size, y: baseline + c.top * size, w: c.w * size, h: (c.bottom - c.top) * size }));
+    // Letter by letter, where the measurer cannot see the ink.
+    return letterBoxes(face, text, x, baseline, size);
   };
 
   /** A run of funky words, set from (0, 0) and turned: its ops, its paste, the parts to keep clear of, the boxes its steps go round. */
@@ -964,15 +1082,22 @@ function stickery(
     let boxes: Rect[] = [];
     /** Each turned word's whole box: more than its letters' ink, and what the sticker must be fitted by, to be sure of it. */
     const extent: Rect[] = [];
-    const tilt = (next() < 0.5 ? -1 : 1) * between(next, 0.04, 0.17);
+    // Turned a few degrees either way: enough to read as thrown on, not so much the steps under it climb a staircase.
+    const tilt = (next() < 0.5 ? -1 : 1) * between(next, 0.035, 0.1);
+    /** The run's ink height before it is turned, and its x-height, which the plain words beside it are sized against. */
+    let inkHeight = size;
+    let xHeight = size * 0.45;
     if (paste) {
       const set = setLiquid([run.words], { x: 0, y: 0, w: size * 5.2, h: size * 3.6 }, { ...paste, spec: { ...paste.spec, maxSize: size, minSize: size * 0.45 } }, anywhere, () => ink, measurer);
       const r = set.readable;
       const cx = r.x + r.w / 2;
       const cy = r.y + r.h / 2;
+      inkHeight = r.h;
+      xHeight = set.xHeight;
       chains = turnChains(set.chains, cx, cy, tilt);
       parts = chains.flatMap((c) => c.map((b): Part => ({ kind: "circle", x: b.x, y: b.y, r: b.r, funky: true })));
-      boxes = chains.map((c) => rectOf(boundsOf([c])));
+      // The steps go round the paste itself, bead by bead, so they climb a leaning stroke and round a swash's ball.
+      boxes = chains.flatMap((c) => c.map((b) => ({ x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 })));
       for (const t of set.missing) {
         if (t.kind !== "text") continue;
         texts.push({ kind: "turn", cx, cy, angle: tilt, ops: [t] });
@@ -987,27 +1112,53 @@ function stickery(
         measurer,
       );
       const words: Op[] = [];
+      /** The words' ink, strip by strip: what the plain words settle against and the steps go round. */
       const letters: Rect[] = [];
+      /** Paper behind the gaps between a line's words, so the sticker runs on under the whole line. */
+      const spine: Rect[] = [];
       for (const l of set.lines) {
+        /** How far the words still to come on this line move left, by what closing up apostrophes saved. */
+        let pull = 0;
+        const spans: { x: number; w: number }[] = [];
         for (const seg of l.segments) {
-          words.push({ kind: "text", text: seg.text, face: seg.face, size: seg.size, x: seg.x, y: l.baseline, color: ink });
-          // Each letter's own ink, so the plain words can settle among them.
-          let before = "";
-          for (const g of graphemes(seg.text)) {
-            if (g.trim()) letters.push(inkBox(seg.face, g, seg.x + measurer.width(seg.face, before) * seg.size, l.baseline, seg.size));
-            before += g;
-          }
+          // A script's apostrophe sits wide of its letters ("aren 't"), so a
+          // word is set in pieces at its apostrophes, each a twentieth of an
+          // em of clear paper from the ink before it.
+          const pieces = seg.text.split(/(['\u2019])/u).filter(Boolean);
+          let x = seg.x - pull;
+          const start = x;
+          let end = x;
+          pieces.forEach((piece, k) => {
+            if (k > 0) {
+              const before = inkBox(seg.face, pieces[k - 1], x, l.baseline, seg.size);
+              x = before.x + before.w + seg.size * 0.05 + measurer.bounds(seg.face, piece).left * seg.size;
+            }
+            words.push({ kind: "text", text: piece, face: seg.face, size: seg.size, x, y: l.baseline, color: ink });
+            // The word's own ink, strip by strip, so the plain words can settle among its letters.
+            letters.push(...inkStrips(seg.face, piece, x, l.baseline, seg.size));
+            end = x + measurer.width(seg.face, piece) * seg.size;
+          });
+          if (pieces.length > 1) pull += seg.x - pull + seg.width - end;
+          spans.push({ x: start, w: end - start });
+        }
+        const first = l.segments[0];
+        const [head, tail] = [spans[0], spans[spans.length - 1]];
+        if (first && head && tail && spans.length > 1) {
+          const step = first.size * 0.12;
+          for (let x = head.x + head.w; x < tail.x; x += step) spine.push({ x, y: l.baseline - first.size * 0.38, w: step, h: first.size * 0.36 });
         }
       }
       const r = letters.length ? union(letters) : { x: 0, y: 0, w: 0, h: 0 };
       const cx = r.x + r.w / 2;
       const cy = r.y + r.h / 2;
+      inkHeight = r.h;
+      xHeight = xHeightOf(funkyFace) * size * FUNKY_SCALE;
       texts.push({ kind: "turn", cx, cy, angle: tilt, ops: words });
       for (const op of words) if (op.kind === "text") extent.push(turnedBounds(inkBox(op.face, op.text, op.x, op.y, op.size), cx, cy, tilt));
-      boxes = letters.map((b) => turnedBounds(b, cx, cy, tilt));
-      parts = boxes.map((b): Part => ({ kind: "box", ...b, funky: true }));
+      parts = letters.map((b): Part => ({ kind: "box", ...turnedBounds(b, cx, cy, tilt), funky: true }));
+      boxes = [...letters, ...spine].map((b) => turnedBounds(b, cx, cy, tilt));
     }
-    return { texts, chains, parts, boxes, extent };
+    return { texts, chains, parts, boxes, extent, inkHeight, xHeight };
   };
 
   /** A run of plain words, each measured, wrapped to lines no wider than `wrapAt`. */
@@ -1034,9 +1185,9 @@ function stickery(
     return lines.map((l) => ({ words: l, width: l.length ? l[l.length - 1].x + l[l.length - 1].width : 0 }));
   };
 
+  const plainXHeight = xHeightOf(plainFace);
+
   const build = (size: number) => {
-    const cell = Math.max(5, size * STEP);
-    const pad = cell * 0.9;
     const plainSize = size * plainScale;
     const colours: string[] = [];
     const stickers = groups.map((runs, gi) => {
@@ -1052,51 +1203,161 @@ function stickery(
       const extent: Rect[] = [];
       let placed: Part[] = [];
       let funky: Rect | null = null;
-      // A plain word keeps a small, random distance from the funky words, and its own leading from plain ones.
-      const plainGap = (word: number) => (o: Part) => (o.funky ? between(random(mixSeed(salt, gi * 7919 + word)), 0.1, 0.24) * plainSize : 0.04 * plainSize);
+      let funkyHeight = 0;
+      let funkyX = 0;
+      /** The plain x-heights this sticker is set in: what its steps and padding are measured in. */
+      const xHeights: number[] = [];
 
-      /** Plain lines put on the sticker, below what is there (rising to it) or above it (dropping onto it). */
+      /**
+       * Plain lines put on the sticker, below what is there (rising to it)
+       * or above it (dropping onto it), as the references set them:
+       *
+       * - sized against the funky word, the plain x-height the lettering's
+       *   share of its x-height, a longer line run near its width;
+       * - a short line centred on it, a line above flush with its left (the
+       *   funky word starting a little further in), a line below flush with
+       *   its right; then slid along, a little either way, to wherever the
+       *   words settle closest into its dips;
+       * - settled as one, every word on one baseline, but for one word of a
+       *   longer line that sits up on a tall letter the others drop past;
+       *   never turned, its word spaces the face's own.
+       */
       const setPlain = (run: (typeof groups)[number][number], ri: number, dir: 1 | -1) => {
-        // A run of plain words keeps to a line about as wide as the funky word, a little wider at most.
-        const wrapAt = Math.max((funky?.w ?? 0) * 1.4, plainSize * (funky ? 7 : 14));
-        const lines = plainLines(run, plainSize, wrapAt);
+        // Beside a funky word, the lettering's share of its x-height; on a
+        // sticker with none, the size its words would have beside one of
+        // this cover's, so it matches the stickers round it.
+        const besideX = funky ? funkyX : paste ? strokeMetrics(paste.spec.fonts[0]?.id ?? "drip").xHeight * size : xHeightOf(funkyFace ?? plainFace) * size * FUNKY_SCALE;
+        const base = Math.max(plainSize * 0.4, (plainShare * besideX) / plainXHeight);
+        const wrapAt = funky ? Math.max(funky.w * 1.15, base * 7) : base * 14;
+        const lines = plainLines(run, base, wrapAt);
         const ordered = dir < 0 ? lines : [...lines].reverse();
-        const reach = (funky?.h ?? plainSize * 2) * 0.6;
         const lineNext = random(mixSeed(salt, (gi + 1) * 1009 + ri));
         ordered.forEach((line, li) => {
-          const ref = funky ?? (placed.length ? boundsOfParts(placed) : { x: 0, y: 0, w: line.width, h: 0 });
-          const x0 = line.width <= ref.w ? ref.x + lineNext() * (ref.w - line.width) : ref.x - lineNext() * (line.width - ref.w);
+          // A line of three words or more no wider than the funky word, near
+          // enough; a shorter one under two fifths of its width grown toward
+          // that, as Main Sticker 1's "it is" is; any other keeps its size.
+          const fit = !funky
+            ? 1
+            : line.words.length >= 3
+              ? Math.min(1, Math.max(0.7, (funky.w * 0.97) / Math.max(1, line.width)))
+              : Math.min(1.25, Math.max(1, (funky.w * 0.4) / Math.max(1, line.width)));
+          const size = base * fit;
+          const xh = size * plainXHeight;
+          xHeights.push(xh);
+          const width = line.width * fit;
+          const words = line.words.map((w) => ({ text: w.text, x: w.x * fit, w: measurer.width(plainFace, w.text) * size }));
+          const space = measurer.width(plainFace, " ") * size;
+          const ref = funky ?? (placed.length ? boundsOfParts(placed) : { x: 0, y: 0, w: width, h: 0 });
+          const preferred =
+            !funky
+              ? ref.x
+              : width > ref.w || width < ref.w * 0.4
+                ? ref.x + (ref.w - width) / 2 + between(lineNext, -0.08, 0.08) * ref.w
+                : dir > 0
+                  ? ref.x - between(lineNext, 0.4, 0.8) * xh
+                  : ref.x + ref.w - width + between(lineNext, 0, 0.3) * xh;
           const all = placed.length ? boundsOfParts(placed) : { x: 0, y: 0, w: 0, h: 0 };
-          // Each word of the line settles toward the funky word on its own first.
-          const settled = line.words.map((w, wi) => {
-            const id = ri * 101 + li * 13 + wi;
-            const start = inkBox(plainFace, w.text, x0 + w.x, 0, plainSize);
-            // From just clear of everything, toward it.
-            const from = dir < 0 ? all.y + all.h + plainSize * 0.3 - start.y : all.y - plainSize * 0.3 - (start.y + start.h);
-            const box = { ...start, y: start.y + from };
-            const part: Part = { kind: "box", ...box, funky: false };
-            // A word over the funky word settles right down into it; one past its ends only a little,
-            // so a line never curls down round its side.
-            const over = funky ? box.x < funky.x + funky.w && box.x + box.w > funky.x : true;
-            // A line further from the funky word only settles onto the line before it, never past it.
-            const most = li === 0 ? (over ? reach : reach * 0.15) + plainSize * 0.3 : plainSize * 0.32;
-            const t = placed.length ? Math.min(travel(part, dir < 0 ? -1 : 1, placed, plainGap(id)), most) : 0;
-            return { w, start, from, shift: Number.isFinite(t) ? t : most };
-          });
-          // Then the line as a whole: no word further toward the funky word
-          // than half a word's height past the one that stopped soonest, so
-          // the words bob but the line still reads in order. Only ever held
-          // back, never pushed on, so none comes nearer anything than it could.
-          // Compared by baseline: where each word's base would sit, and the one furthest from the funky word.
-          const base = settled.map((p) => p.from + (dir < 0 ? -p.shift : p.shift));
-          const soonest = dir > 0 ? Math.min(...base) : Math.max(...base);
-          for (const [i, p] of settled.entries()) {
-            const held = dir > 0 ? Math.min(base[i], soonest + plainSize * 0.42) : Math.max(base[i], soonest - plainSize * 0.42);
-            const dy = held + between(lineNext, -0.03, 0.03) * plainSize;
-            texts.push({ kind: "text", text: p.w.text, face: plainFace, size: plainSize, x: x0 + p.w.x, y: dy, color: ink });
-            const final = { ...p.start, y: p.start.y + dy };
-            boxes.push(final);
-            placed = [...placed, { kind: "box", ...final, funky: false }];
+          const gapFor = (wi: number) => {
+            const g = between(random(mixSeed(salt, gi * 7919 + ri * 101 + li * 13 + wi)), 0.08, 0.17) * xh;
+            return (o: Part) => (o.funky ? g : 0.12 * xh);
+          };
+          // Every word of the line starts from one baseline, just clear of what is there, so a word's
+          // descender or ascender never sets it apart from the others before it has moved.
+          const inks = words.map((w) => inkBox(plainFace, w.text, 0, 0, size));
+          const lineFrom = dir < 0 ? all.y + all.h + size * 0.3 - Math.min(...inks.map((b) => b.y)) : all.y - size * 0.3 - Math.max(...inks.map((b) => b.y + b.h));
+          /** Each word's settling at one place along the line (and each word's own shift along it): how far it may go toward what is there. */
+          const trial = (x0: number, offsets: readonly number[]) =>
+            words.map((w, wi) => {
+              const x = x0 + w.x + offsets[wi];
+              const start = inkBox(plainFace, w.text, x, 0, size);
+              const strips = inkStrips(plainFace, w.text, x, 0, size);
+              const from = lineFrom;
+              const parts = strips.map((b): Part => ({ kind: "box", ...b, y: b.y + from, funky: false }));
+              const over = funky ? start.x < funky.x + funky.w && start.x + start.w > funky.x : true;
+              // A line further from the funky word only settles onto the line before it.
+              const most = li === 0 ? (over ? funkyHeight * 0.6 : funkyHeight * 0.1) + size * 0.3 : size * 0.32;
+              const t = placed.length ? Math.min(travelAll(parts, dir < 0 ? -1 : 1, placed, gapFor(wi)), most) : 0;
+              return { w, x, start, strips, from, room: Number.isFinite(t) ? t : most };
+            });
+          /**
+           * How far each word goes. Above the funky word, each settles onto
+           * what is under it, as far as it may, but never more than 0.9 of
+           * an x-height below the highest of them (0.35 in a line of two,
+           * which Main Sticker 1 sets level: "it is"), so "do" and "what"
+           * come down onto "wa" while "you" sits up by the t, as its words
+           * do. Below it, the line settles as one, as Main Sticker 2's "they
+           * seem" does, so no word comes apart from the rest.
+           */
+          const settle = (rooms: number[]) => {
+            const least = rooms.length ? Math.min(...rooms) : 0;
+            const spread = (rooms.length >= 3 ? 0.9 : 0.35) * xh;
+            return rooms.map((r) => (dir > 0 ? Math.min(r, least + spread) : least));
+          };
+          /** Held over the funky word: starting no more than 0.7 of an x-height before it and ending no more than 0.3 past it. */
+          const hold = (x0: number, w: number) => {
+            if (!funky) return x0;
+            const lo = funky.x - 0.7 * xh;
+            const hi = funky.x + funky.w + 0.3 * xh - w;
+            return lo <= hi ? Math.min(hi, Math.max(lo, x0)) : (lo + hi) / 2;
+          };
+          // Where to try: slid a little either way, and set so a word space
+          // falls by each stroke of the funky word that reaches toward the
+          // line (a drip, a descender, an ascender), the space widened to
+          // let it through (to 1.5 of its own), as Main Sticker 2's t drops
+          // between "they" and "seem".
+          const unmoved = words.map(() => 0);
+          const tries: { x0: number; offsets: readonly number[] }[] = [0, -0.3, 0.3, -0.6, 0.6].map((shift) => ({ x0: preferred + shift * xh, offsets: unmoved }));
+          if (funky && li === 0 && words.length >= 2) {
+            for (const [a, b] of reaching(placed.filter((o) => o.funky), dir, xh)) {
+              for (let k = 0; k < words.length - 1; k += 1) {
+                const extra = Math.max(0, Math.min(0.5 * space, b - a + 0.3 * xh - space));
+                const offsets = words.map((_, i) => (i > k ? extra : 0));
+                const gapMiddle = words[k].x + words[k].w + (space + extra) / 2;
+                tries.push({ x0: (a + b) / 2 - gapMiddle, offsets });
+              }
+            }
+          }
+          // Wherever the line settles closest, not far from where it belongs, over the funky word.
+          let best: { x0: number; offsets: readonly number[]; score: number; settled: ReturnType<typeof trial>; went: number[] } | null = null;
+          for (const t of tries) {
+            const spread = t.offsets[t.offsets.length - 1] ?? 0;
+            const x0 = hold(t.x0, width + spread);
+            const settled = trial(x0, t.offsets);
+            const went = settle(settled.map((p) => p.room));
+            // Closest is best: as little gap left under the words as can be,
+            // as deep a settling, as little sliding, and every word over the funky one.
+            const n = Math.max(1, settled.length);
+            const left = settled.reduce((sum, p, i) => sum + (p.room - went[i]), 0) / n;
+            const deep = went.reduce((sum, d) => sum + d, 0) / n;
+            const off = funky ? settled.filter((p) => !(p.start.x < funky!.x + funky!.w && p.start.x + p.start.w > funky!.x)).length : 0;
+            const score = left / xh - (deep / xh) * 0.5 + (Math.abs(x0 - preferred) / xh) * 0.12 + off * 0.5 + (spread / xh) * 0.4;
+            if (!best || score < best.score - 1e-9) best = { x0, offsets: t.offsets, score, settled, went };
+          }
+          if (!best) return;
+          // Then bobbed, as Main Sticker 1's "do what you" is: a line above
+          // the funky word of three words or more has one lifted clear of the
+          // rest and the others a little, a line of two a little; each only
+          // ever away from what is there, so nothing comes nearer. A line
+          // below sits as it settled, as Main Sticker 2's "they seem" does.
+          const bobNext = random(mixSeed(salt, gi * 104729 + ri * 31 + li));
+          const n = best.settled.length;
+          const peaked = n >= 3 && new Set(best.went.map((w) => Math.round(w))).size > 1;
+          const raised = Math.floor(bobNext() * n);
+          const bob = best.settled.map((_, i) => (dir < 0 || n < 2 || peaked ? 0 : n >= 3 && i === raised ? between(bobNext, 0.28, 0.5) : between(bobNext, 0, n >= 3 ? 0.14 : 0.1)) * xh);
+          let previous: { right: number; baseline: number } | null = null;
+          for (const [i, p] of best.settled.entries()) {
+            const dy = p.from + (dir < 0 ? -(best.went[i] - bob[i]) : best.went[i] - bob[i]);
+            // Paper behind the space before this word, at the x-height of the two.
+            if (previous) {
+              const top = Math.max(previous.baseline, dy) - xh * 0.95;
+              boxes.push({ x: previous.right, y: top, w: Math.max(0, p.start.x - previous.right), h: xh * 0.9 });
+            }
+            previous = { right: p.start.x + p.start.w, baseline: dy };
+            texts.push({ kind: "text", text: p.w.text, face: plainFace, size, x: p.x, y: dy, color: ink });
+            const strips = p.strips.map((b) => ({ ...b, y: b.y + dy }));
+            boxes.push(...strips);
+            extent.push({ ...p.start, y: p.start.y + dy });
+            placed = [...placed, ...strips.map((b): Part => ({ kind: "box", ...b, funky: false }))];
           }
         });
       };
@@ -1119,8 +1380,9 @@ function stickery(
           dx = (own.w <= all.w ? all.x + next() * (all.w - own.w) : all.x - next() * (own.w - all.w)) - own.x;
           dy = all.y + all.h + plainSize * 0.4 - own.y;
           parts = moveParts(parts, dx, dy);
-          const gap = between(next, 0.1, 0.24) * plainSize;
-          const t = travelAll(parts, -1, placed, (o) => (o.funky ? gap * 1.5 : gap));
+          const xh = xHeights.length ? xHeights[xHeights.length - 1] : plainSize * plainXHeight;
+          const gap = between(next, 0.1, 0.2) * xh;
+          const t = travelAll(parts, -1, placed, () => gap);
           const rise = Number.isFinite(t) ? Math.max(0, t) : 0;
           dy -= rise;
           parts = moveParts(parts, 0, -rise);
@@ -1134,34 +1396,44 @@ function stickery(
         extent.push(...made.extent.map((b) => ({ ...b, x: b.x + dx, y: b.y + dy })));
         placed = [...placed, ...parts];
         funky = boundsOfParts(parts);
+        funkyHeight = made.inkHeight;
+        funkyX = made.xHeight;
         // What came before the first funky word drops onto it, the line nearest it first.
         for (const a of above.splice(0).reverse()) setPlain(a.run, a.ri, 1);
       });
       // A sticker with no funky word at all: its plain words in lines.
       for (const a of above.splice(0)) setPlain(a.run, a.ri, -1);
 
-      const polygons = steppedOutline(boxes, { cell, pad, rough: { run: ROUGH_RUN, seed: mixSeed(salt, 0x5e7 + gi) } });
+      // Measured in the plain words' x-height, as the references' steps are:
+      // the grid and the paper round the ink the lettering's own (coarse
+      // under a script, as Main Sticker 1's; a fine staircase under goo, as
+      // Main Sticker 2's), a border a twenty-fifth of it.
+      const unit = xHeights.length ? xHeights.reduce((a, b) => a + b, 0) / xHeights.length : plainSize * plainXHeight;
+      const cell = Math.max(2, unit * steps.cell);
+      const polygons = steppedOutline(boxes, { cell, cellY: Math.max(2, unit * steps.cellY), pad: unit * steps.pad, rough: { run: Math.max(6, Math.round(ROUGH_RUN / steps.cell)), seed: mixSeed(salt, 0x5e7 + gi) }, onePiece: true });
       // Fitted by the paper and every turned funky word's whole box, so nothing it draws can pass the safe area.
-      return { fill, texts, chains, colourOf, polygons, bounds: union([polygonBounds(polygons), ...extent]), next };
+      return { fill, texts, chains, colourOf, polygons, bounds: union([polygonBounds(polygons), ...extent]), next, unit };
     });
-    // Then stacked, a step or so apart, each somewhere along the widest's width and a little more.
-    const widest = Math.max(...stickers.map((st) => st.bounds.w), 0);
-    const span = widest * 1.16;
+    // Then stacked, well apart, each set a little to the left or right of
+    // the one before (Main Sticker 2's lower sticker sits an eighth of its
+    // width left), so a stack zigzags rather than lining up.
     const texts: Op[] = [];
     const shapes: Op[] = [];
     const chains: Chain[] = [];
     const colourOf: number[] = [];
     const boxes: Rect[] = [];
     let y = 0;
-    for (const st of stickers) {
-      const dx = st.next() * (span - st.bounds.w) - st.bounds.x;
+    let x = 0;
+    for (const [i, st] of stickers.entries()) {
+      if (i) x += (i % 2 ? -1 : 1) * between(st.next, 0.08, 0.16) * st.bounds.w;
+      const dx = x - st.bounds.x;
       const dy = y - st.bounds.y;
-      shapes.push({ kind: "shape", polygons: st.polygons.map((p) => p.map((v, i) => v + (i % 2 ? dy : dx))), color: st.fill, stroke: palette.outline, strokeWidth: Math.max(1, cell * 0.13) });
+      shapes.push({ kind: "shape", polygons: st.polygons.map((p) => p.map((v, k) => v + (k % 2 ? dy : dx))), color: st.fill, stroke: palette.outline, strokeWidth: Math.max(1.2, st.unit * 0.045) });
       texts.push(...st.texts.map((t) => moveOp(t, dx, dy)));
       chains.push(...shiftChains(st.chains, dx, dy));
       colourOf.push(...st.colourOf);
       boxes.push({ ...st.bounds, x: st.bounds.x + dx, y: st.bounds.y + dy });
-      y += st.bounds.h + cell * between(st.next, 0.35, 1.1);
+      y += st.bounds.h + between(st.next, 1.2, 1.6) * st.unit;
     }
     const bounds = boxes.length ? union(boxes) : { x: 0, y: 0, w: 0, h: 0 };
     return { texts, shapes, chains, colourOf, colours, bounds };
@@ -1202,11 +1474,8 @@ function stickery(
 /** A funky typeface's size against the drawn paste's: its letters come out about as tall. */
 const FUNKY_SCALE = 1.15;
 
-/** The longest a sticker's side may run straight, in steps. */
-const ROUGH_RUN = 12;
-
-/** Stickery's steps: a grid cell this share of the liquid words' size. */
-const STEP = 0.105;
+/** The longest a sticker's side may run straight, in plain x-heights: Main Sticker 1 keeps one of 5 beside its W. */
+const ROUGH_RUN = 5;
 
 /** Every liquid layer in a scene, in the order they are drawn. */
 export function liquidOps(scene: Scene): LiquidOp[] {

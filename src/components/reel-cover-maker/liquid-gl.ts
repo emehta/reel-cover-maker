@@ -103,7 +103,12 @@ void main() {
   float d = float(f.r) / 256.0 - 128.0;
   float h = float(f.g) / 256.0;
   vec3 C = clamp(uColours[min(int(f.b), 3)] * (float(f.a) / 1000.0), vec3(0.0005), vec3(1.0));
-  float cover = clamp(d + 0.5, 0.0, 1.0);
+  // The edge by the depth's own slope: where two shapes blend, the depth
+  // climbs slowly, and an edge read off it unscaled smears over pixels.
+  float dx = (float(at(p + ivec2(1, 0)).r) - float(at(p - ivec2(1, 0)).r)) / 512.0;
+  float dy = (float(at(p + ivec2(0, 1)).r) - float(at(p - ivec2(0, 1)).r)) / 512.0;
+  float slope = max(length(vec2(dx, dy)), 0.25);
+  float cover = clamp(d / slope + 0.5, 0.0, 1.0);
   vec3 paste = vec3(0.0);
 
   if (cover > 0.0) {

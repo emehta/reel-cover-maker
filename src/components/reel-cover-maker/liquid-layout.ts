@@ -50,6 +50,10 @@ export interface LiquidSpec {
    * would read as an l.
    */
   swapCase?: number;
+  /** A forward slant, as the tangent of its angle (a lean of x by this times the height above the baseline); below zero it leans back. */
+  slant?: number;
+  /** Letters drawn wider or narrower than the font has them, by their lowercase: a wide w and a, a narrow r. */
+  widths?: Readonly<Record<string, number>>;
   /** Lines centred in the box, or set from its left edge. */
   align?: "center" | "left";
   /** Mixed into every seed, so two styles draw the same word differently. */
@@ -57,6 +61,8 @@ export interface LiquidSpec {
 }
 
 export interface LiquidGlyph extends PlacedGlyph {
+  /** The character it draws, for a hand that treats some letters its own way (a t's crossbar). */
+  char: string;
   line: number;
   /** Which word of its line it is in: letters of a word may tuck together, words keep their space. */
   word: number;
@@ -161,7 +167,7 @@ function letters(word: Paragraph[number], spec: LiquidSpec): Word {
         continue;
       }
       glyphs.forEach((glyph, part) => {
-        const sx = scale * squash;
+        const sx = scale * squash * (spec.widths?.[character] ?? 1);
         const ink = glyphBox(glyph);
         const hasInk = ink.x1 > ink.x0 || ink.y1 > ink.y0;
         // As the font spaces it, but never so close that its ink nears the
@@ -302,17 +308,21 @@ export function liquidLayout(paragraphs: Paragraph[], spec: LiquidSpec): LiquidL
         const firstInk = start + (first.at + first.inkX0 * first.sx) * size;
         if (firstInk < lineInk + spec.inkGap * size) start += lineInk + spec.inkGap * size - firstInk;
       }
+      const inked = word.letters.filter((l) => l.glyph && l.hasInk);
       for (const l of word.letters) {
         const lx = start + l.at * size;
         if (l.glyph) {
           glyphs.push({
             glyph: l.glyph,
+            char: l.text,
+            first: l === inked[0],
+            last: l === inked[inked.length - 1],
             x: lx,
             y: baseline + l.rise * size,
             sx: l.sx * size,
             sy: l.sy * size * stretch,
             angle: l.angle,
-            skew: 0,
+            skew: spec.slant ?? 0,
             seed: l.seed,
             line: li,
             word: wi,

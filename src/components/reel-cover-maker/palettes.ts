@@ -9,7 +9,7 @@
  * smear at the edges; the shade slider is what keeps them apart.
  */
 
-import { shiftedColour, sliderColour, tintColour } from "@/components/reel-cover-maker/colour";
+import { shiftedColour, sliderColour } from "@/components/reel-cover-maker/colour";
 
 export type Ground = "light" | "dark";
 
@@ -28,13 +28,20 @@ export interface Palette {
   ink: string;
   /** A shade of it further from the ground, for an emphasised word. */
   accent: string;
-  /** Stickery's two sticker colours, the chosen one and a pale tint, taken in turn. */
+  /**
+   * Stickery's two sticker colours, taken in turn: the chosen one, and the
+   * same shade a long way round the colour wheel, as Main Sticker 2 sets a
+   * blue sticker under a pink one.
+   */
   sticker: readonly [string, string];
   /** A sticker's border: dark on a light ground, light on a dark one, so it always shows. */
   outline: string;
 }
 
 export const GROUNDS: Record<Ground, string> = { light: "#F2EEE6", dark: "#161616" };
+
+/** How far round the colour wheel the second sticker is from the first, in degrees: pink to blue. */
+const STICKER_TURN = 100;
 
 /** A deep sauce red on a light ground: Sriracha's. */
 export const DEFAULT_COLOUR: ColourChoice = { hue: 24, shade: 0.5, ground: "light" };
@@ -46,7 +53,7 @@ export function paletteFor(choice: ColourChoice): Palette {
     bg: GROUNDS[ground],
     ink: sliderColour(hue, shade),
     accent: shiftedColour(hue, shade, away),
-    sticker: [sliderColour(hue, shade), tintColour(hue, shade)],
+    sticker: [sliderColour(hue, shade), sliderColour(hue - STICKER_TURN, Math.min(0.8, Math.max(0.45, shade)))],
     outline: ground === "light" ? "#141414" : "#F2EEE6",
   };
 }
