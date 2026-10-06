@@ -54,15 +54,19 @@ const FACE_WIDTH = {
   wide: 0.8,
   mono: 0.6,
   "mono-bold": 0.6,
-  // Stickery's plain faces: light, each its own width.
-  "plain-inter": 0.5,
-  "plain-manrope": 0.53,
+  // Stickery's plain faces, each its own width, and its funky scripts, wide and tall.
   "plain-outfit": 0.49,
   "plain-jost": 0.47,
-  "plain-instrument": 0.38,
-  "plain-cormorant": 0.4,
   "plain-fraunces": 0.48,
   "plain-newsreader": 0.45,
+  "plain-sofia": 0.38,
+  "plain-archivo": 0.42,
+  "plain-crimson": 0.43,
+  "plain-caslon": 0.5,
+  "funky-yesteryear": 0.46,
+  "funky-pacifico": 0.6,
+  "funky-leckerli": 0.62,
+  "funky-kaushan": 0.5,
 };
 const FACE_METRICS = {
   serif: { cap: 0.66, ascent: 0.92, descent: 0.24 },
@@ -73,14 +77,18 @@ const FACE_METRICS = {
   wide: { cap: 0.72, ascent: 0.96, descent: 0.2 },
   mono: { cap: 0.68, ascent: 0.9, descent: 0.26 },
   "mono-bold": { cap: 0.68, ascent: 0.99, descent: 0.26 },
-  "plain-inter": { cap: 0.73, ascent: 0.97, descent: 0.22 },
-  "plain-manrope": { cap: 0.72, ascent: 0.98, descent: 0.21 },
   "plain-outfit": { cap: 0.7, ascent: 0.95, descent: 0.2 },
   "plain-jost": { cap: 0.7, ascent: 0.98, descent: 0.25 },
-  "plain-instrument": { cap: 0.66, ascent: 0.92, descent: 0.24 },
-  "plain-cormorant": { cap: 0.63, ascent: 0.9, descent: 0.27 },
   "plain-fraunces": { cap: 0.7, ascent: 0.96, descent: 0.25 },
   "plain-newsreader": { cap: 0.67, ascent: 0.94, descent: 0.25 },
+  "plain-sofia": { cap: 0.72, ascent: 0.97, descent: 0.22 },
+  "plain-archivo": { cap: 0.72, ascent: 0.97, descent: 0.21 },
+  "plain-crimson": { cap: 0.62, ascent: 0.9, descent: 0.24 },
+  "plain-caslon": { cap: 0.68, ascent: 0.95, descent: 0.26 },
+  "funky-yesteryear": { cap: 0.72, ascent: 1.0, descent: 0.3 },
+  "funky-pacifico": { cap: 0.74, ascent: 1.05, descent: 0.35 },
+  "funky-leckerli": { cap: 0.7, ascent: 0.98, descent: 0.26 },
+  "funky-kaushan": { cap: 0.72, ascent: 1.02, descent: 0.32 },
 };
 
 const liquidOf = (scene) => scene.ops.find((op) => op.kind === "liquid");
@@ -584,7 +592,7 @@ check("contrast is WCAG's: black on white is 21, a colour on itself 1", () => {
 console.log("memory");
 
 check("a design round-trips through storage", () => {
-  const design = { text: "How I *plan*", style: "stickery", lettering: "nib", plainFace: "plain-fraunces", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345 };
+  const design = { text: "How I *plan*", style: "stickery", lettering: "goo", plainFace: "plain-jost", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345 };
   assert.deepEqual(D.readDesign(D.writeDesign(design)), design);
   // A lettering or face this version does not know falls back, the rest kept.
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, lettering: "comic", plainFace: "papyrus" })), { ...design, lettering: D.DEFAULT_DESIGN.lettering, plainFace: D.DEFAULT_DESIGN.plainFace });
@@ -1279,26 +1287,73 @@ check("a ring of words makes a sticker with no hole; words far apart make two", 
   assert.equal(SP.steppedOutline([{ x: 0, y: 0, w: 50, h: 50 }, { x: 600, y: 0, w: 50, h: 50 }], { cell: 20, pad: 10 }).length, 2);
 });
 
-check("Stickery: a sticker per typed line, the colours in turn, starred words in liquid letters, a border that shows", () => {
+/** A Stickery cover's parts: its plain words' ink boxes, and its funky words' paste beads or letters, as circles and boxes. */
+function stickerParts(scene) {
+  const plain = [];
+  const funky = [];
+  const walk = (ops, turn) => {
+    for (const op of ops) {
+      if (op.kind === "turn") walk(op.ops, op);
+      else if (op.kind === "text") {
+        const box = (text, x) => {
+          const ink = measurer.bounds(op.face, text);
+          return applyTurn({ x: x - ink.left * op.size, y: op.y - ink.ascent * op.size, w: (ink.left + ink.right) * op.size, h: (ink.ascent + ink.descent) * op.size }, turn);
+        };
+        if (op.face.startsWith("plain-")) plain.push({ op, box: box(op.text, op.x), turned: !!turn });
+        else {
+          // A funky word by its letters, as the layout keeps clear of them.
+          let before = "";
+          for (const g of T.graphemes(op.text)) {
+            if (g.trim()) funky.push({ kind: "box", ...box(g, op.x + measurer.width(op.face, before) * op.size) });
+            before += g;
+          }
+        }
+      }
+    }
+  };
+  walk(scene.ops, null);
+  for (const b of liquidOf(scene)?.chains.flat() ?? []) funky.push({ kind: "circle", ...b });
+  return { plain, funky };
+}
+
+/** How far a box is from a circle or another box, edge to edge (zero when they touch or overlap). */
+function apart(box, part) {
+  if (part.kind === "circle") {
+    const dx = Math.max(box.x - part.x, 0, part.x - (box.x + box.w));
+    const dy = Math.max(box.y - part.y, 0, part.y - (box.y + box.h));
+    return Math.max(0, Math.hypot(dx, dy) - part.r);
+  }
+  const dx = Math.max(box.x - (part.x + part.w), 0, part.x - (box.x + box.w));
+  const dy = Math.max(box.y - (part.y + part.h), 0, part.y - (box.y + box.h));
+  return Math.hypot(dx, dy);
+}
+
+const LETTERING_IDS = S.LETTERINGS.map((l) => l.id);
+
+check("Stickery: a sticker per typed line, the colours in turn, funky words in every sticker, a border that shows", () => {
   const format = F.formatById("reel");
-  for (const colour of [COLOURS.green, COLOURS.blue, { hue: 60, shade: 0.85, ground: "dark" }, { hue: 330, shade: 0.7, ground: "dark" }]) {
-    const palette = P.paletteFor({ ...INK, ...colour });
-    const scene = cover("things *aren't*\n*what* they seem\nand *more*", "stickery", "reel", colour);
-    const shapes = scene.ops.filter((op) => op.kind === "shape");
-    assert.deepEqual(shapes.map((s) => s.color), [palette.sticker[0], palette.sticker[1], palette.sticker[0]]);
-    for (const shape of shapes) assert.ok(P.contrast(shape.stroke, scene.ops[0].color) >= 4.5, `a border lost on the ${colour.ground ?? "light"} ground`);
-    // One layer holds every liquid word; each of the three stickers carries some of it.
-    const [paste] = scene.ops.filter((op) => op.kind === "liquid");
-    assert.equal(paste.ground, null, "Stickery's paste lies on its stickers, not the ground");
-    const carried = shapes.filter((s) => paste.chains.some((c) => s.polygons.some((p) => SP.insidePolygon(p, c[0].x, c[0].y))));
-    assert.equal(carried.length, 3, "a starred word is missing from its sticker");
-    const plain = textOps(scene).map((op) => op.text);
-    assert.deepEqual(plain, ["things", "they", "seem", "and"]);
-    assert.ok(inside(format.safe, scene.readable, 1));
-    for (const op of textOps(scene)) {
-      const sticker = shapes.find((s) => s.polygons.some((p) => SP.insidePolygon(p, op.x + 1, op.y - 1)));
-      assert.ok(sticker, `"${op.text}" is not on a sticker`);
-      assert.equal(op.color, P.readableOn(sticker.color));
+  for (const lettering of LETTERING_IDS) {
+    for (const colour of [COLOURS.green, { hue: 60, shade: 0.85, ground: "dark" }]) {
+      const palette = P.paletteFor({ ...INK, ...colour });
+      const scene = cover("things *aren't*\n*what* they seem\nand *more*", "stickery", "reel", { ...colour, lettering });
+      const shapes = scene.ops.filter((op) => op.kind === "shape");
+      assert.deepEqual(shapes.map((s) => s.color), [palette.sticker[0], palette.sticker[1], palette.sticker[0]]);
+      for (const shape of shapes) assert.ok(P.contrast(shape.stroke, scene.ops[0].color) >= 4.5, `a border lost on the ${colour.ground ?? "light"} ground`);
+      // Each sticker is one piece of paper, and carries some funky word.
+      for (const shape of shapes) assert.equal(shape.polygons.length, 1, `${lettering}: a sticker in two pieces`);
+      const { plain, funky } = stickerParts(scene);
+      const carried = shapes.filter((s) => funky.some((f) => s.polygons.some((p) => SP.insidePolygon(p, f.x + (f.w ?? 0) / 2, f.y + (f.h ?? 0) / 2))));
+      assert.equal(carried.length, 3, `${lettering}: a funky word is missing from its sticker`);
+      const paste = liquidOf(scene);
+      if (paste) assert.equal(paste.ground, null, "Stickery's paste lies on its stickers, not the ground");
+      assert.equal(!!paste, S.letteringFace(lettering) === null, `${lettering} drawn the wrong way`);
+      assert.deepEqual(plain.map((p) => p.op.text), ["things", "they", "seem", "and"]);
+      assert.ok(inside(format.safe, scene.readable, 1));
+      for (const { op } of plain) {
+        const sticker = shapes.find((s) => s.polygons.some((p) => SP.insidePolygon(p, op.x + 1, op.y - 1)));
+        assert.ok(sticker, `${lettering}: "${op.text}" is not on a sticker`);
+        assert.equal(op.color, P.readableOn(sticker.color));
+      }
     }
   }
 });
@@ -1320,95 +1375,130 @@ check("Stickery is laid out by the title and the shuffle: the same seed the same
   }
 });
 
-check("Stickery with no stars: each sticker's longest word is the liquid one", () => {
-  const scene = cover("do what you desire\nit is what it is", "stickery", "reel", COLOURS.blue);
-  const [paste] = scene.ops.filter((op) => op.kind === "liquid");
-  const shapes = scene.ops.filter((op) => op.kind === "shape");
-  assert.equal(shapes.filter((s) => paste.chains.some((c) => s.polygons.some((p) => SP.insidePolygon(p, c[0].x, c[0].y)))).length, 2);
-  const plain = textOps(scene).map((op) => op.text);
-  assert.deepEqual(plain, ["do", "what", "you", "it", "is", "it", "is"]);
+check("Stickery with no stars: each sticker's longest word is the funky one", () => {
+  for (const lettering of ["goo", "yesteryear"]) {
+    const scene = cover("do what you desire\nit is what it is", "stickery", "reel", { ...COLOURS.blue, lettering });
+    const { plain, funky } = stickerParts(scene);
+    const shapes = scene.ops.filter((op) => op.kind === "shape");
+    assert.equal(shapes.filter((s) => funky.some((f) => s.polygons.some((p) => SP.insidePolygon(p, f.x + (f.w ?? 0) / 2, f.y + (f.h ?? 0) / 2)))).length, 2);
+    assert.deepEqual(plain.map((p) => p.op.text), ["do", "what", "you", "it", "is", "it", "is"]);
+  }
 });
 
-check("Stickery's liquid words never touch its plain ones, whatever the lettering, face or shuffle", () => {
-  let pairs = 0;
-  for (const lettering of S.LETTERINGS.map((l) => l.id)) {
-    for (const seed of [0, 1, 2, 3]) {
-      for (const title of ["things *aren't* what they seem", "How I actually save money", "do what you *want*\nit is *what it is*", "my morning routine as a consultant in Singapore"]) {
-        const scene = cover(title, "stickery", "reel", { seed, lettering, plainFace: seed % 2 ? "plain-cormorant" : "plain-jost" });
-        const paste = liquidOf(scene).chains.flat();
-        const walk = (ops, turn) => {
-          for (const op of ops) {
-            if (op.kind === "turn") walk(op.ops, op);
-            else if (op.kind === "text") {
-              const ink = measurer.bounds(op.face, op.text);
-              const box = applyTurn({ x: op.x - ink.left * op.size, y: op.y - ink.ascent * op.size, w: (ink.left + ink.right) * op.size, h: (ink.ascent + ink.descent) * op.size }, turn);
-              for (const b of paste) {
-                const dx = Math.max(box.x - b.x, 0, b.x - (box.x + box.w));
-                const dy = Math.max(box.y - b.y, 0, b.y - (box.y + box.h));
-                pairs += 1;
-                assert.ok(Math.hypot(dx, dy) > b.r, `${lettering} ${seed} "${title}": "${op.text}" touches the paste`);
-              }
-            }
-          }
-        };
-        walk(scene.ops, null);
+const STICKER_TITLES = ["do what you *want*", "it is *what it is*", "things *aren't*\n*what* they seem", "How I actually save money", "my morning routine as a consultant in Singapore", "*Week 12* of building in public"];
+
+check("Stickery is one unit: plain words settle close round the funky word, never touching it, whatever the lettering, face or shuffle", () => {
+  let words = 0;
+  for (const lettering of LETTERING_IDS) {
+    for (const seed of [0, 1, 2]) {
+      for (const title of STICKER_TITLES) {
+        const plainFace = FACES.PLAIN_FACES[(seed + words) % FACES.PLAIN_FACES.length].id;
+        const scene = cover(title, "stickery", "reel", { seed, lettering, plainFace });
+        const { plain, funky } = stickerParts(scene);
+        const size = plain[0]?.op.size ?? 1;
+        let nearest = Infinity;
+        for (const { op, box } of plain) {
+          words += 1;
+          const d = Math.min(...funky.map((f) => apart(box, f)));
+          assert.ok(d > 0, `${lettering} ${seed} "${title}": "${op.text}" touches the funky word`);
+          nearest = Math.min(nearest, d);
+        }
+        // Not floating apart: the plain word nearest the funky one has settled right up to it.
+        if (plain.length) assert.ok(nearest < size * 0.4, `${lettering} ${seed} "${title}": the plain words float ${(nearest / size).toFixed(2)} of their size away`);
       }
     }
   }
-  assert.ok(pairs > 10000);
+  assert.ok(words > 300);
 });
 
-check("Stickery's plain words are never ruled on one line, and its liquid word sits at another angle and distance each shuffle", () => {
-  const offsets = new Set();
-  for (const seed of [0, 1, 2, 3, 4, 5]) {
-    const scene = cover("these four plain words and one *liquid* word", "stickery", "reel", { seed });
-    const words = textOps(scene).filter((op) => ["these", "four", "plain", "words"].includes(op.text));
-    assert.ok(new Set(words.map((op) => Math.round(op.y * 4))).size > 1, `seed ${seed}: the plain words sit on one line`);
-    assert.ok(scene.ops.some((op) => op.kind === "turn" && Math.abs(op.angle) > 0.002), `seed ${seed}: no word is turned at all`);
-    const paste = liquidOf(scene).chains.flat();
-    const cx = paste.reduce((sum, b) => sum + b.x, 0) / paste.length;
-    const cy = paste.reduce((sum, b) => sum + b.y, 0) / paste.length;
-    const px = words.reduce((sum, op) => sum + op.x, 0) / words.length;
-    const py = words.reduce((sum, op) => sum + op.y, 0) / words.length;
-    offsets.add(`${Math.round((cx - px) / 8)},${Math.round((cy - py) / 8)}`);
+check("Stickery's plain words are never turned and a line reads in order; its funky word is always turned, another way each shuffle", () => {
+  const angles = new Set();
+  for (const lettering of LETTERING_IDS) {
+    for (const seed of [0, 1, 2, 3]) {
+      for (const title of STICKER_TITLES) {
+        const scene = cover(title, "stickery", "reel", { seed, lettering });
+        const { plain } = stickerParts(scene);
+        for (const p of plain) assert.equal(p.turned, false, `${lettering} "${title}": "${p.op.text}" is turned`);
+        // Along a line (words set in turn, each right of the last; a line is
+        // at least its own height from the next), each word within half its
+        // size of its neighbour in height, so the line still reads in order.
+        for (let i = 1; i < plain.length; i += 1) {
+          const [a, b] = [plain[i - 1].op, plain[i].op];
+          if (b.x <= a.x || Math.abs(b.y - a.y) > a.size * 0.85) continue;
+          assert.ok(Math.abs(b.y - a.y) <= a.size * 0.5 + 0.5, `${lettering} ${seed} "${title}": "${b.text}" ${((b.y - a.y) / a.size).toFixed(2)} of a line off "${a.text}"`);
+        }
+        const turns = scene.ops.filter((op) => op.kind === "turn");
+        const paste = liquidOf(scene);
+        if (!paste) {
+          assert.ok(turns.length >= 1, `${lettering} "${title}": the funky word is not turned`);
+          for (const t of turns) {
+            assert.ok(Math.abs(t.angle) >= 0.039 && Math.abs(t.angle) <= 0.171, `${lettering}: turned ${((t.angle * 180) / Math.PI).toFixed(1)} degrees`);
+            angles.add(t.angle.toFixed(3));
+          }
+        }
+      }
+    }
   }
-  assert.ok(offsets.size >= 5, "the liquid word sits in the same place every shuffle");
+  assert.ok(angles.size > 30, "the funky words sit at the same few angles");
 });
 
 check("every lettering and every plain face keeps Stickery inside the safe area", () => {
   for (const format of F.FORMATS) {
-    for (const lettering of S.LETTERINGS.map((l) => l.id)) {
+    for (const lettering of LETTERING_IDS) {
       for (const [i, title] of TITLES.slice(0, 30).entries()) {
         const plainFace = FACES.PLAIN_FACES[i % FACES.PLAIN_FACES.length].id;
         const scene = cover(title, "stickery", format.id, { lettering, plainFace });
         for (const { op, rect } of readableInk(scene)) assert.ok(inside(format.safe, rect, 1), `${lettering} ${plainFace} ${format.id} "${title}": ${op.kind} outside`);
-        for (const op of textOps(scene)) assert.equal(op.face, plainFace, `${lettering} "${title}": "${op.text}" set in ${op.face}`);
+        for (const { op } of stickerParts(scene).plain) assert.equal(op.face, plainFace, `${lettering} "${title}": "${op.text}" set in ${op.face}`);
+        const funkyFace = S.letteringFace(lettering);
+        for (const op of textOps(scene)) if (!op.face.startsWith("plain-") && op.face !== "sans") assert.equal(op.face, funkyFace, `${lettering} "${title}": "${op.text}" in ${op.face}`);
       }
     }
   }
 });
 
-check("a pen's thick and thin: heavy downstrokes and hairline joins for a brush, one weight for bubble, and never a step between", () => {
-  const ratio = (lettering) => {
-    const op = liquidOf(cover("*remember*", "stickery", "reel", { lettering }));
-    const radii = op.chains.flat().map((b) => b.r).sort((a, b) => a - b);
-    // The 5th and 95th of every bead's radius: the paste's real range, not one dot.
-    return radii[Math.floor(radii.length * 0.95)] / radii[Math.floor(radii.length * 0.05)];
-  };
-  for (const lettering of ["brush", "nib", "caps"]) assert.ok(ratio(lettering) > 2.2, `${lettering} thick to thin only ${ratio(lettering).toFixed(2)}`);
-  assert.ok(ratio("bubble") < 1.6, `bubble ${ratio("bubble").toFixed(2)}`);
-  for (const lettering of S.LETTERINGS.map((l) => l.id)) {
+check("the picker offers the owner's four plain faces, two sans and two serif; the suggestions wait", () => {
+  const offered = FACES.PLAIN_FACES.filter((f) => f.offered);
+  assert.deepEqual(offered.map((f) => f.name), ["Outfit", "Jost", "Fraunces", "Newsreader"]);
+  assert.deepEqual(offered.map((f) => f.kind), ["sans", "sans", "serif", "serif"]);
+  assert.ok(FACES.PLAIN_FACES.find((f) => f.id === FACES.DEFAULT_PLAIN_FACE).offered);
+  // A face from before, no longer offered, falls back.
+  assert.equal(D.readDesign(JSON.stringify({ plainFace: "plain-inter" })).plainFace, FACES.DEFAULT_PLAIN_FACE);
+});
+
+check("drawn lettering is smooth: a brush's thick and thin, goo's swelling, and never a step between", () => {
+  const radii = (lettering) => liquidOf(cover("*remember*", "stickery", "reel", { lettering })).chains.flat().map((b) => b.r).sort((a, b) => a - b);
+  const ratio = (r) => r[Math.floor(r.length * 0.95)] / r[Math.floor(r.length * 0.05)];
+  assert.ok(ratio(radii("brush")) > 2.2, `brush thick to thin only ${ratio(radii("brush")).toFixed(2)}`);
+  for (const lettering of ["brush", "goo"]) {
     const op = liquidOf(cover("*smooth transitions everywhere*", "stickery", "reel", { lettering }));
-    // Bead to bead, never more than a fifth of the stroke's full weight:
-    // swelling and thinning, even drawing off to a point, are gradual.
+    // Bead to bead, never more than a fifth of the stroke's full weight.
     for (const chain of op.chains) {
       const full = Math.max(...chain.map((b) => b.r));
       for (let i = 1; i < chain.length; i += 1) {
         const [a, b] = [chain[i - 1].r, chain[i].r];
-        assert.ok(Math.abs(a - b) <= full * 0.2, `${lettering}: the paste steps from ${a.toFixed(1)} to ${b.toFixed(1)} in a stroke ${full.toFixed(1)} at full weight`);
+        assert.ok(Math.abs(a - b) <= full * 0.2, `${lettering}: the paste steps from ${a.toFixed(1)} to ${b.toFixed(1)}`);
       }
     }
   }
+});
+
+check("a stroke drawn through its points is smooth: no corner but the font's cusps, and every point kept", () => {
+  const coarse = [[0, 0], [10, 0], [20, 6], [26, 16], [28, 28]];
+  const smooth = LQ.smoothStroke(coarse);
+  for (const p of coarse) assert.ok(smooth.some(([x, y]) => Math.hypot(x - p[0], y - p[1]) < 1e-9), "a point of the font was lost");
+  let sharpest = 0;
+  for (let i = 1; i < smooth.length - 1; i += 1) {
+    const [a, b, c] = [smooth[i - 1], smooth[i], smooth[i + 1]];
+    const u = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    const v = Math.atan2(c[1] - b[1], c[0] - b[0]);
+    sharpest = Math.max(sharpest, Math.abs(Math.atan2(Math.sin(v - u), Math.cos(v - u))));
+  }
+  assert.ok(sharpest < 0.2, `a ${((sharpest * 180) / Math.PI).toFixed(0)} degree kink`);
+  // A cusp, where the stroke turns back, stays a cusp rather than a loop.
+  const cusp = LQ.smoothStroke([[0, 0], [0, 10], [0, 20], [3, 10], [6, 0]]);
+  assert.ok(cusp.some(([x, y]) => x === 0 && y === 20));
+  assert.ok(Math.max(...cusp.map(([, y]) => y)) <= 20 + 1e-9, "the cusp overshot into a loop");
 });
 
 check("the pen rules: a brush is heavy going down and light going up, a nib heavy across its edge", () => {
@@ -1534,8 +1624,8 @@ check("a layer is known by its paste: moved paste is another layer, the same pas
   assert.notEqual(liquidOf(cover("kite", "pasty", "reel", { seed: 9 })).key, a.key, "the shuffle drew the same paste");
   // Stickery's words move with the plain words beside them, whose widths depend on the face.
   const wide = { ...measurer, width: (face, text) => measurer.width(face, text) * (face.startsWith("plain-") ? 1.15 : 1) };
-  const first = liquidOf(cover("*actually* save money on groceries every week", "stickery", "reel", COLOURS.blue));
-  const second = liquidOf(cover("*actually* save money on groceries every week", "stickery", "reel", COLOURS.blue, wide));
+  const first = liquidOf(cover("*actually* save money on groceries every week", "stickery", "reel", { ...COLOURS.blue, lettering: "goo" }));
+  const second = liquidOf(cover("*actually* save money on groceries every week", "stickery", "reel", { ...COLOURS.blue, lettering: "goo" }, wide));
   assert.notEqual(first.key, second.key);
 });
 
@@ -1543,7 +1633,7 @@ check("Stickery with many lines still fits, its stickers apart, its words not dw
   const format = F.formatById("reel");
   for (const count of [1, 4, 8, 16, 26]) {
     const title = Array.from({ length: count }, (_, i) => `*${String.fromCharCode(97 + (i % 26))}*`).join("\n");
-    const scene = cover(title, "stickery", "reel", COLOURS.green);
+    const scene = cover(title, "stickery", "reel", { ...COLOURS.green, lettering: "goo" });
     assert.ok(inside(format.safe, scene.readable, 1), `${count} lines leave the safe area`);
     const shapes = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
     assert.equal(shapes.length, count);
@@ -1560,7 +1650,7 @@ check("a long line wraps inside its sticker rather than becoming a strip", () =>
   const scene = cover("this is a rather long line of plain words with one *liquid* word in it", "stickery", "reel", COLOURS.purple);
   const [shape] = scene.ops.filter((op) => op.kind === "shape").map((op) => SP.polygonBounds(op.polygons));
   assert.ok(shape.h > shape.w * 0.3, `the sticker is ${shape.w.toFixed(0)} by ${shape.h.toFixed(0)}`);
-  const plain = textOps(scene);
+  const plain = stickerParts(scene).plain.map((p) => p.op);
   assert.ok(new Set(plain.map((op) => Math.round(op.y))).size >= 2, "the plain words did not wrap");
   assert.ok(Math.min(...plain.map((op) => op.size)) > 30);
 });

@@ -11,7 +11,24 @@
  * file it needs.
  */
 
-import { Archivo_Black, Cormorant_Garamond, Fraunces, Instrument_Serif, Inter_Tight, Jost, Manrope, Newsreader, Outfit, Space_Mono } from "next/font/google";
+import {
+  Archivo_Black,
+  Archivo_Narrow,
+  Crimson_Pro,
+  Fraunces,
+  Instrument_Serif,
+  Inter_Tight,
+  Jost,
+  Kaushan_Script,
+  Leckerli_One,
+  Libre_Caslon_Text,
+  Newsreader,
+  Outfit,
+  Pacifico,
+  Sofia_Sans_Condensed,
+  Space_Mono,
+  Yesteryear,
+} from "next/font/google";
 import { CORE_FACE_IDS, type FaceId, type Measurer } from "@/components/reel-cover-maker/faces";
 import { createFontGate, type FontGate } from "@/components/reel-cover-maker/font-gate";
 
@@ -22,13 +39,21 @@ const spaceMono = Space_Mono({ weight: ["400", "700"], subsets: ["latin"] });
 /** Variable, so it sets Stickery's plain words and the maker's own controls at any weight. */
 export const interTight = Inter_Tight({ subsets: ["latin"], variable: "--rcm-font-ui" });
 
-// Stickery's plain faces, one light weight each, so a choice loads one file a script.
-const manrope = Manrope({ weight: "300", subsets: ["latin"] });
+// Stickery's plain faces, one weight each, so a choice loads one file a script.
 const outfit = Outfit({ weight: "300", subsets: ["latin"] });
 const jost = Jost({ weight: "300", subsets: ["latin"] });
-const cormorant = Cormorant_Garamond({ weight: "400", subsets: ["latin"] });
 const fraunces = Fraunces({ weight: "300", subsets: ["latin"] });
 const newsreader = Newsreader({ weight: "300", subsets: ["latin"] });
+const sofia = Sofia_Sans_Condensed({ weight: "400", subsets: ["latin"] });
+const archivoNarrow = Archivo_Narrow({ weight: "400", subsets: ["latin"] });
+const crimson = Crimson_Pro({ weight: "400", subsets: ["latin"] });
+const caslon = Libre_Caslon_Text({ weight: "400", subsets: ["latin"] });
+
+// Stickery's funky words, where they are set in a brush script.
+const yesteryear = Yesteryear({ weight: "400", subsets: ["latin"] });
+const pacifico = Pacifico({ weight: "400", subsets: ["latin"] });
+const leckerli = Leckerli_One({ weight: "400", subsets: ["latin"] });
+const kaushan = Kaushan_Script({ weight: "400", subsets: ["latin"] });
 
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
   serif: { family: instrumentSerif.style.fontFamily, weight: 400, italic: false },
@@ -37,14 +62,18 @@ const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }>
   wide: { family: archivoBlack.style.fontFamily, weight: 400, italic: false },
   mono: { family: spaceMono.style.fontFamily, weight: 400, italic: false },
   "mono-bold": { family: spaceMono.style.fontFamily, weight: 700, italic: false },
-  "plain-inter": { family: interTight.style.fontFamily, weight: 300, italic: false },
-  "plain-manrope": { family: manrope.style.fontFamily, weight: 300, italic: false },
   "plain-outfit": { family: outfit.style.fontFamily, weight: 300, italic: false },
   "plain-jost": { family: jost.style.fontFamily, weight: 300, italic: false },
-  "plain-instrument": { family: instrumentSerif.style.fontFamily, weight: 400, italic: false },
-  "plain-cormorant": { family: cormorant.style.fontFamily, weight: 400, italic: false },
   "plain-fraunces": { family: fraunces.style.fontFamily, weight: 300, italic: false },
   "plain-newsreader": { family: newsreader.style.fontFamily, weight: 300, italic: false },
+  "plain-sofia": { family: sofia.style.fontFamily, weight: 400, italic: false },
+  "plain-archivo": { family: archivoNarrow.style.fontFamily, weight: 400, italic: false },
+  "plain-crimson": { family: crimson.style.fontFamily, weight: 400, italic: false },
+  "plain-caslon": { family: caslon.style.fontFamily, weight: 400, italic: false },
+  "funky-yesteryear": { family: yesteryear.style.fontFamily, weight: 400, italic: false },
+  "funky-pacifico": { family: pacifico.style.fontFamily, weight: 400, italic: false },
+  "funky-leckerli": { family: leckerli.style.fontFamily, weight: 400, italic: false },
+  "funky-kaushan": { family: kaushan.style.fontFamily, weight: 400, italic: false },
 };
 
 /** The CSS font for a face at a size in pixels, as a canvas reads it. */
@@ -96,9 +125,9 @@ function fontGate(face: FaceId): FontGate {
   return gate;
 }
 
-/** The faces a cover may be drawn in: every core face, and the plain face Stickery is set in. */
-export function facesFor(plain: FaceId): FaceId[] {
-  return [...CORE_FACE_IDS, plain];
+/** The faces a cover may be drawn in: every core face, and the plain and funky faces Stickery is set in. */
+export function facesFor(plain: FaceId, funky?: FaceId | null): FaceId[] {
+  return funky ? [...CORE_FACE_IDS, plain, funky] : [...CORE_FACE_IDS, plain];
 }
 
 /** For useSyncExternalStore: told whenever a face finishes loading, or fails to. */

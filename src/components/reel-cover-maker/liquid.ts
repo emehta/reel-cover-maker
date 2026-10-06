@@ -69,6 +69,15 @@ export interface PasteRecipe {
   pen?: { kind: "pressure" | "nib"; thin: number; angle?: number };
   /** How far a free end tapers to a point rather than ending round, 0 to 1. */
   taper?: number;
+  /**
+   * Curves drawn through a stroke's points (a centripetal Catmull and Rom
+   * spline, sharp only where the stroke really turns back), rather than
+   * corner cutting between them: for a font whose curves are coarse runs of
+   * straight lines, which paste would otherwise follow corner by corner.
+   */
+  spline?: boolean;
+  /** Lowercase made taller, as a brush script's is: the x-height (in em) and how much taller, ascenders drawn up to keep their tops. */
+  xHeight?: { at: number; boost: number };
   /** The chance a stem's foot runs on as a drip, and how far a drip runs, in em. */
   drip: number;
   dripLength: readonly [number, number];
@@ -117,6 +126,64 @@ export function resample(points: [number, number][], spacing: number): { pts: [n
     at.push(s);
   }
   return { pts, at };
+}
+
+/** Points along a centripetal Catmull and Rom spline through `pts`, `steps` a span, both ends kept. */
+function catmullRom(pts: [number, number][], steps: number): [number, number][] {
+  if (pts.length < 3) return pts;
+  const at = (i: number) => pts[Math.max(0, Math.min(pts.length - 1, i))];
+  const out: [number, number][] = [];
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = at(i - 1);
+    const p1 = at(i);
+    const p2 = at(i + 1);
+    const p3 = at(i + 2);
+    const gap = (a: [number, number], b: [number, number]) => Math.max(1e-6, Math.hypot(b[0] - a[0], b[1] - a[1]) ** 0.5);
+    const t1 = gap(p0, p1);
+    const t2 = t1 + gap(p1, p2);
+    const t3 = t2 + gap(p2, p3);
+    for (let s = 0; s < steps; s += 1) {
+      const t = t1 + ((t2 - t1) * s) / steps;
+      const lerp = (a: [number, number], b: [number, number], ta: number, tb: number): [number, number] => [
+        ((tb - t) / (tb - ta)) * a[0] + ((t - ta) / (tb - ta)) * b[0],
+        ((tb - t) / (tb - ta)) * a[1] + ((t - ta) / (tb - ta)) * b[1],
+      ];
+      const a1 = lerp(p0, p1, 0, t1);
+      const a2 = lerp(p1, p2, t1, t2);
+      const a3 = lerp(p2, p3, t2, t3);
+      out.push(lerp(lerp(a1, a2, 0, t2), lerp(a2, a3, t1, t3), t1, t2));
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+/**
+ * A stroke made smooth: split where it turns back on itself by more than
+ * about 110 degrees (a cusp, which a spline would loop round), and a spline
+ * drawn through each piece.
+ */
+export function smoothStroke(points: [number, number][]): [number, number][] {
+  if (points.length < 3) return points;
+  const pieces: [number, number][][] = [];
+  let piece: [number, number][] = [points[0]];
+  for (let i = 1; i < points.length; i += 1) {
+    piece.push(points[i]);
+    if (i < points.length - 1) {
+      const [ax, ay] = points[i - 1];
+      const [bx, by] = points[i];
+      const [cx, cy] = points[i + 1];
+      const u = Math.hypot(bx - ax, by - ay) || 1;
+      const v = Math.hypot(cx - bx, cy - by) || 1;
+      const turn = ((bx - ax) * (cx - bx) + (by - ay) * (cy - by)) / (u * v);
+      if (turn < -0.34) {
+        pieces.push(piece);
+        piece = [points[i]];
+      }
+    }
+  }
+  pieces.push(piece);
+  return pieces.flatMap((p, i) => catmullRom(p, 8).slice(i ? 1 : 0));
 }
 
 /** A glyph's point in em to the picture's pixels. */
@@ -198,10 +265,21 @@ export function pasteGlyph(
   const chains: Chain[] = [];
   const drips: { from: Bead; dx: number; dy: number; seed: number }[] = [];
 
+  // Lowercase drawn taller where the hand asks: the x-height zone stretched, ascenders drawn up to keep their tops.
+  const tall = recipe.xHeight;
+  const lift = (v: number) => {
+    if (!tall || v >= 0) return v;
+    const x = tall.at;
+    const top = x * (1 + tall.boost);
+    if (v >= -x) return v * (1 + tall.boost);
+    const cap = Math.max(top + 0.05, 0.7);
+    return -top - ((-v - x) / Math.max(1e-6, cap - x)) * (cap - top);
+  };
   // Every stroke as drawn, in the picture's pixels, so an end can be checked against the others.
   const placed: [number, number][][] = g.glyph.strokes.map((flat, index) => {
-    const pts: [number, number][] = [];
-    for (let i = 0; i < flat.length; i += 2) pts.push([flat[i], flat[i + 1]]);
+    let pts: [number, number][] = [];
+    for (let i = 0; i < flat.length; i += 2) pts.push([flat[i], lift(flat[i + 1])]);
+    if (recipe.spline) pts = smoothStroke(pts);
     return unsteady(pts, mixSeed(g.seed, index + 1), recipe, wave).map(([u, v]) => place(u, v));
   });
 

@@ -11,44 +11,51 @@ export type CoreFaceId = "serif" | "serif-italic" | "sans" | "wide" | "mono" | "
 export const CORE_FACE_IDS: readonly CoreFaceId[] = ["serif", "serif-italic", "sans", "wide", "mono", "mono-bold"];
 
 /**
- * The faces Stickery may set its plain words in, thin or light, four sans
- * and four serif. Only the chosen one is loaded.
+ * The faces Stickery may set its plain words in: the owner's four (Outfit
+ * and Jost, Fraunces and Newsreader), and four suggested to pair with the
+ * funky words, offered only once the owner says so. Only the chosen face is
+ * loaded.
  */
 export type PlainFaceId =
-  | "plain-inter"
-  | "plain-manrope"
   | "plain-outfit"
   | "plain-jost"
-  | "plain-instrument"
-  | "plain-cormorant"
   | "plain-fraunces"
-  | "plain-newsreader";
+  | "plain-newsreader"
+  | "plain-sofia"
+  | "plain-archivo"
+  | "plain-crimson"
+  | "plain-caslon";
 
 export interface PlainFace {
   id: PlainFaceId;
   name: string;
   kind: "sans" | "serif";
+  /** Shown in the picker; a suggestion is not, until it is chosen. */
+  offered: boolean;
 }
 
 /** In the order the picker shows them: the sans, then the serifs. */
 export const PLAIN_FACES: readonly PlainFace[] = [
-  { id: "plain-inter", name: "Inter", kind: "sans" },
-  { id: "plain-manrope", name: "Manrope", kind: "sans" },
-  { id: "plain-outfit", name: "Outfit", kind: "sans" },
-  { id: "plain-jost", name: "Jost", kind: "sans" },
-  { id: "plain-instrument", name: "Instrument", kind: "serif" },
-  { id: "plain-cormorant", name: "Cormorant", kind: "serif" },
-  { id: "plain-fraunces", name: "Fraunces", kind: "serif" },
-  { id: "plain-newsreader", name: "Newsreader", kind: "serif" },
+  { id: "plain-outfit", name: "Outfit", kind: "sans", offered: true },
+  { id: "plain-jost", name: "Jost", kind: "sans", offered: true },
+  { id: "plain-sofia", name: "Sofia Sans Condensed", kind: "sans", offered: false },
+  { id: "plain-archivo", name: "Archivo Narrow", kind: "sans", offered: false },
+  { id: "plain-fraunces", name: "Fraunces", kind: "serif", offered: true },
+  { id: "plain-newsreader", name: "Newsreader", kind: "serif", offered: true },
+  { id: "plain-crimson", name: "Crimson Pro", kind: "serif", offered: false },
+  { id: "plain-caslon", name: "Libre Caslon", kind: "serif", offered: false },
 ];
 
-export const DEFAULT_PLAIN_FACE: PlainFaceId = "plain-inter";
+export const DEFAULT_PLAIN_FACE: PlainFaceId = "plain-outfit";
 
 export function isPlainFaceId(value: unknown): value is PlainFaceId {
   return PLAIN_FACES.some((f) => f.id === value);
 }
 
-export type FaceId = CoreFaceId | PlainFaceId;
+/** The typefaces Stickery's funky words may be set in, where they are a face rather than drawn paste. */
+export type FunkyFaceId = "funky-yesteryear" | "funky-pacifico" | "funky-leckerli" | "funky-kaushan";
+
+export type FaceId = CoreFaceId | PlainFaceId | FunkyFaceId;
 
 /** A face's vertical extent, in em. All positive: ascent and cap above the baseline, descent below it. */
 export interface FaceMetrics {

@@ -32,16 +32,19 @@ on top, so it stays in sight while you type).
     RENT").
   - **Stickery**: each line you type is a sticker with stepped, cut paper
     edges, in turn the colour and its pale tint, with a border that shows on
-    either background. No side runs straight from corner to corner: wherever
-    the words leave one straight, a step is cut into it. Starred words are
-    in liquid lettering written with a pen's thick and thin (a brush pen's
-    heavy downstrokes and hairline joins, smoothed so it swells and thins
-    gradually), the rest in a plain face you pick: Inter, Manrope, Outfit or
-    Jost, or the serifs Instrument, Cormorant, Fraunces or Newsreader. With
-    no stars, each sticker's longest word is the liquid one. The liquid
-    words tilt a few degrees, each line sits a random distance from the
-    next without ever touching it, and the plain words sit a little off
-    their line, all from the title and the shuffle.
+    either background. No side runs straight from corner to corner. Starred
+    words are funky, the rest plain; with no stars, each sticker's longest
+    word is the funky one. The funky word is set first, turned to an angle
+    of its own, and the plain words are fitted round it as one unit: those
+    before it dropped onto it word by word, those after it lifted up under
+    it, each until it comes a small, random distance from the funky word's
+    actual strokes, so "do what you" settles along the top of "want", each
+    word at its own height, without ever touching. Plain words are never
+    turned, and a line still reads in order. The funky lettering is a brush
+    script typeface (Yesteryear, Pacifico, Leckerli One or Kaushan Script)
+    or drawn: Goo, melted letters running together, or a brush pen, both
+    drawn along smooth curves through the font's points. The plain words
+    are set in Outfit or Jost, or the serifs Fraunces or Newsreader.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
 - **Shuffle** draws the letters another way: every random choice a style
@@ -170,8 +173,8 @@ Spread's collage tries hundreds of ways of breaking the title into lines
 keeps the ones that come out nearest a square, breaking fewest words; the
 shuffle picks among the best few.
 
-Stickery's stickers are every letter's box, padded and snapped out to a
-coarse grid, with holes filled and gaps a cell wide closed, traced as a
+Stickery's stickers are every letter's box (the funky word's letters,
+each plain word), padded and snapped out to a coarse grid, with holes filled and gaps a cell wide closed, traced as a
 polygon of straight steps. A seeded pass then cuts a step a cell out into
 every straight run longer than twelve cells and into each piece's four
 outer sides, so no side is ruled; a step only adds paper, so no letter is

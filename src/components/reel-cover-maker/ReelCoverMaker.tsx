@@ -15,7 +15,7 @@ import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-make
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
 import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
-import { buildScene, liquidOps, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
+import { buildScene, letteringFace, liquidOps, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
@@ -209,7 +209,7 @@ export default function ReelCoverMaker() {
   const title = filled ? design.text : PLACEHOLDER_TITLE;
   const format = formatById(design.format);
 
-  const faces = facesFor(design.plainFace);
+  const faces = facesFor(design.plainFace, letteringFace(design.lettering));
   const loads = useSyncExternalStore(subscribeFonts, () => fontsSnapshot(title, faces), () => -1);
   const method = useSyncExternalStore<SaveMethod>(subscribeTouch, currentSaveMethod, () => "download");
 
@@ -251,7 +251,8 @@ export default function ReelCoverMaker() {
   };
 
   const plainFace = design.plainFace;
-  useEffect(() => requestFonts(title, facesFor(plainFace)), [title, plainFace]);
+  const funkyFace = letteringFace(design.lettering);
+  useEffect(() => requestFonts(title, facesFor(plainFace, funkyFace)), [title, plainFace, funkyFace]);
 
   // The page and the browser's bars in the maker's light or dark, handed back on the way out.
   useEffect(() => {
@@ -446,8 +447,8 @@ export default function ReelCoverMaker() {
                 {(["sans", "serif"] as const).map((kind) => (
                   <div key={kind} className={styles.faceRow}>
                     <span className={styles.faceKind}>{kind === "sans" ? "Sans" : "Serif"}</span>
-                    <div className={`${styles.segments} ${styles.four}`}>
-                      {PLAIN_FACES.filter((f) => f.kind === kind).map((f) => (
+                    <div className={`${styles.segments} ${styles.two}`}>
+                      {PLAIN_FACES.filter((f) => f.kind === kind && (f.offered || f.id === design.plainFace)).map((f) => (
                         <label key={f.id} className={styles.segment}>
                           <input
                             type="radio"
