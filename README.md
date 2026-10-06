@@ -1,7 +1,8 @@
 # Reel Cover Maker
 
-Type a title and get an Instagram reel cover or grid post, made to read in
-the profile grid, ready to download.
+Type a title, put it over a photo if you like, place it where you want it,
+and get an Instagram reel cover or grid post, made to read in the profile
+grid, ready to download.
 
 Use it at **[emehta.github.io/reel-cover-maker](https://emehta.github.io/reel-cover-maker/)**.
 
@@ -10,8 +11,25 @@ Use it at **[emehta.github.io/reel-cover-maker](https://emehta.github.io/reel-co
 The controls are on the left, the cover on the right (on a phone, the cover
 on top, so it stays in sight while you type).
 
-- **Type the title.** It is set as large as the cover allows. A line break
+- **Type the text.** It is set as large as the cover allows. A line break
   you type is kept.
+- **Add a photo** under the text, if you want one behind it: **Upload** one,
+  **Take photo** with the computer's camera (on a phone, the camera app
+  opens), drop a picture on the cover, or paste one. It fills the whole
+  cover, cut to fit by its shorter side. Then:
+  - **Drag it** on the cover to move it, and **scroll**, pinch with two
+    fingers or use the **zoom slider** to zoom in, up to five times, about
+    the point under the pointer or between your fingers. It never runs off
+    an edge. **Double-click** it, or press the fit button, to see it whole
+    again; the mirror button flips it.
+  - **Adjust** opens exposure, brightness, contrast, saturation,
+    temperature, tint, hue and dim, each reading what it does ("+0.5 EV",
+    "-12%"), each back to nothing at a double click, all of them at once
+    with Reset. They are worked out on the GPU, so a slider keeps up with
+    your finger.
+  - The photo stays in this browser (IndexedDB), never uploaded anywhere,
+    and is still there next time. Pasty's gel and paste cast their shadow
+    onto it.
 - **Put a word between stars** to make it Stickery's funky word:
   `How I *actually* save`. Every other style sets a starred word as it sets
   the rest.
@@ -54,6 +72,9 @@ on top, so it stays in sight while you type).
     arms; lines nest into each other.
   - **Pasty Flat**: the same lettering in thick, matte paste spread with a
     knife.
+  - Pasty and Pasty Flat letter in Drip, or, picked from their Lettering
+    list, in Goo Teardrop or Goo Even, Stickery's drawn hands, in their own
+    gel or paste.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
 - **Shuffle** draws the letters another way: every random choice a style
@@ -66,15 +87,40 @@ on top, so it stays in sight while you type).
   with your finger.
 - **Pick the background**, light or dark, with the two buttons over the
   cover.
-- **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5.
-- **Grid crop** dims what the profile grid cuts off.
+- **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5. Tick
+  **Grid crop**, beside it, to dim what the profile grid cuts off.
+- **Place the text** on the cover, as in an illustration program. Point at
+  the letters and a faint box shows they can be taken; press them and they
+  are selected, in a box with a handle at each corner and side and a round
+  one above to turn them (below, when above is off the cover).
+  - **Drag inside** to move them. Near the cover's middle they are drawn to
+    it, with a guide; hold Alt to place them freely.
+  - **Drag a corner** to scale them, keeping their shape (Shift lets it
+    change; Alt scales from the middle). **Drag a side** to stretch them one
+    way.
+  - **Drag the round handle** to turn them, any way, drawn to upright and to
+    each quarter turn within three degrees; Shift turns in steps of fifteen.
+  - On a phone, **two fingers** on them move, scale and turn them at once.
+    On a trackpad, **pinch** over the selected letters to scale them about
+    the pointer.
+  - Keys, once selected: the arrows nudge a pixel (Shift, ten); **+** and
+    **-** scale; **[** and **]** turn a degree (Shift, fifteen); **Escape**
+    lets go. **Double-click** the letters to change what they say.
+  - **Reset text**, over the cover, puts them back where the style set them.
+  - Placed letters are drawn again where they land, never stretched as a
+    picture: paste is made again from its beads, so it stays sharp and lit
+    from above however it is turned. While you drag, the letters as they
+    were are carried with the pointer, and drawn sharp when you let go. On
+    a photo, a press between the letters (not on them) still moves the
+    photo; once they are selected, the whole box moves them.
 - **Download** (or Cmd/Ctrl+S). On an iPhone or iPad the button reads **Save
   image** and opens the share sheet, where **Save Image** puts the cover in
   Photos. Android downloads it, and Instagram's picker finds it there.
   Inside an app's own browser (Instagram's, when the link is opened from a
   bio), the cover opens on its own: press and hold it to save it.
 
-The title, style, colour, background, size and shuffle are remembered in
+The text, style, letterings, colour, background, size, shuffle, photo (with
+its framing and adjustments) and where the text is placed are remembered in
 this browser, so the next cover matches the last one.
 
 To use it as a reel's cover: when posting, tap **Edit cover**, then **Add
@@ -121,6 +167,33 @@ nothing a cover says is cut off wherever it appears.
 A cover is a list of things to draw, built by pure functions and drawn on a
 canvas, so the preview, the style thumbnails and the download are drawn from
 the same list and cannot disagree.
+
+### The photo
+
+A photo is decoded upright (its camera rotation applied) and kept at 2,560
+pixels on its long side, enough to zoom into, and stored in IndexedDB as a
+JPEG. Its framing is a zoom and a centre, as shares of the photo, so it
+fits any size the same way; `photo.ts` works out the source rectangle and
+keeps it on the photo, and zooms about a fixed point. The adjustments are
+two stages: a curve per channel (exposure and white balance in linear
+light, then brightness and contrast), then one 3 × 3 matrix (saturation,
+hue and dim together). `photo-gl.ts` runs both in a WebGL 2 shader, line
+for line with `photo.ts`'s tables, which the page uses without WebGL 2.
+
+On a photo, the paste has no ground of its own, so its shadow is a layer of
+its own: white where none falls, the ground's colour times its shade where
+it does, multiplied onto the picture before the paste is laid over it.
+
+### Placing the text
+
+A placement is an offset of the box round the letters, an angle and a
+scale across and down, about the box's middle (`place.ts`). `placeScene`
+turns it into a matrix: every word, sticker and outline is drawn through
+it, and every bead of paste is moved by it (thicker by the square root of
+the scale's area), so the paste is made again where it lands. The ground,
+the photo and the grain stay put. What each handle does is pure and
+tested: a corner keeps the opposite corner where it was, a side the
+opposite side, two fingers keep their points of the letters under them.
 
 ### The liquid letters
 
@@ -213,7 +286,12 @@ Only the plain face chosen is loaded.
 | `liquid.worker.ts`, `liquid-client.ts` | The worker that makes the fields, and the page's queue and lighting of them |
 | `strokes/` | The single-line fonts, Drip and Goo, from `scripts/drip-font.mjs` and `scripts/goo-font.mjs`, with their licences |
 | `stepped.ts` | Stickery's stepped sticker outline |
-| `scene.ts` | Each style, as a list of fills, grain, shapes, text and liquid layers |
+| `scene.ts` | Each style, as a list of fills, the photo, grain, shapes, text and liquid layers; and the letters placed (`placeScene`) |
+| `place.ts` | Where the text is placed: the matrix, the handles, and what each drag does |
+| `CoverSurface.tsx` | The cover as an illustration program's canvas: selecting, moving, scaling and turning the text, and framing the photo |
+| `photo.ts` | The photo's framing and adjustments, as arithmetic |
+| `photo-gl.ts`, `photo-store.ts` | The adjustments on the GPU, and the photo kept in IndexedDB |
+| `PhotoControls.tsx`, `Camera.tsx` | The Photo field, and the computer's camera |
 | `Dropdown.tsx` | The Lettering and Plain words lists: a select of the maker's own, each option in its own type |
 | `paint.ts` | Draws a scene on a canvas at any scale, from any origin |
 | `colour.ts`, `palettes.ts` | The sliders' colours in OKLCH, the roles a style reads, and WCAG contrast |
@@ -265,7 +343,12 @@ things and the same seed does not; that a sticker is straight steps on its
 grid round every letter, with a border that shows on either ground; the
 sliders' colours at every hue and shade; the font gate with loads that
 arrive late or never; the grain, the file names, the save method, and that
-the painter draws each word where the scene put it. Node strips the types
+the painter draws each word where the scene put it; that a photo always
+covers the cover, follows the finger and zooms about the pointer, and its
+adjustments do what they say; that every handle keeps its opposite corner
+or side put, two fingers keep their places on the letters, and placed
+letters are drawn through the map with their paste made again where it
+lands and the ground and photo left where they are. Node strips the types
 from a `.ts` file on its own, so a module the tests load must write
 type-only imports as `import type`.
 

@@ -1,11 +1,11 @@
 "use client";
 
-import { Check, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, Check, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
 import { Camera } from "@/components/reel-cover-maker/Camera";
-import { PhotoSurface } from "@/components/reel-cover-maker/CoverSurface";
+import { CoverSurface } from "@/components/reel-cover-maker/CoverSurface";
 import { loadDesign, saveDesign, type Design } from "@/components/reel-cover-maker/design";
 import { Dropdown } from "@/components/reel-cover-maker/Dropdown";
 import { PLAIN_FACES } from "@/components/reel-cover-maker/faces";
@@ -18,11 +18,23 @@ import { DEFAULT_ADJUST, DEFAULT_FRAME, keptSize, sourceRect } from "@/component
 import { adjustedPhoto } from "@/components/reel-cover-maker/photo-gl";
 import { forgetPhoto, loadPhoto, savePhoto } from "@/components/reel-cover-maker/photo-store";
 import { PhotoControls } from "@/components/reel-cover-maker/PhotoControls";
+import { HOME, invert, isHome, keepOnCover, multiply, placeMatrix, type Matrix, type Place, type Point } from "@/components/reel-cover-maker/place";
 import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-maker/palettes";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
 import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
-import { buildScene, LETTERINGS, letteringFace, liquidOps, PASTY_LETTERINGS, STYLES, type CoverInput, type Scene } from "@/components/reel-cover-maker/scene";
+import {
+  buildScene,
+  isBackdrop,
+  LETTERINGS,
+  letteringFace,
+  liquidOps,
+  PASTY_LETTERINGS,
+  placeScene,
+  STYLES,
+  type CoverInput,
+  type Scene,
+} from "@/components/reel-cover-maker/scene";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
@@ -127,6 +139,19 @@ function sceneFor(input: CoverInput, loads: number): Scene {
     scenes.set(key, scene);
     while (scenes.size > 64) scenes.delete(scenes.keys().next().value as string);
   }
+  return scene;
+}
+
+/** Each scene's letters as last placed: placing makes the paste's beads again, so it is done once a placement. */
+const placedScenes = new WeakMap<Scene, { key: string; scene: Scene }>();
+
+function placed(base: Scene, place: Place): Scene {
+  if (isHome(place)) return base;
+  const key = JSON.stringify(place);
+  const hit = placedScenes.get(base);
+  if (hit && hit.key === key) return hit.scene;
+  const scene = placeScene(base, place);
+  placedScenes.set(base, { key, scene });
   return scene;
 }
 
@@ -272,6 +297,10 @@ export default function ReelCoverMaker() {
   const [cameraOpen, setCameraOpen] = useState(false);
   /** A file is being dragged over the preview. */
   const [dropping, setDropping] = useState(false);
+  /** The letters are selected on the cover, their box and handles showing. */
+  const [selected, setSelected] = useState(false);
+  /** Moves when a gesture is called off, so the picture as it was is painted again. */
+  const [repaint, setRepaint] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -283,7 +312,13 @@ export default function ReelCoverMaker() {
   const saveRef = useRef<() => void>(() => {});
   const takePhotoRef = useRef<(file: Blob) => void>(() => {});
   const photoForRef = useRef<(scene: Scene) => PaintOptions["photo"]>(() => null);
+  /** The letters as they were drawn when a gesture began, carried with it until they are drawn again where it left them. */
+  const liveRef = useRef<{ layer: HTMLCanvasElement; shadow: HTMLCanvasElement | null; from: Matrix } | null>(null);
+  const interimRef = useRef<() => void>(() => {});
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  /** The letters alone, drawn once a picture, to tell a press on them from one between them. */
+  const inkRef = useRef<{ key: string; ctx: CanvasRenderingContext2D } | null>(null);
 
   const filled = hasTitle(design.text);
   const title = filled ? design.text : PLACEHOLDER_TITLE;
@@ -307,8 +342,11 @@ export default function ReelCoverMaker() {
     seed: design.seed,
     photo: photo !== null,
   };
-  const scene = measurer ? sceneFor(input, loads) : null;
-  const thumbs = measurer ? STYLES.map((style) => sceneFor({ ...input, style: style.id }, loads)) : null;
+  const base = measurer ? sceneFor(input, loads) : null;
+  /** Where the letters are, kept on the cover whatever its size now. */
+  const place = base ? keepOnCover(base.readable, design.place, { w: base.width, h: base.height }) : design.place;
+  const scene = base ? placed(base, place) : null;
+  const thumbs = measurer ? STYLES.map((style) => placed(sceneFor({ ...input, style: style.id }, loads), place)) : null;
   const name = fileName(design.text, design.format);
   // Drawn again when a liquid layer the preview waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
@@ -331,6 +369,7 @@ export default function ReelCoverMaker() {
     photo?.id ?? 0,
     design.photoFrame,
     design.photoAdjust,
+    place,
   ]);
 
   const update = (change: Partial<Design>) => {
@@ -465,9 +504,85 @@ export default function ReelCoverMaker() {
     if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus({ preventScroll: true });
   }, []);
 
-  // The photo as the canvas paints it now, for the drawing below; the key it draws under already names the photo, its frame and its adjustments.
+  /**
+   * The letters drawn at a placement while a gesture runs: the picture under
+   * them painted as it is, and the letters as they were drawn when it began,
+   * carried by the difference. Fast enough for every move; they are drawn
+   * again sharp, and the paste made again, once the gesture ends.
+   */
+  const showLive = (next: Place) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !base || !scene || !canvas.width) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const target = fullSize(scene);
+    const options: PaintOptions = { scale: 1, font: fontCss, grain: grain(), liquid: (op, part) => liquidLayer(op, target, part) ?? null, photo: photoForRef.current(scene) };
+    if (!liveRef.current) {
+      const layerOf = (draw: (layerCtx: CanvasRenderingContext2D) => void) => {
+        const layer = document.createElement("canvas");
+        layer.width = canvas.width;
+        layer.height = canvas.height;
+        const layerCtx = layer.getContext("2d");
+        if (!layerCtx) return null;
+        draw(layerCtx);
+        return layer;
+      };
+      // The letters on nothing; and the shadow paste casts on a photo apart, white where none falls, to multiply as it was drawn.
+      const layer = layerOf((layerCtx) => paint(layerCtx, { ...scene, ops: scene.ops.filter((op) => !isBackdrop(op)) }, { ...options, liquid: (op, part) => (part === "shadow" ? null : options.liquid?.(op, part) ?? null) }));
+      const casting = liquidOps(scene).filter((op) => op.shadow);
+      const shadow = casting.length
+        ? layerOf((layerCtx) => {
+            layerCtx.fillStyle = "#ffffff";
+            layerCtx.fillRect(0, 0, canvas.width, canvas.height);
+            paint(layerCtx, { ...scene, ops: casting }, { ...options, liquid: (op, part) => (part === "shadow" ? options.liquid?.(op, part) ?? null : null) });
+          })
+        : null;
+      if (!layer) return;
+      liveRef.current = { layer, shadow, from: placeMatrix(base.readable, place) };
+    }
+    paint(ctx, { ...scene, ops: scene.ops.filter(isBackdrop) }, options);
+    const d = multiply(placeMatrix(base.readable, next), invert(liveRef.current.from));
+    ctx.save();
+    ctx.setTransform(d[0], d[1], d[2], d[3], d[4], d[5]);
+    if (liveRef.current.shadow) {
+      ctx.globalCompositeOperation = "multiply";
+      ctx.drawImage(liveRef.current.shadow, 0, 0);
+      ctx.globalCompositeOperation = "source-over";
+    }
+    ctx.drawImage(liveRef.current.layer, 0, 0);
+    ctx.restore();
+    painted.current = null;
+  };
+
+  /** Whether any of the letters is drawn within `reach` of a point of the picture; yes until the picture is drawn. */
+  const inkAt = (p: Point, reach: number): boolean => {
+    if (!scene || painted.current !== key) return true;
+    if (inkRef.current?.key !== key) {
+      const canvas = inkRef.current?.ctx.canvas ?? document.createElement("canvas");
+      canvas.width = scene.width;
+      canvas.height = scene.height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return true;
+      const target = fullSize(scene);
+      paint(ctx, { ...scene, ops: scene.ops.filter((op) => !isBackdrop(op)) }, { scale: 1, font: fontCss, grain: null, liquid: (op, part) => (part === "shadow" ? null : liquidLayer(op, target, part) ?? null), photo: null });
+      inkRef.current = { key, ctx };
+    }
+    const { ctx } = inkRef.current;
+    const r = Math.max(1, Math.round(reach));
+    const x0 = Math.max(0, Math.round(p.x) - r);
+    const y0 = Math.max(0, Math.round(p.y) - r);
+    const x1 = Math.min(scene.width, Math.round(p.x) + r + 1);
+    const y1 = Math.min(scene.height, Math.round(p.y) + r + 1);
+    if (x1 <= x0 || y1 <= y0) return false;
+    const data = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 24) return true;
+    return false;
+  };
+
+  // What the drawing below reads at the time it draws; the key it draws under already names the photo, its frame and its adjustments, and the placement.
   useEffect(() => {
     photoForRef.current = photoFor;
+    interimRef.current = () => showLive(place);
   });
 
   // Draw the cover, then make its file, so a tap on Save can share it at
@@ -482,7 +597,11 @@ export default function ReelCoverMaker() {
     // The canvas's size is set only here, as it is painted, so the last
     // picture stays up, whole, until this one is ready.
     drawLayers(liquidOps(scene), mainTarget, "main");
-    if (!pictureReady) return;
+    if (!pictureReady) {
+      // Moved letters wait for their paste to be made again where they now are: until then, carried there from where they were.
+      if (liveRef.current) interimRef.current();
+      return;
+    }
     if (painted.current !== key) {
       if (canvas.width !== scene.width) canvas.width = scene.width;
       if (canvas.height !== scene.height) canvas.height = scene.height;
@@ -490,6 +609,7 @@ export default function ReelCoverMaker() {
       if (!ctx) return;
       paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op, part) => liquidLayer(op, mainTarget, part) ?? null, photo: photoForRef.current(scene) });
       painted.current = key;
+      liveRef.current = null;
     }
     if (prepared.current?.key === key) return;
     // The file waits for the picture to settle; the first one is made at once.
@@ -506,7 +626,7 @@ export default function ReelCoverMaker() {
       first ? 0 : PREPARE_DELAY_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [scene, name, key, pictureReady]);
+  }, [scene, name, key, pictureReady, repaint]);
 
   useEffect(() => {
     const dialog = holdRef.current;
@@ -774,6 +894,12 @@ export default function ReelCoverMaker() {
           }}
         >
           <div className={styles.previewTop}>
+            {!isHome(place) && (
+              <button type="button" className={`${styles.toggle} ${styles.resetText}`} onClick={() => update({ place: HOME })} title="Put the text back where the style sets it" aria-label="Reset text">
+                <ArrowCounterClockwise size={15} weight="bold" aria-hidden="true" />
+                <span className={styles.resetLabel}>Reset text</span>
+              </button>
+            )}
             <div className={`${styles.segments} ${styles.compact}`} role="radiogroup" aria-label="Background">
               {(["light", "dark"] as const satisfies readonly Ground[]).map((ground) => (
                 <label key={ground} className={styles.segment}>
@@ -790,7 +916,7 @@ export default function ReelCoverMaker() {
               ))}
             </div>
           </div>
-          <div className={styles.stage}>
+          <div className={styles.stage} ref={stageRef}>
             <div className={styles.frame} style={frameStyle}>
               <canvas
                 ref={canvasRef}
@@ -798,17 +924,27 @@ export default function ReelCoverMaker() {
                 role="img"
                 aria-label={`${format.label} preview`}
               />
-              {photo && scene && (
-                <PhotoSurface
+
+              {showGrid && <GridMask format={format} />}
+              {scene && base && (
+                <CoverSurface
                   surfaceRef={surfaceRef}
                   width={scene.width}
                   height={scene.height}
+                  box={base.readable.w > 0 && base.readable.h > 0 ? base.readable : null}
+                  place={place}
+                  onPlace={(next) => update({ place: next })}
+                  onLive={(next) => (next ? showLive(next) : setRepaint((n) => n + 1))}
+                  selected={selected}
+                  onSelect={setSelected}
                   photo={photo}
                   frame={design.photoFrame}
                   onFrame={(photoFrame) => update({ photoFrame })}
+                  onEditText={() => inputRef.current?.focus()}
+                  inkAt={inkAt}
+                  clipRef={stageRef}
                 />
               )}
-              {showGrid && <GridMask format={format} />}
               {dropping && (
                 <div className={styles.dropHint} aria-hidden="true">
                   Drop to use as the photo

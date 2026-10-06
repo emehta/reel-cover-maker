@@ -196,17 +196,95 @@
   outline-offset: -1px;
 }
 
-/* Over the cover: the surface a photo is dragged, pinched and scrolled on. */
+/* Over the cover: the surface the text is selected, moved, scaled and turned on, and a photo dragged, pinched and scrolled. */
 .surface {
   position: absolute;
   inset: 0;
-  cursor: grab;
   touch-action: none;
+  outline: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.surface:active {
-  cursor: grabbing;
+.surface:focus-visible {
+  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-focus);
+  border-radius: 3px;
+}
+
+/* The box round the selected text, drawn in the picture's own pixels, its lines a fixed width on screen. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.selection {
+  fill: none;
+  stroke: #3b82f6;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+
+.handle,
+.turnHandle {
+  fill: #ffffff;
+  stroke: #3b82f6;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
+}
+
+/* The text under the pointer, before it is selected: it can be. */
+.hoverBox {
+  fill: none;
+  stroke: #3b82f6;
+  stroke-opacity: 0.7;
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+/* A handle's reach, past the cover's edge as well as on it: a finger's on a touch screen. */
+.hitSpot {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  touch-action: none;
+}
+
+@media (pointer: coarse) {
+  .hitSpot {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* The cover's middle, as the text is drawn to it. */
+.guide {
+  stroke: #ff3d8b;
+  stroke-width: 1px;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The angle beside the turning handle while it turns. */
+.angle {
+  position: absolute;
+  transform: translate(14px, -50%);
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(17, 17, 17, 0.86);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* A file dragged over the preview: where it would land. */
@@ -224,10 +302,41 @@
   pointer-events: none;
 }
 
-/* Above the cover: its background, light or dark. */
+/* Above the cover: its background, light or dark, in the middle, and putting the text back, at the side, once it is moved. */
 .previewTop {
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.previewTop > .segments {
+  grid-column: 2;
+}
+
+.resetText {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: start;
+  white-space: nowrap;
+}
+
+/* On a phone, the arrow alone: the words would run off the screen. */
+@media (max-width: 519.98px) {
+  .resetText {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .resetLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* The size's pixels beside its label: quieter than the label, in plain case. */

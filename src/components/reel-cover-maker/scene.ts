@@ -19,6 +19,7 @@ import type { Finish } from "@/components/reel-cover-maker/liquid-render";
 import { mixSeed, random, between, hashString } from "@/components/reel-cover-maker/noise";
 import { paletteFor, readableOn, type Ground, type Palette } from "@/components/reel-cover-maker/palettes";
 import { polygonBounds, steppedOutline, type Polygon } from "@/components/reel-cover-maker/stepped";
+import { apply, isHome, mappedBounds, placeMatrix, strokeScale, type Matrix, type Place } from "@/components/reel-cover-maker/place";
 import { graphemes, parseTitle, type Paragraph } from "@/components/reel-cover-maker/title";
 
 export type StyleId = "stickery" | "pasty" | "pasty-flat" | "editorial" | "echo" | "mono";
@@ -99,7 +100,9 @@ export type Op =
   | LiquidOp
   | { kind: "turn"; cx: number; cy: number; angle: number; ops: Op[] }
   /** The owner's photo, framed to cover the whole picture: drawn by the page, which holds it. */
-  | { kind: "photo" };
+  | { kind: "photo" }
+  /** Ops drawn through an affine map, as a canvas's `transform` takes it: letters the owner has moved. */
+  | { kind: "matrix"; m: Matrix; ops: Op[] };
 
 export interface Scene {
   width: number;
@@ -1464,13 +1467,54 @@ const FUNKY_SCALE = 1.15;
 /** The longest a sticker's side may run straight, in plain x-heights: Main Sticker 1 keeps one of 5 beside its W. */
 const ROUGH_RUN = 5;
 
+/** What lies under the letters and stays put when they move: the ground, the photo, a paper's grain. */
+export function isBackdrop(op: Op): boolean {
+  return op.kind === "fill" || op.kind === "photo" || op.kind === "grain";
+}
+
+/**
+ * The letters moved, turned and scaled where the owner has placed them,
+ * about the middle of the box round them (`scene.readable`): every bead of
+ * paste mapped and thickened by the placement's scale, so its field is
+ * made again sharp where it now is and lit from the same light; the
+ * letters, stickers and the rest drawn through the same map. The ground,
+ * the photo and grain stay put. Home leaves the scene as it is.
+ */
+export function placeScene(scene: Scene, place: Place): Scene {
+  if (isHome(place)) return scene;
+  const m = placeMatrix(scene.readable, place);
+  const thicker = strokeScale(place);
+  const ops: Op[] = [];
+  let run: Op[] = [];
+  const flush = () => {
+    if (run.length) ops.push({ kind: "matrix", m, ops: run });
+    run = [];
+  };
+  for (const op of scene.ops) {
+    if (isBackdrop(op)) {
+      flush();
+      ops.push(op);
+    } else if (op.kind === "liquid") {
+      // Paste is made from its beads: mapped here rather than drawn through the map, so it is never a stretched picture.
+      flush();
+      const chains = op.chains.map((c) => c.map((b) => ({ ...apply(m, b), r: b.r * thicker })));
+      const key = pasteKey(chains, op.colourOf, op.tone, op.finish, op.pool * thicker);
+      ops.push({ ...op, chains, pool: op.pool * thicker, key, seed: hashString(key) });
+    } else {
+      run.push(op);
+    }
+  }
+  flush();
+  return { ...scene, ops, readable: mappedBounds(m, scene.readable) };
+}
+
 /** Every liquid layer in a scene, in the order they are drawn. */
 export function liquidOps(scene: Scene): LiquidOp[] {
   const out: LiquidOp[] = [];
   const walk = (ops: Op[]) => {
     for (const op of ops) {
       if (op.kind === "liquid") out.push(op);
-      else if (op.kind === "turn") walk(op.ops);
+      else if (op.kind === "turn" || op.kind === "matrix") walk(op.ops);
     }
   };
   walk(scene.ops);

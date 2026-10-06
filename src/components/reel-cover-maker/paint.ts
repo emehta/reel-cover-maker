@@ -20,6 +20,7 @@ export type PaintTarget = Pick<
   | "translate"
   | "rotate"
   | "scale"
+  | "transform"
   | "globalCompositeOperation"
   | "fillRect"
   | "fillText"
@@ -166,6 +167,12 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
       ctx.translate(op.cx, op.cy);
       ctx.rotate(op.angle);
       ctx.translate(-op.cx, -op.cy);
+      for (const inner of op.ops) draw(ctx, scene, inner, options);
+      ctx.restore();
+      return;
+    case "matrix":
+      ctx.save();
+      ctx.transform(...op.m);
       for (const inner of op.ops) draw(ctx, scene, inner, options);
       ctx.restore();
   }

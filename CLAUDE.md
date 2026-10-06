@@ -1,6 +1,7 @@
 # Reel Cover Maker
 
-Type a title, get an Instagram reel cover or grid post as a 1080-wide PNG.
+Type a title, over a photo if wanted, place it, get an Instagram reel cover
+or grid post as a 1080-wide PNG.
 Next.js 16 (App Router, TypeScript strict), no other dependencies but
 Phosphor icons, exported as a static site to GitHub Pages:
 https://emehta.github.io/reel-cover-maker/. See [README.md](README.md) for
@@ -25,11 +26,12 @@ npm run build   # the static site, in out/
   eshaanm.net, which only redirects to it.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
   `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `noise`,
-  `strokes`, `scene`, `colour`, `palettes`, `grain`, `save`, `design` and
-  `font-gate` never touch the DOM and are tested in
+  `strokes`, `scene`, `colour`, `palettes`, `grain`, `save`, `design`,
+  `photo`, `place` and `font-gate` never touch the DOM and are tested in
   `scripts/reel-cover.test.mjs`. `paint` takes a context, so it is tested
-  with a recording stand-in. `fonts`, `theme`, `Dropdown` and the component
-  are the browser.
+  with a recording stand-in. `fonts`, `theme`, `Dropdown`, `photo-gl`,
+  `photo-store`, `Camera`, `PhotoControls`, `CoverSurface` and the
+  component are the browser.
 - **One scene, every canvas.** The preview, the thumbnails and the download
   are all drawn from `buildScene`. Never draw a second way for one of them.
 - **Text stays in the safe area.** A new style or size must keep every word
@@ -85,10 +87,30 @@ npm run build   # the static site, in out/
   Hershey Sans and its package), at the owner's ask of 7 Oct. Pasty Flat
   keeps the matte paste.
 - **The controls**: the styles one row scrolled sideways (a vertical wheel
-  scrolls it too), Stickery's Lettering and Plain words as `Dropdown`s side
-  by side (placed against the window so the scrolling panel never clips
+  scrolls it too), Text then Photo at the top, Stickery's Lettering and
+  Plain words (and Pasty's Lettering) as `Dropdown`s side by side (placed against the window so the scrolling panel never clips
   them, moving with their button on scroll), and the background's Light and
-  Dark as buttons over the preview.
+  Dark as buttons over the preview, Reset text beside them once the text
+  is moved, and Grid crop as a checkbox beside the size.
+- **The photo never leaves the browser.** It is kept in IndexedDB
+  (`photo-store.ts`), framed by `photoFrame` and adjusted by `photoAdjust`
+  in the design. `photo-gl.ts` and `photo.ts`'s tables are the same
+  arithmetic: change both together. On a photo the paste's shadow is its
+  own layer, multiplied (`LiquidOp.shadow`).
+- **Placed letters are drawn again, never stretched.** `placeScene` wraps
+  every foreground op in a `matrix` op and moves each paste bead (radius by
+  `strokeScale`), so the paste is made again where it lands; backdrop ops
+  (`isBackdrop`: fill, photo, grain) stay put. The thumbnails show every
+  style at the same placement. During a gesture the page carries the
+  letters as last drawn by the difference of the two matrices (`showLive`,
+  the photo shadow as its own multiplied layer) and draws them sharp on
+  release. Handle maths lives in `place.ts`, tested: change it with tests.
+- **The cover is the text's canvas** (`CoverSurface`): a press on the
+  letters selects them; on a photo, only a press on their ink does (a
+  press between them moves the photo), and once selected the whole box
+  does. The box and its handles are drawn only within the preview's stage,
+  never over the controls, and a handle past the cover's edge is pressed
+  through a hit spot of its own.
 - **A face is loaded only once a cover asks for it**: one font gate per
   face (`fonts.ts`), so the eight plain faces cost nothing until chosen.
 - **Every random choice is seeded by the title and the shuffle** (`seed`),

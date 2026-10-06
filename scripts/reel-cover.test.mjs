@@ -30,6 +30,7 @@ const LR = await import("@/components/reel-cover-maker/liquid-render");
 const LL = await import("@/components/reel-cover-maker/liquid-layout");
 const SP = await import("@/components/reel-cover-maker/stepped");
 const PH = await import("@/components/reel-cover-maker/photo");
+const PL = await import("@/components/reel-cover-maker/place");
 const N = await import("@/components/reel-cover-maker/noise");
 const { createFontGate } = await import("@/components/reel-cover-maker/font-gate");
 const { prepaintScript } = await import("@/components/reel-cover-maker/theme");
@@ -616,8 +617,11 @@ check("contrast is WCAG's: black on white is 21, a colour on itself 1", () => {
 console.log("memory");
 
 check("a design round-trips through storage", () => {
-  const design = { ...D.DEFAULT_DESIGN, text: "How I *plan*", style: "stickery", lettering: "goo", plainFace: "plain-jost", pastyLettering: "goo-even", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345 };
+  const design = { ...D.DEFAULT_DESIGN, text: "How I *plan*", style: "stickery", lettering: "goo", plainFace: "plain-jost", pastyLettering: "goo-even", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345, place: { x: -40, y: 120, angle: -0.3, sx: 1.4, sy: 0.9 } };
   assert.deepEqual(D.readDesign(D.writeDesign(design)), design);
+  // A placement stored wrong is home, or held to what can be drawn.
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...design, place: "moved" })).place, PL.HOME);
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...design, place: { x: 1e9, y: Number.NaN, angle: 7, sx: 0, sy: 99 } })).place, { x: 5000, y: 0, angle: PL.wrapAngle(7), sx: PL.MIN_SCALE, sy: PL.MAX_SCALE });
   // A lettering or face this version does not know falls back, the rest kept; so does Spread, which is gone.
   assert.deepEqual(
     D.readDesign(JSON.stringify({ ...design, lettering: "comic", plainFace: "papyrus", pastyLettering: "brush" })),
@@ -808,6 +812,8 @@ function recorder() {
       m = [a, b, c, d, e, f];
     },
     translate: (x, y) => multiply([1, 0, 0, 1, x, y]),
+    scale: (x, y) => multiply([x, 0, 0, y, 0, 0]),
+    transform: (a, b, c, d, e, f) => multiply([a, b, c, d, e, f]),
     rotate: (a) => multiply([Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]),
     fillRect: (x, y, w, h) => calls.push({ kind: "fillRect", at: point(x, y), w, h, style: ctx.fillStyle }),
     fillText: (text, x, y) => calls.push({ kind: "fillText", text, at: point(x, y), font: ctx.font, alpha: ctx.globalAlpha, align: ctx.textAlign, baseline: ctx.textBaseline }),
@@ -1905,6 +1911,222 @@ check("on a photo the paste has no ground: its shadow is a layer of its own, whi
   // Stickery's paste lies on its stickers: no shadow, photo or none.
   assert.equal(liquidOf(cover("*Hello*", "stickery", "post-4x5", { photo: true, lettering: "goo" })).shadow, false);
 });
+
+console.log("placing");
+
+{
+  // A box off the middle, as letters usually are, and placements of every kind: turned, scaled, stretched.
+  const RECT = { x: 180, y: 520, w: 640, h: 300 };
+  const PLACES = [
+    PL.HOME,
+    { x: 0, y: 0, angle: 0, sx: 1.5, sy: 1.5 },
+    { x: 60, y: -140, angle: 0.4, sx: 0.8, sy: 0.8 },
+    { x: -200, y: 300, angle: -2.2, sx: 1.3, sy: 0.6 },
+    { x: 15, y: 15, angle: Math.PI / 2, sx: 2.4, sy: 1.1 },
+  ];
+  const close = (p, q, e = 1e-6) => near(p.x, q.x, e) && near(p.y, q.y, e);
+
+  check("a placement maps about the box's middle: home moves nothing, and the middle goes where it is moved", () => {
+    PL.placeMatrix(RECT, PL.HOME).forEach((v, i) => assert.ok(near(v, [1, 0, 0, 1, 0, 0][i], 1e-12)));
+    for (const place of PLACES) {
+      const m = PL.placeMatrix(RECT, place);
+      const c = PL.centre(RECT);
+      assert.ok(close(PL.apply(m, c), { x: c.x + place.x, y: c.y + place.y }));
+      // Undone by its inverse, and composed in the order named.
+      const p = { x: 333, y: 777 };
+      assert.ok(close(PL.apply(PL.invert(m), PL.apply(m, p)), p, 1e-6));
+      const n = PL.placeMatrix(RECT, PLACES[2]);
+      assert.ok(close(PL.apply(PL.multiply(m, n), p), PL.apply(m, PL.apply(n, p)), 1e-6));
+      // A box's own corners land where boxCorners says, and the box is inside what it maps to.
+      const corners = PL.boxCorners(RECT, place);
+      const b = PL.mappedBounds(m, RECT);
+      for (const k of corners) assert.ok(k.x >= b.x - 1e-6 && k.x <= b.x + b.w + 1e-6 && k.y >= b.y - 1e-6 && k.y <= b.y + b.h + 1e-6);
+      assert.ok(near(Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y), RECT.w * Math.abs(place.sx), 1e-6));
+      assert.ok(near(Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y), RECT.h * Math.abs(place.sy), 1e-6));
+    }
+    assert.ok(PL.isHome(PL.HOME) && !PL.isHome(PLACES[1]));
+  });
+
+  check("a corner dragged scales keeping the box's shape, the opposite corner staying put; free, the corner lands on the pointer", () => {
+    for (const place of PLACES) {
+      for (const h of PL.HANDLES.filter((h) => h.u && h.v)) {
+        const anchor = PL.boxPoint(RECT, place, -h.u, -h.v);
+        const grabbed = PL.boxPoint(RECT, place, h.u, h.v);
+        for (const [dx, dy] of [[40, 25], [-60, 10], [5, -80], [120, 90]]) {
+          const p = { x: grabbed.x + dx, y: grabbed.y + dy };
+          const next = PL.dragHandle(RECT, place, h, p);
+          assert.ok(close(PL.boxPoint(RECT, next, -h.u, -h.v), anchor, 1e-6), `${h.id}: the opposite corner moved`);
+          assert.ok(near(next.sx / next.sy, place.sx / place.sy, 1e-9), `${h.id}: the box changed shape`);
+          assert.equal(next.angle, place.angle);
+          const free = PL.dragHandle(RECT, place, h, p, { free: true });
+          assert.ok(close(PL.boxPoint(RECT, free, -h.u, -h.v), anchor, 1e-6));
+          assert.ok(close(PL.boxPoint(RECT, free, h.u, h.v), p, 1e-6), `${h.id}: a free corner is not under the pointer`);
+          // From the middle: the middle stays.
+          const middle = PL.dragHandle(RECT, place, h, p, { fromMiddle: true });
+          assert.ok(close(PL.boxPoint(RECT, middle, 0, 0), PL.boxPoint(RECT, place, 0, 0), 1e-6));
+        }
+      }
+    }
+  });
+
+  check("a side dragged stretches one way only, the opposite side staying put; never inside out, never past the limits", () => {
+    for (const place of PLACES) {
+      for (const h of PL.HANDLES.filter((h) => !h.u !== !h.v)) {
+        const anchor = PL.boxPoint(RECT, place, -h.u, -h.v);
+        const grabbed = PL.boxPoint(RECT, place, h.u, h.v);
+        const next = PL.dragHandle(RECT, place, h, { x: grabbed.x + 37, y: grabbed.y - 21 });
+        assert.ok(close(PL.boxPoint(RECT, next, -h.u, -h.v), anchor, 1e-6), `${h.id}: the opposite side moved`);
+        if (h.u) assert.equal(next.sy, place.sy);
+        else assert.equal(next.sx, place.sx);
+        // Dragged right through the opposite side and beyond: held at the least scale, the right way round.
+        const through = PL.dragHandle(RECT, place, h, { x: anchor.x - (grabbed.x - anchor.x) * 3, y: anchor.y - (grabbed.y - anchor.y) * 3 });
+        const s = h.u ? through.sx : through.sy;
+        assert.ok(s > 0 && near(s, PL.MIN_SCALE, 1e-9), `${h.id}: turned inside out (${s})`);
+        const far = PL.dragHandle(RECT, place, h, { x: anchor.x + (grabbed.x - anchor.x) * 100, y: anchor.y + (grabbed.y - anchor.y) * 100 });
+        assert.ok(near(h.u ? far.sx : far.sy, PL.MAX_SCALE, 1e-9));
+      }
+    }
+  });
+
+  check("the turning handle turns by as far as the pointer goes round, in fifteen degree steps with Shift, drawn to square within three degrees", () => {
+    const deg = (a) => (a * 180) / Math.PI;
+    for (const place of PLACES) {
+      const middle = PL.boxPoint(RECT, place, 0, 0);
+      const start = PL.turnHandle(RECT, place, 40);
+      const round = (by) => {
+        const a = Math.atan2(start.y - middle.y, start.x - middle.x) + (by * Math.PI) / 180;
+        const r = Math.hypot(start.x - middle.x, start.y - middle.y) * 1.7;
+        return { x: middle.x + Math.cos(a) * r, y: middle.y + Math.sin(a) * r };
+      };
+      const turned = PL.turnTo(RECT, place, start, round(37));
+      assert.ok(near(deg(PL.wrapAngle(turned.angle - place.angle)), 37, 1e-6) || near(Math.abs(deg(turned.angle)) % 90, 0, 1e-6));
+      assert.equal(turned.sx, place.sx);
+      assert.equal(turned.x, place.x);
+      const stepped = PL.turnTo(RECT, place, start, round(37), true);
+      assert.ok(near(deg(stepped.angle) / 15, Math.round(deg(stepped.angle) / 15), 1e-9));
+    }
+    const upright = PL.turnTo(RECT, { ...PL.HOME, angle: (88 * Math.PI) / 180 }, { x: 900, y: 0 }, { x: 900, y: 0 });
+    assert.ok(near(upright.angle, Math.PI / 2, 1e-12));
+    // The handle sits above the box, or below it where above is off the cover.
+    const cover = { w: 1080, h: 1920 };
+    assert.equal(PL.turnSide(RECT, PL.HOME, 40, cover), -1);
+    const high = { ...PL.HOME, y: -RECT.y - RECT.h / 2 + 10 };
+    assert.equal(PL.turnSide(RECT, high, 40, cover), 1);
+    const below = PL.turnHandle(RECT, high, 40, 1);
+    assert.ok(below.y > PL.boxPoint(RECT, high, 0, 1).y);
+  });
+
+  check("two fingers carry the letters under them: moved, scaled and turned so each finger keeps its place on them", () => {
+    for (const place of PLACES) {
+      const a0 = { x: 400, y: 600 };
+      const b0 = { x: 620, y: 760 };
+      for (const [a, b] of [
+        [{ x: 420, y: 640 }, { x: 700, y: 820 }],
+        [{ x: 380, y: 580 }, { x: 560, y: 900 }],
+        [{ x: 500, y: 500 }, { x: 610, y: 780 }],
+      ]) {
+        const next = PL.pinchTo(RECT, place, a0, b0, a, b);
+        const under = (p) => PL.apply(PL.placeMatrix(RECT, next), PL.toBox(RECT, place, p));
+        assert.ok(close(under(a0), a, 1e-6), "the first finger slid");
+        assert.ok(close(under(b0), b, 1e-6), "the second finger slid");
+        assert.ok(near(next.sx / next.sy, place.sx / place.sy, 1e-9));
+      }
+    }
+  });
+
+  check("scaled about a point, that point of the letters stays put; turned by an angle, only the angle changes", () => {
+    for (const place of PLACES) {
+      for (const k of [0.5, 1.07, 3]) {
+        const at = { x: 410, y: 655 };
+        const next = PL.scaleAbout(RECT, place, k, at);
+        const under = PL.apply(PL.placeMatrix(RECT, next), PL.toBox(RECT, place, at));
+        assert.ok(close(under, at, 1e-6));
+        assert.ok(near(next.sx, place.sx * k, 1e-9) && near(next.sy, place.sy * k, 1e-9));
+      }
+      // Held to the limits, the point still put.
+      const huge = PL.scaleAbout(RECT, place, 1000, { x: 0, y: 0 });
+      assert.ok(near(Math.max(Math.abs(huge.sx), Math.abs(huge.sy)), PL.MAX_SCALE, 1e-9));
+      const turned = PL.turnBy(place, Math.PI / 12);
+      assert.deepEqual({ ...turned, angle: 0 }, { ...place, angle: 0 });
+      assert.ok(near(turned.angle, PL.wrapAngle(place.angle + Math.PI / 12), 1e-12));
+    }
+  });
+
+  check("a moved box is drawn to the cover's middle near it, each way on its own, and kept on the cover", () => {
+    const cover = { w: 1080, h: 1920 };
+    const c = PL.centre(RECT);
+    const near6 = PL.snapToMiddle(RECT, { ...PL.HOME, x: cover.w / 2 - c.x + 6, y: 200 }, cover, 8);
+    assert.ok(near6.across && !near6.down);
+    assert.equal(near6.place.x, cover.w / 2 - c.x);
+    assert.equal(near6.place.y, 200);
+    const both = PL.snapToMiddle(RECT, { ...PL.HOME, x: cover.w / 2 - c.x - 7, y: cover.h / 2 - c.y + 7 }, cover, 8);
+    assert.ok(both.across && both.down);
+    assert.ok(!PL.snapToMiddle(RECT, { ...PL.HOME, x: cover.w / 2 - c.x + 9 }, cover, 8).across);
+    const lost = PL.keepOnCover(RECT, { ...PL.HOME, x: 5000, y: -5000 }, cover);
+    assert.deepEqual(PL.boxPoint(RECT, lost, 0, 0), { x: cover.w, y: 0 });
+    // A press inside the turned box, and only inside it, is on the letters.
+    const turned = { ...PL.HOME, angle: Math.PI / 4 };
+    assert.ok(PL.insideBox(RECT, turned, c));
+    assert.ok(!PL.insideBox(RECT, turned, { x: RECT.x + 4, y: RECT.y + 4 }));
+    assert.ok(PL.insideBox(RECT, PL.HOME, { x: RECT.x + 4, y: RECT.y + 4 }));
+    assert.ok(PL.insideBox(RECT, PL.HOME, { x: RECT.x - 3, y: c.y }, 4) && !PL.insideBox(RECT, PL.HOME, { x: RECT.x - 3, y: c.y }));
+  });
+
+  check("placed letters: home changes nothing; otherwise every word and sticker drawn through the map, paste made again where it lands, the ground and photo left where they are", () => {
+    const place = { x: -80, y: 260, angle: 0.5, sx: 1.6, sy: 0.9 };
+    for (const style of S.STYLES.map((s) => s.id)) {
+      for (const photo of [false, true]) {
+        const extra = style === "stickery" ? { lettering: "goo" } : style.startsWith("pasty") ? { pastyLettering: "goo" } : {};
+        const base = cover("How I *plan* my week", style, "reel", { photo, ...extra });
+        assert.equal(S.placeScene(base, PL.HOME), base);
+        const moved = S.placeScene(base, place);
+        const m = PL.placeMatrix(base.readable, place);
+        // The backdrop is the same ops, first, in the same order.
+        const backdrop = base.ops.filter(S.isBackdrop);
+        assert.deepEqual(moved.ops.slice(0, backdrop.length), backdrop, style);
+        assert.ok(moved.ops.slice(backdrop.length).every((op) => op.kind === "matrix" || op.kind === "liquid"), `${style}: a letter left unplaced`);
+        for (const op of moved.ops.filter((o) => o.kind === "matrix")) assert.deepEqual(op.m, m);
+        // Everything else is kept, in order.
+        const flat = moved.ops.flatMap((op) => (op.kind === "matrix" ? op.ops : [op])).filter((op) => op.kind !== "liquid");
+        assert.deepEqual(flat, base.ops.filter((op) => op.kind !== "liquid"), style);
+        // Paste: each bead where the map takes it, as thick as the map makes its area, and a new layer.
+        const before = S.liquidOps(base);
+        const after = S.liquidOps(moved);
+        assert.equal(after.length, before.length);
+        before.forEach((op, i) => {
+          assert.notEqual(after[i].key, op.key);
+          op.chains.forEach((chain, j) =>
+            chain.forEach((b, k) => {
+              const q = after[i].chains[j][k];
+              assert.ok(close(q, PL.apply(m, b), 1e-9));
+              assert.ok(near(q.r, b.r * Math.sqrt(place.sx * place.sy), 1e-9));
+            }),
+          );
+        });
+        assert.deepEqual(moved.readable, PL.mappedBounds(m, base.readable));
+        assert.equal(moved.ops.some((op) => op.kind === "photo"), photo);
+      }
+    }
+  });
+
+  check("placed letters are painted through the map: each word where the map takes it", () => {
+    const base = cover("Placed here", "editorial", "reel");
+    const place = { x: 120, y: -300, angle: -0.7, sx: 1.25, sy: 1.25 };
+    const at = (scene) => {
+      const ctx = recorder();
+      paint(ctx, scene, { scale: 1, font, grain: null });
+      return ctx.calls.filter((c) => c.kind === "fillText");
+    };
+    const home = at(base);
+    const moved = at(S.placeScene(base, place));
+    assert.equal(moved.length, home.length);
+    const m = PL.placeMatrix(base.readable, place);
+    home.forEach((call, i) => {
+      const want = PL.apply(m, { x: call.at[0], y: call.at[1] });
+      assert.ok(near(moved[i].at[0], want.x, 1e-6) && near(moved[i].at[1], want.y, 1e-6), call.text);
+    });
+  });
+}
 
 console.log("page");
 

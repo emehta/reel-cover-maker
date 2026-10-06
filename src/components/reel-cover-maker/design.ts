@@ -3,7 +3,8 @@
  * style, Stickery's lettering and plain face, Pasty's lettering, the colour
  * (hue, shade and ground), the size, the shuffle, and how the photo behind
  * the cover is framed and adjusted (the photo itself is kept in
- * photo-store.ts, being too big for here), so
+ * photo-store.ts, being too big for here), and where the letters have
+ * been moved to, so
  * the next cover matches the last one on the grid. Kept in this browser
  * only.
  *
@@ -16,6 +17,7 @@ import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cov
 import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, type Ground } from "@/components/reel-cover-maker/palettes";
 import { DEFAULT_ADJUST, DEFAULT_FRAME, readAdjust, readFrame, type PhotoAdjust, type PhotoFrame } from "@/components/reel-cover-maker/photo";
+import { HOME, readPlace, type Place } from "@/components/reel-cover-maker/place";
 import {
   DEFAULT_LETTERING,
   DEFAULT_PASTY_LETTERING,
@@ -43,6 +45,8 @@ export interface Design {
   seed: number;
   photoFrame: PhotoFrame;
   photoAdjust: PhotoAdjust;
+  /** Where the letters have been moved, turned and scaled to; home is where the style sets them. */
+  place: Place;
 }
 
 export const STORAGE_KEY = "reel-cover-maker:v1";
@@ -60,6 +64,7 @@ export const DEFAULT_DESIGN: Design = {
   seed: 0,
   photoFrame: DEFAULT_FRAME,
   photoAdjust: DEFAULT_ADJUST,
+  place: HOME,
 };
 
 const number = (value: unknown, lo: number, hi: number): number | null =>
@@ -87,6 +92,7 @@ export function readDesign(raw: string | null): Design {
     seed: Number.isInteger(stored.seed) && Math.abs(stored.seed as number) < 2 ** 31 ? (stored.seed as number) : DEFAULT_DESIGN.seed,
     photoFrame: readFrame(stored.photoFrame),
     photoAdjust: readAdjust(stored.photoAdjust),
+    place: readPlace(stored.place),
   };
 }
 
