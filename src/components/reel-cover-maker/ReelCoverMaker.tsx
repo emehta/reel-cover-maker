@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, Copy, DeviceMobile, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DeviceMobile, DownloadSimple, Moon, Shuffle, Sparkle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
-import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
+import { sliderColour } from "@/components/reel-cover-maker/colour";
+import { ColourSliders, HexChip, TextColourField } from "@/components/reel-cover-maker/ColourField";
 import { Camera } from "@/components/reel-cover-maker/Camera";
 import { CoverSurface } from "@/components/reel-cover-maker/CoverSurface";
 import { loadDesign, saveDesign, type Design } from "@/components/reel-cover-maker/design";
@@ -22,7 +23,7 @@ import { forgetPhoto, loadPhoto, savePhoto } from "@/components/reel-cover-maker
 import { PhoneView } from "@/components/reel-cover-maker/PhoneView";
 import { PhotoControls } from "@/components/reel-cover-maker/PhotoControls";
 import { HOME, invert, isHome, keepOnCover, multiply, placeMatrix, type Matrix, type Place, type Point } from "@/components/reel-cover-maker/place";
-import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-maker/palettes";
+import { paletteFor, readsOnStickers, standsOut, stickersUsed, textColour, type TextMode } from "@/components/reel-cover-maker/palettes";
 import { isApple, subscribeNothing } from "@/components/reel-cover-maker/platform";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
 import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers, type LiquidLayer } from "@/components/reel-cover-maker/liquid-client";
@@ -39,9 +40,10 @@ import {
   type CoverInput,
   type Scene,
 } from "@/components/reel-cover-maker/scene";
+import { Shortcuts } from "@/components/reel-cover-maker/Shortcuts";
 import { TextField } from "@/components/reel-cover-maker/TextField";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
-import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
+import { hasTitle, MAX_TITLE_LENGTH, parseTitle, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
 /**
  * How long the picture must stay as it is before its file is made ready to
@@ -63,9 +65,6 @@ const DRAFT_SCALE = 0.5;
 
 /** How long the picture must have been ready before every other style is made ahead of time. */
 const AHEAD_DELAY_MS = 120;
-
-/** How long a copied colour says it was copied. */
-const COPIED_MS = 1600;
 
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
 
@@ -158,7 +157,9 @@ function grain(): HTMLCanvasElement | null {
 const scenes = new Map<string, Scene>();
 
 function sceneFor(input: CoverInput, loads: number): Scene {
-  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, input.hue, input.shade, input.ground, input.format, input.seed, input.photo, loads]);
+  // The text colour is Stickery's alone: picking one builds no other style again.
+  const text = input.style === "stickery" ? input.textColour ?? null : null;
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, input.hue, input.shade, input.ground, text, input.format, input.seed, input.photo, loads]);
   let scene = scenes.get(key);
   if (!scene) {
     scene = buildScene(input, measurerFor(loads));
@@ -273,30 +274,6 @@ function grown(layer: LiquidLayer | null | undefined, scale: number) {
   return { ...layer, x: layer.x / scale, y: layer.y / scale, dw: layer.w / scale, dh: layer.h / scale };
 }
 
-/** Text put on the clipboard; false if the browser would not. */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // No clipboard API (an old browser, a page not served securely): the old way.
-    try {
-      const area = document.createElement("textarea");
-      area.value = text;
-      area.setAttribute("readonly", "");
-      area.style.position = "fixed";
-      area.style.opacity = "0";
-      document.body.appendChild(area);
-      area.select();
-      const done = document.execCommand("copy");
-      area.remove();
-      return done;
-    } catch {
-      return false;
-    }
-  }
-}
-
 /** The liquid layers of a scene for a canvas: whether every one is drawn, and whether any could not be. */
 function layersFor(scene: Scene | null, target: LiquidTarget | null) {
   if (!scene || !target) return { ops: [], ready: false, failed: false };
@@ -389,9 +366,8 @@ export default function ReelCoverMaker() {
   const [repaint, setRepaint] = useState(0);
   /** The cover shown as a phone shows it in the profile grid, in place of the cover to edit. */
   const [phoneView, setPhoneView] = useState(false);
-  /** The colour last copied, said to be copied while it is still the colour and for a moment after. */
-  const [copied, setCopied] = useState<string | null>(null);
-  const copiedTimer = useRef(0);
+  /** Animate mode, asked for on 7 Oct ahead of what it will do: for now its button, on or off. */
+  const [animating, setAnimating] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -423,11 +399,14 @@ export default function ReelCoverMaker() {
   const apple = useSyncExternalStore(subscribeNothing, isApple, () => true);
 
   const measurer = loads >= 0 ? measurerFor(loads) : null;
+  /** Stickery's letters' colour, as picked; null for auto, each sticker's own black or white. */
+  const textHex = textColour(design.textMode, design.textHue, design.textShade);
   const input: CoverInput = {
     title,
     style: design.style,
     lettering: design.lettering,
     plainFace: design.plainFace,
+    textColour: textHex,
     pastyLettering: design.pastyLettering,
     hue: design.hue,
     shade: design.shade,
@@ -462,6 +441,7 @@ export default function ReelCoverMaker() {
     design.hue,
     design.shade,
     design.ground,
+    design.style === "stickery" ? textHex : null,
     design.format,
     design.seed,
     loads,
@@ -545,12 +525,14 @@ export default function ReelCoverMaker() {
   };
 
   const hex = sliderColour(design.hue, design.shade);
-  /** The colour's hex code on the clipboard, said so for a moment. */
-  const copyHex = async () => {
-    if (!(await copyText(hex))) return;
-    setCopied(hex);
-    window.clearTimeout(copiedTimer.current);
-    copiedTimer.current = window.setTimeout(() => setCopied(null), COPIED_MS);
+
+  /**
+   * A change to the text colour: every part of it named in each, so a
+   * press on a resting slider and the drag after it are one step to undo.
+   */
+  const pickText = (change: { textMode?: TextMode; textHue?: number; textShade?: number }) => {
+    const { textMode, textHue, textShade } = designRef.current;
+    update({ textMode, textHue, textShade, ...change });
   };
 
   const plainFace = design.plainFace;
@@ -833,11 +815,15 @@ export default function ReelCoverMaker() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const lowContrast = design.style !== "stickery" && !photo && !standsOut(paletteFor(design));
+  const palette = paletteFor(design);
+  const stickery = design.style === "stickery";
+  const lowContrast = !stickery && !photo && !standsOut(palette);
+  /** Stickery's letters in a colour of their own, close to a sticker they are on in lightness. */
+  const textLow = stickery && !readsOnStickers(textHex, stickersUsed(palette, parseTitle(title).length));
   const frameStyle = { "--rcm-ratio": `${format.width} / ${format.height}`, "--rcm-ratio-n": format.width / format.height } as CSSProperties;
   const saveLabel = method === "share" ? "Save image" : "Download";
   const mod = apple ? "⌘" : "Ctrl+";
-  const isCopied = copied === hex;
+  const dark = design.ground === "dark";
 
   return (
     <main className={`${styles.root} ${interTight.variable}`}>
@@ -856,6 +842,7 @@ export default function ReelCoverMaker() {
               {error}
             </p>
           )}
+          <Shortcuts apple={apple} saveLabel={saveLabel} />
           <button
             type="button"
             className={styles.save}
@@ -931,10 +918,14 @@ export default function ReelCoverMaker() {
             )}
           </div>
 
+          {/* The colour of Stickery's letters on its stickers, under its type. */}
+          {stickery && <TextColourField mode={design.textMode} hue={design.textHue} shade={design.textShade} onPick={pickText} low={textLow} />}
+
           <div className={styles.field}>
             <div className={styles.labelRow}>
+              {/* Stickery's colour is its stickers', its letters' their own; every other style's is its letters'. */}
               <span className={styles.label} id="rcm-colour-label">
-                Colour
+                {stickery ? "Sticker colour" : "Colour"}
               </span>
               <span className={styles.colourSide}>
                 {/* Said beside the colour, not under it, so nothing below moves when it is said. */}
@@ -943,43 +934,10 @@ export default function ReelCoverMaker() {
                     Low contrast
                   </span>
                 )}
-                {/* The colour, and its hex code, which a click copies. */}
-                <button type="button" className={`${styles.hexChip} ${styles.tip}`} onClick={() => void copyHex()} data-tip={isCopied ? "Copied" : "Copy hex"} data-copied={isCopied || undefined} aria-label={`Copy the colour's hex code, ${hex}`}>
-                  <span className={styles.chip} style={{ background: hex }} aria-hidden="true" />
-                  <span className={styles.hex}>{hex}</span>
-                  <span className={styles.hexIcon} aria-hidden="true">
-                    {isCopied ? <Check size={12} weight="bold" /> : <Copy size={12} weight="bold" />}
-                  </span>
-                </button>
-                <span className={styles.hidden} role="status">
-                  {isCopied ? `${hex} copied` : ""}
-                </span>
+                <HexChip hex={hex} of={stickery ? "the sticker colour's" : "the colour's"} />
               </span>
             </div>
-            <div className={styles.sliders} role="group" aria-labelledby="rcm-colour-label">
-              <input
-                type="range"
-                className={styles.slider}
-                style={{ "--rcm-track": hueTrack(design.shade) } as CSSProperties}
-                min={0}
-                max={360}
-                step={1}
-                value={Math.round(design.hue)}
-                onChange={(event) => update({ hue: Number(event.target.value) })}
-                aria-label="Hue"
-              />
-              <input
-                type="range"
-                className={styles.slider}
-                style={{ "--rcm-track": shadeTrack(design.hue) } as CSSProperties}
-                min={0}
-                max={1}
-                step={0.01}
-                value={design.shade}
-                onChange={(event) => update({ shade: Number(event.target.value) })}
-                aria-label="Shade"
-              />
-            </div>
+            <ColourSliders labelledBy="rcm-colour-label" hue={design.hue} shade={design.shade} onHue={(hue) => update({ hue })} onShade={(shade) => update({ shade })} />
           </div>
 
           <div className={styles.field}>
@@ -1016,28 +974,6 @@ export default function ReelCoverMaker() {
               ))}
             </div>
           </div>
-
-          {/* What the keys do, at the foot of the card: bold has no button of its own. */}
-          <dl className={styles.keys} aria-label="Keyboard shortcuts">
-            <div className={styles.key}>
-              <dt>Bold the selected words</dt>
-              <dd>
-                <kbd>{mod}B</kbd>
-              </dd>
-            </div>
-            <div className={styles.key}>
-              <dt>Undo</dt>
-              <dd>
-                <kbd>{mod}Z</kbd>
-              </dd>
-            </div>
-            <div className={styles.key}>
-              <dt>{saveLabel}</dt>
-              <dd>
-                <kbd>{mod}S</kbd>
-              </dd>
-            </div>
-          </dl>
         </div>
 
         <section
@@ -1061,51 +997,62 @@ export default function ReelCoverMaker() {
             if (file) void takePhoto(file);
           }}
         >
-          {/* Everything that acts on the cover as a whole, in one row of one height. Nothing in it comes or goes, so nothing moves. */}
-          <div className={styles.toolbar} role="group" aria-label="Cover">
-            <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={undo} disabled={steps.back === 0} aria-label="Undo" aria-keyshortcuts={apple ? "Meta+Z" : "Control+Z"} data-tip={`Undo  ${mod}Z`}>
-              <ArrowUUpLeft size={18} weight="bold" aria-hidden="true" />
-            </button>
-            <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={redo} disabled={steps.forward === 0} aria-label="Redo" aria-keyshortcuts={apple ? "Meta+Shift+Z" : "Control+Shift+Z"} data-tip={apple ? "Redo  ⇧⌘Z" : "Redo  Ctrl+Y"}>
-              <ArrowUUpRight size={18} weight="bold" aria-hidden="true" />
-            </button>
-            <span className={styles.toolRule} aria-hidden="true" />
-            <div className={styles.toolSegments} role="radiogroup" aria-label="Background">
-              {(["light", "dark"] as const satisfies readonly Ground[]).map((ground) => (
-                <label key={ground} className={styles.toolSegment}>
-                  <input
-                    type="radio"
-                    name="rcm-ground"
-                    className={styles.radio}
-                    checked={design.ground === ground}
-                    onChange={() => update({ ground })}
-                  />
-                  {ground === "light" ? <Sun size={16} weight="bold" aria-hidden="true" /> : <Moon size={16} weight="bold" aria-hidden="true" />}
-                  <span className={styles.toolWord}>{ground === "light" ? "Light" : "Dark"}</span>
-                </label>
-              ))}
+          {/*
+           * Everything that acts on the cover as a whole, in one row of one
+           * height, at the top of the cover's column: undo and redo at its
+           * left corner, the cover's background, a shuffle and the text put
+           * back in its middle, animate and the phone view at its right
+           * corner (the owner's layout, 7 Oct). Nothing in it comes or goes,
+           * so nothing moves.
+           */}
+          <div className={styles.toolbar}>
+            <div className={styles.toolGroup} role="group" aria-label="History">
+              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={undo} disabled={steps.back === 0} aria-label="Undo" aria-keyshortcuts={apple ? "Meta+Z" : "Control+Z"} data-tip={`Undo  ${mod}Z`}>
+                <ArrowUUpLeft size={18} weight="bold" aria-hidden="true" />
+              </button>
+              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={redo} disabled={steps.forward === 0} aria-label="Redo" aria-keyshortcuts={apple ? "Meta+Shift+Z" : "Control+Shift+Z"} data-tip={apple ? "Redo  ⇧⌘Z" : "Redo  Ctrl+Shift+Z"}>
+                <ArrowUUpRight size={18} weight="bold" aria-hidden="true" />
+              </button>
             </div>
-            <span className={styles.toolRule} aria-hidden="true" />
-            <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={shuffle} aria-label="Shuffle" data-tip="Shuffle">
-              <Shuffle size={18} weight="bold" aria-hidden="true" />
-            </button>
-            <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={() => update({ place: HOME })} disabled={isHome(place)} aria-label="Reset text" data-tip="Reset text">
-              <ArrowCounterClockwise size={18} weight="bold" aria-hidden="true" />
-            </button>
-            <span className={styles.toolRule} aria-hidden="true" />
-            <button
-              type="button"
-              className={`${styles.tool} ${styles.tip}`}
-              onClick={() => {
-                setSelected(false);
-                setPhoneView((on) => !on);
-              }}
-              aria-pressed={phoneView}
-              aria-label="Phone view"
-              data-tip={phoneView ? "Back to the cover  Esc" : "Phone view"}
-            >
-              <DeviceMobile size={18} weight="bold" aria-hidden="true" />
-            </button>
+            <div className={styles.toolGroup} role="group" aria-label="Cover">
+              {/* One button for the background: the sun on a light one, turning to the moon on a dark one. */}
+              <button
+                type="button"
+                className={`${styles.tool} ${styles.tip}`}
+                onClick={() => update({ ground: dark ? "light" : "dark" })}
+                aria-label={dark ? "Light background" : "Dark background"}
+                data-tip={dark ? "Light background" : "Dark background"}
+              >
+                <span className={styles.groundIcon} data-dark={dark || undefined} aria-hidden="true">
+                  <Sun className={styles.sun} size={18} weight="bold" />
+                  <Moon className={styles.moon} size={18} weight="bold" />
+                </span>
+              </button>
+              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={shuffle} aria-label="Shuffle" data-tip="Shuffle">
+                <Shuffle size={18} weight="bold" aria-hidden="true" />
+              </button>
+              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={() => update({ place: HOME })} disabled={isHome(place)} aria-label="Reset text" data-tip="Reset text">
+                <ArrowCounterClockwise size={18} weight="bold" aria-hidden="true" />
+              </button>
+            </div>
+            <div className={styles.toolGroup} role="group" aria-label="View">
+              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={() => setAnimating((on) => !on)} aria-pressed={animating} aria-label="Animate" data-tip="Animate">
+                <Sparkle size={18} weight="bold" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className={`${styles.tool} ${styles.tip}`}
+                onClick={() => {
+                  setSelected(false);
+                  setPhoneView((on) => !on);
+                }}
+                aria-pressed={phoneView}
+                aria-label="Phone view"
+                data-tip={phoneView ? "Back to the cover  Esc" : "Phone view"}
+              >
+                <DeviceMobile size={18} weight="bold" aria-hidden="true" />
+              </button>
+            </div>
           </div>
           <div className={styles.stage} ref={stageRef}>
             {/* The cover to edit stays drawn while the phone view shows, so Download is never kept waiting. */}

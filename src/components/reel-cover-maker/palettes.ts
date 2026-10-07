@@ -2,7 +2,8 @@
  * The colours a cover is made in, from three choices: a hue and a shade for
  * the letters (the paste, the ink, the sticker), and a light or dark ground.
  * Every style reads the same roles, so a colour picked once carries across
- * styles, and a grid of covers made in one colour reads as a set.
+ * styles, and a grid of covers made in one colour reads as a set. Stickery
+ * has a fourth, the colour of the letters on its stickers (`TextMode`).
  *
  * Instagram stores every picture as sRGB JPEG with the colour at half
  * resolution (4:2:0), so letters that differ from their ground only in hue
@@ -93,15 +94,59 @@ export function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** The black and the white letters are set in on a colour: a sticker's border's black, and a warm white. */
+export const SOFT_BLACK = "#141414";
+export const SOFT_WHITE = "#F7F4EE";
+
 /**
  * Near-black or near-white, whichever reads better on `fill`; on the few
  * vivid mid-tones where neither reaches 4.5:1, black or white itself,
  * one of which always does.
  */
 export function readableOn(fill: string): string {
-  const soft = contrast("#141414", fill) >= contrast("#F7F4EE", fill) ? "#141414" : "#F7F4EE";
+  const soft = contrast(SOFT_BLACK, fill) >= contrast(SOFT_WHITE, fill) ? SOFT_BLACK : SOFT_WHITE;
   if (contrast(soft, fill) >= 4.5) return soft;
   return contrast("#000000", fill) >= contrast("#FFFFFF", fill) ? "#000000" : "#FFFFFF";
+}
+
+/**
+ * The colour of Stickery's letters, on its stickers: black or white,
+ * whichever reads on each sticker (auto, as it always was); black or white
+ * on every sticker; or a colour of the owner's own from two sliders, as
+ * the stickers' is. Every other style's letters are the chosen colour.
+ */
+export type TextMode = "auto" | "black" | "white" | "colour";
+
+export const TEXT_MODES: readonly { id: TextMode; name: string }[] = [
+  { id: "auto", name: "Auto" },
+  { id: "black", name: "Black" },
+  { id: "white", name: "White" },
+  { id: "colour", name: "Colour" },
+];
+
+export function isTextMode(value: unknown): value is TextMode {
+  return TEXT_MODES.some((m) => m.id === value);
+}
+
+/** The text colour picked, as a colour; null for auto, which is each sticker's own. */
+export function textColour(mode: TextMode, hue: number, shade: number): string | null {
+  if (mode === "black") return SOFT_BLACK;
+  if (mode === "white") return SOFT_WHITE;
+  if (mode === "colour") return sliderColour(hue, shade);
+  return null;
+}
+
+/**
+ * The stickers a title is set on: one a paragraph, the two colours taken
+ * in turn, so a title of one paragraph shows only the first.
+ */
+export function stickersUsed(palette: Palette, paragraphs: number): string[] {
+  return palette.sticker.slice(0, Math.max(1, Math.min(2, paragraphs)));
+}
+
+/** Whether letters in `text` stand clear (3:1) of every sticker they are set on: auto always does. */
+export function readsOnStickers(text: string | null, stickers: readonly string[]): boolean {
+  return text === null || stickers.every((fill) => contrast(text, fill) >= 3);
 }
 
 /** `#RRGGBB` with an alpha, for canvas colours. */

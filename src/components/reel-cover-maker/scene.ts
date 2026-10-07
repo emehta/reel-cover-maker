@@ -127,6 +127,8 @@ export interface CoverInput {
   /** Stickery's funky lettering, and the face of its plain words. */
   lettering?: LetteringId;
   plainFace?: PlainFaceId;
+  /** The colour Stickery's letters are set in on every sticker; absent or null, black or white, whichever reads on each. */
+  textColour?: string | null;
   /** Pasty's and Pasty Flat's lettering: Drip, or Goo as a teardrop or evened out. */
   pastyLettering?: PastyLetteringId;
   /** A photo behind the letters, in place of the plain ground. */
@@ -1000,7 +1002,8 @@ function boundsOfParts(parts: readonly Part[]): Rect {
  * between. Plain words are never turned; a long run of them wraps to about
  * the funky word's width. Each sticker sits somewhere along the cover's
  * width, its sides stepped wherever they would run straight. All from the
- * title and the shuffle.
+ * title and the shuffle. The letters are black or white, whichever reads on
+ * their sticker, unless a text colour is picked, which every sticker's take.
  */
 function stickery(
   paragraphs: Paragraph[],
@@ -1010,6 +1013,7 @@ function stickery(
   seed: number,
   lettering: LetteringId,
   plainFace: PlainFaceId,
+  textColour: string | null,
 ) {
   const starred = paragraphs.some((p) => p.some((w) => w.some((s) => s.emphasis)));
   // Which words are funky: the starred ones, else each sticker's longest.
@@ -1200,7 +1204,7 @@ function stickery(
     const stickers = groups.map((runs, gi) => {
       const next = random(mixSeed(salt, gi + 1));
       const fill = palette.sticker[gi % 2];
-      const ink = readableOn(fill);
+      const ink = textColour ?? readableOn(fill);
       if (!colours.includes(ink)) colours.push(ink);
       const inkIndex = colours.indexOf(ink);
       const texts: Op[] = [];
@@ -1558,7 +1562,7 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
       case "pasty-flat":
         return pasty(paragraphs, safe, canvas, palette, measurer, true, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING, input.photo === true);
       case "stickery":
-        return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE);
+        return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE, input.textColour ?? null);
       case "echo":
         return echo(paragraphs, safe, palette, measurer, height);
       case "mono":

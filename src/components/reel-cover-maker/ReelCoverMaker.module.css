@@ -6,8 +6,9 @@
  * Black and white, warm and quiet, so the cover is the only colour on the
  * page (and the picked colour shows in the mark and the hex chip alone):
  * a neutral surround is what the eye judges colour against. Two panels of
- * controls as cards either side of the cover, which sits on a plain
- * board of its own. Corners are small: a card's 8 pixels, a control's 5 or 6.
+ * controls as cards either side of the cover, which sits on the page
+ * itself, with no card round it. Corners are small: a card's 8 pixels, a
+ * control's 5 or 6.
  *
  * Three heights, and only three: a field (44), a button (36), and a small
  * button on a label's row (28).
@@ -15,7 +16,6 @@
 
 .root {
   --rcm-bg: #ecebe7;
-  --rcm-board: #e5e3de;
   --rcm-card: #fbfaf8;
   --rcm-card-line: rgba(28, 26, 22, 0.07);
   --rcm-card-shadow: 0 1px 2px rgba(28, 26, 22, 0.04), 0 6px 20px rgba(28, 26, 22, 0.04);
@@ -67,7 +67,6 @@
 @media (prefers-color-scheme: dark) {
   .root {
     --rcm-bg: #0e0e0f;
-    --rcm-board: #131314;
     --rcm-card: #18181a;
     --rcm-card-line: rgba(242, 241, 238, 0.07);
     --rcm-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
@@ -226,10 +225,11 @@
 }
 
 /*
- * The cover, on its board: the row of tools over it, the styles under it.
- * The cover's height comes from the window, never from the size or the
- * style chosen, so the tools and the styles never move; on a short window
- * it gives way first.
+ * The cover, on the page with no card round it (the owner's ask, 7 Oct):
+ * the row of tools at its column's top, the styles under it. The cover's
+ * height comes from the window, never from the size or the style chosen,
+ * so the tools and the styles never move; on a short window it gives way
+ * first.
  */
 .preview {
   --rcm-tile-h: clamp(96px, 15.5dvh, 138px);
@@ -238,19 +238,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: safe center;
+  /* The tools at the top, the styles at the foot, the cover midway between them. */
+  justify-content: space-between;
   gap: 14px;
   min-width: 0;
   min-height: 0;
-  padding: 14px;
-  overflow: hidden;
-  border-radius: var(--rcm-r-card);
-  background: var(--rcm-board);
-  box-shadow: inset 0 0 0 1px var(--rcm-card-line);
 }
 
 .stage {
-  flex: 0 1 clamp(300px, calc(100dvh - 370px), 560px);
+  /* Grown into whatever the window leaves between the tools and the styles, up to its largest. */
+  flex: 1 1 clamp(300px, calc(100dvh - 342px), 560px);
+  max-height: 560px;
   align-self: stretch;
   min-height: 220px;
   container-type: size;
@@ -331,7 +329,7 @@
 }
 
 .surface:focus-visible {
-  box-shadow: 0 0 0 2px var(--rcm-board), 0 0 0 4px var(--rcm-focus);
+  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-focus);
   border-radius: 2px;
 }
 
@@ -418,7 +416,7 @@
   place-items: center;
   border: 2px dashed var(--rcm-focus);
   border-radius: 2px;
-  background: color-mix(in srgb, var(--rcm-board) 72%, transparent);
+  background: color-mix(in srgb, var(--rcm-bg) 72%, transparent);
   color: var(--rcm-text);
   font-size: 15px;
   font-weight: 600;
@@ -709,20 +707,66 @@
 }
 
 /*
- * Over the cover: undo and redo, its background light or dark, a shuffle
- * of the letters, the text put back, and the phone view, in one bar of one
- * height. A button that cannot act now is dimmed, never taken away.
+ * Over the cover, the width of its column: undo and redo at the left,
+ * the background, a shuffle of the letters and the text put back in the
+ * middle, animate and the phone view at the right, each group a small bar
+ * of one height. A button that cannot act now is dimmed, never taken away.
  */
 .toolbar {
   flex: none;
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.toolGroup {
   display: flex;
   align-items: center;
   gap: 2px;
   height: var(--rcm-h-field);
   padding: 4px;
-  border-radius: 8px;
+  border-radius: var(--rcm-r-card);
   background: var(--rcm-card);
   box-shadow: 0 0 0 1px var(--rcm-card-line), 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
+.toolGroup:first-child {
+  justify-self: start;
+}
+
+.toolGroup:last-child {
+  justify-self: end;
+}
+
+/* The background's one button: the sun turns away as the moon turns in, and back. */
+.groundIcon {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.groundIcon svg {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.15), opacity 0.25s ease;
+}
+
+.groundIcon .moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.4);
+}
+
+.groundIcon[data-dark] .sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.4);
+}
+
+.groundIcon[data-dark] .moon {
+  opacity: 1;
+  transform: none;
 }
 
 .tool {
@@ -756,55 +800,11 @@
   cursor: default;
 }
 
-/* On: the phone view showing. */
+/* On: the phone view showing, or animate mode. */
 .tool[aria-pressed="true"],
 .tool[aria-pressed="true"]:hover:not(:disabled) {
   background: var(--rcm-strong);
   color: var(--rcm-card);
-}
-
-.toolRule {
-  flex: none;
-  width: 1px;
-  height: 18px;
-  margin: 0 5px;
-  background: var(--rcm-line);
-}
-
-.toolSegments {
-  display: flex;
-  gap: 2px;
-}
-
-.toolSegment {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: var(--rcm-h-button);
-  padding: 0 12px;
-  border-radius: var(--rcm-r-button);
-  color: var(--rcm-muted);
-  font-size: 13.5px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.toolSegment:hover {
-  color: var(--rcm-text);
-}
-
-.toolSegment:has(.radio:checked) {
-  background: var(--rcm-inset-strong);
-  color: var(--rcm-text);
-}
-
-.toolSegment:has(.radio:focus-visible) {
-  outline: 2px solid var(--rcm-focus);
-  outline-offset: -2px;
 }
 
 /* A button's name, shown by it on a pointer's hover (or a key's focus), after a moment: the bar is icons. */
@@ -843,28 +843,36 @@
   transform: translate(-50%, 0);
 }
 
-/* At either end of the bar, a name runs inward from its button, so it never runs off a narrow window. */
-.tool.tip:first-child::after {
+/* At either end of the row, and by the header's edge, a name runs inward from its button, so it never runs off a narrow window. */
+.toolGroup:first-child > .tool.tip:first-child::after {
   left: 0;
   transform: translate(0, -3px);
 }
 
-.tool.tip:last-child::after {
+.toolGroup:last-child > .tool.tip:last-child::after,
+.helpButton.tip::after {
   left: auto;
   right: 0;
   transform: translate(0, -3px);
 }
 
 @media (hover: hover) {
-  .tool.tip:first-child:hover::after,
-  .tool.tip:last-child:hover::after {
+  .toolGroup:first-child > .tool.tip:first-child:hover::after,
+  .toolGroup:last-child > .tool.tip:last-child:hover::after,
+  .helpButton.tip:hover::after {
     transform: none;
   }
 }
 
-.tool.tip:first-child:focus-visible::after,
-.tool.tip:last-child:focus-visible::after {
+.toolGroup:first-child > .tool.tip:first-child:focus-visible::after,
+.toolGroup:last-child > .tool.tip:last-child:focus-visible::after,
+.helpButton.tip:focus-visible::after {
   transform: none;
+}
+
+/* Its card open, the ? needs no name. */
+.helpButton[data-open]::after {
+  display: none;
 }
 
 /* The hex chip ends its row: its name runs inward too. */
@@ -1015,6 +1023,7 @@
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /*
@@ -1185,30 +1194,109 @@
   color: var(--rcm-text);
 }
 
-/* The keys, at the foot of the words' card; not on a touch screen, which has none. */
-.keys {
+/* A warning beside the colour takes the copy icon's room, so the row stays one line; "Copy hex" still names what a click does. */
+.colourSide:has(.warnPill) .hexIcon {
+  display: none;
+}
+
+/*
+ * The keys, behind the ? beside Download: a card under it, over whatever
+ * is there. Not on a touch screen, which has no keys.
+ */
+.shortcuts {
+  position: relative;
+  flex: none;
+}
+
+.helpButton {
+  color: var(--rcm-muted);
+}
+
+.helpButton:hover:not(:disabled),
+.helpButton[aria-expanded="true"] {
+  color: var(--rcm-text);
+}
+
+.helpButton[aria-expanded="true"] {
+  background: var(--rcm-inset-strong);
+}
+
+.shortcutsCard {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 16px 16px;
+  border-radius: var(--rcm-r-card);
+  background: var(--rcm-card);
+  box-shadow: var(--rcm-pop);
+  color: var(--rcm-text);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+@starting-style {
+  .shortcutsCard {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.shortcutsCard[hidden] {
+  display: none;
+}
+
+.shortcutsTitle {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.shortcutsGroup {
   display: grid;
-  gap: 6px;
-  margin: auto 0 0;
-  padding: 14px 0 0;
+  gap: 9px;
+  margin: 0;
+  padding: 12px 0;
   border-top: 1px solid var(--rcm-line);
 }
 
-.key {
+.shortcutsGroup:last-child {
+  padding-bottom: 0;
+}
+
+.shortcut {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  color: var(--rcm-muted);
-  font-size: 12.5px;
+  gap: 14px;
+  font-size: 13px;
 }
 
-.key dt,
-.key dd {
+.shortcut dt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-weight: 550;
+}
+
+.shortcutNote {
+  color: var(--rcm-muted);
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.35;
+}
+
+.shortcut dd {
+  display: flex;
+  flex: none;
+  gap: 4px;
   margin: 0;
 }
 
-.key kbd {
+.shortcut kbd {
   display: inline-grid;
   place-items: center;
   min-width: 24px;
@@ -1226,7 +1314,7 @@
 }
 
 @media (hover: none) and (pointer: coarse) {
-  .keys {
+  .shortcuts {
     display: none;
   }
 }
@@ -1302,12 +1390,12 @@
 }
 
 .style:has(.radio:checked) .thumb {
-  box-shadow: 0 0 0 2px var(--rcm-board), 0 0 0 4px var(--rcm-strong);
+  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-strong);
   transform: none;
 }
 
 .style:has(.radio:focus-visible) .thumb {
-  box-shadow: 0 0 0 2px var(--rcm-board), 0 0 0 4px var(--rcm-focus);
+  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-focus);
 }
 
 .styleName {
@@ -1329,6 +1417,18 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  transition: opacity 0.15s ease;
+}
+
+/* A colour not in use (Stickery's text left to auto, black or white): there, quieter, and a press makes it the colour. */
+.sliders[data-resting] {
+  opacity: 0.4;
+}
+
+@media (hover: hover) {
+  .sliders[data-resting]:hover {
+    opacity: 0.7;
+  }
 }
 
 /* A slider is its own track: the colours it runs through, under a round thumb. */
@@ -1388,7 +1488,7 @@
 /* A segmented control: a field's height, its choices a button's. */
 .segments {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--rcm-segments, 3), minmax(0, 1fr));
   gap: 2px;
   height: var(--rcm-h-field);
   padding: 4px;
@@ -1401,6 +1501,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   height: var(--rcm-h-button);
   padding: 0 6px;
   border-radius: 3px;
@@ -1426,6 +1527,15 @@
 .segment:has(.radio:focus-visible) {
   outline: 2px solid var(--rcm-focus);
   outline-offset: 1px;
+}
+
+/* A choice's colour, before its name: the text colour's black, white, own colour, or auto's black and white. */
+.swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
 }
 
 .dropdown {
@@ -2054,8 +2164,6 @@
 
   .preview {
     --rcm-tile-h: 150px;
-
-    padding: 12px;
   }
 
   .stage {
@@ -2070,34 +2178,14 @@
   }
 }
 
-/* A phone: the background's two words would crowd the bar, so its sun and moon say it. */
-@media (max-width: 479.98px) {
-  .toolSegment {
-    padding: 0 10px;
-  }
-
-  .toolWord {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-
-/* The narrowest phones: the bar's buttons a little narrower, never shorter. */
+/* The narrowest phones: the bar's buttons a little narrower, never shorter, its groups a little closer. */
 @media (max-width: 359.98px) {
   .tool {
     width: 32px;
   }
 
-  .toolSegment {
-    padding: 0 8px;
-  }
-
-  .toolRule {
-    margin: 0 2px;
+  .toolbar {
+    gap: 4px;
   }
 }
 
@@ -2106,8 +2194,9 @@
   .thumb,
   .segment,
   .tool,
-  .toolSegment,
   .tip::after,
+  .sliders,
+  .shortcutsCard,
   .hexChip,
   .hexIcon,
   .input,
@@ -2124,6 +2213,16 @@
   }
 
   .style:hover .thumb {
+    transform: none;
+  }
+
+  /* The sun and the moon change places without turning. */
+  .groundIcon svg {
+    transition: opacity 0.15s ease;
+  }
+
+  .groundIcon .moon,
+  .groundIcon[data-dark] .sun {
     transform: none;
   }
 }

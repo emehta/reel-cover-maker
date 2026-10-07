@@ -730,8 +730,12 @@ check("contrast is WCAG's: black on white is 21, a colour on itself 1", () => {
 console.log("memory");
 
 check("a design round-trips through storage", () => {
-  const design = { ...D.DEFAULT_DESIGN, text: "How I *plan*", style: "stickery", lettering: "goo", plainFace: "plain-jost", pastyLettering: "goo-even", hue: 305, shade: 0.45, ground: "dark", format: "post-4x5", seed: 12345, place: { x: -40, y: 120, angle: -0.3, sx: 1.4, sy: 0.9 } };
+  const design = { ...D.DEFAULT_DESIGN, text: "How I *plan*", style: "stickery", lettering: "goo", plainFace: "plain-jost", pastyLettering: "goo-even", hue: 305, shade: 0.45, ground: "dark", textMode: "colour", textHue: 48, textShade: 0.86, format: "post-4x5", seed: 12345, place: { x: -40, y: 120, angle: -0.3, sx: 1.4, sy: 0.9 } };
   assert.deepEqual(D.readDesign(D.writeDesign(design)), design);
+  // Stickery's text colour: auto until picked, and a stored one not understood is auto again, the rest kept.
+  assert.equal(D.DEFAULT_DESIGN.textMode, "auto");
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...design, textMode: "neon", textHue: 900, textShade: "light" })), { ...design, textMode: "auto", textHue: D.DEFAULT_DESIGN.textHue, textShade: D.DEFAULT_DESIGN.textShade });
+  for (const textMode of ["black", "white"]) assert.equal(D.readDesign(JSON.stringify({ textMode })).textMode, textMode);
   // A placement stored wrong is home, or held to what can be drawn.
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, place: "moved" })).place, PL.HOME);
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, place: { x: 1e9, y: Number.NaN, angle: 7, sx: 0, sy: 99 } })).place, { x: 5000, y: 0, angle: PL.wrapAngle(7), sx: PL.MIN_SCALE, sy: PL.MAX_SCALE });
@@ -1582,6 +1586,61 @@ check("Stickery: a sticker per typed line, the colours in turn, funky words in e
       }
     }
   }
+});
+
+check("Stickery's text colour: every letter on every sticker takes it, paste and type alike, and nothing else moves; auto is each sticker's black or white; no other style reads it", () => {
+  const title = "things *aren't*\n*what* they seem\nand *more*";
+  const pick = "#2E6BFF";
+  for (const lettering of LETTERING_IDS) {
+    const auto = cover(title, "stickery", "reel", { ...COLOURS.green, lettering });
+    const picked = cover(title, "stickery", "reel", { ...COLOURS.green, lettering, textColour: pick });
+    // The words, the stickers and where they sit are the same: only the letters' colour changes.
+    assert.deepEqual(picked.readable, auto.readable, `${lettering}: a text colour moved the words`);
+    assert.deepEqual(
+      picked.ops.filter((op) => op.kind === "shape"),
+      auto.ops.filter((op) => op.kind === "shape"),
+      `${lettering}: a text colour changed a sticker`,
+    );
+    const texts = textOps(picked);
+    for (const op of texts) assert.equal(op.color, pick, `${lettering}: "${op.text}" is ${op.color}`);
+    assert.equal(texts.length, textOps(auto).length);
+    const paste = liquidOf(picked);
+    if (paste) assert.deepEqual([...new Set(paste.colourOf.map((i) => paste.colours[i]))], [pick], `${lettering}: the paste is not the text colour`);
+    // Null is auto, as an absent colour is.
+    assert.deepEqual(cover(title, "stickery", "reel", { ...COLOURS.green, lettering, textColour: null }), auto);
+  }
+  // Every other style's letters are the chosen colour, whatever Stickery's text colour is.
+  for (const style of ["pasty", "pasty-flat", "editorial", "echo", "mono"]) {
+    assert.deepEqual(cover("How I *plan* my week", style, "reel", { ...COLOURS.blue, textColour: pick }), cover("How I *plan* my week", style, "reel", COLOURS.blue), `${style} read the text colour`);
+  }
+});
+
+check("the text colour's choices: auto is null, black and white the soft ones auto uses, a colour of its own the sliders'; a pick that blends into a sticker it is on is said to", () => {
+  assert.deepEqual(P.TEXT_MODES.map((m) => m.id), ["auto", "black", "white", "colour"]);
+  assert.equal(P.textColour("auto", 200, 0.3), null);
+  assert.equal(P.textColour("black", 200, 0.3), P.SOFT_BLACK);
+  assert.equal(P.textColour("white", 200, 0.3), P.SOFT_WHITE);
+  assert.equal(P.textColour("colour", 200, 0.3), C.sliderColour(200, 0.3));
+  for (const mode of ["auto", "black", "white", "colour"]) assert.ok(P.isTextMode(mode));
+  for (const mode of ["", "grey", null, 3, "Auto"]) assert.ok(!P.isTextMode(mode), String(mode));
+  // Auto's black and white are the two readableOn picks first.
+  assert.equal(P.readableOn("#FFFFFF"), P.SOFT_BLACK);
+  assert.equal(P.readableOn("#000000"), P.SOFT_WHITE);
+  // A title of one paragraph is on the first sticker alone; more, on both.
+  const palette = P.paletteFor({ hue: 24, shade: 0.5, ground: "light" });
+  assert.deepEqual(P.stickersUsed(palette, 1), [palette.sticker[0]]);
+  assert.deepEqual(P.stickersUsed(palette, 0), [palette.sticker[0]]);
+  assert.deepEqual(P.stickersUsed(palette, 5), [...palette.sticker]);
+  assert.ok(P.readsOnStickers(null, palette.sticker), "auto always reads");
+  assert.ok(P.readsOnStickers(P.SOFT_WHITE, [palette.sticker[0]]));
+  assert.ok(!P.readsOnStickers(palette.sticker[0], [palette.sticker[0]]), "letters the sticker's own colour read");
+  // Read on one sticker and lost on the other: said, once the title reaches the second.
+  const light = P.paletteFor({ hue: 90, shade: 0.15, ground: "light" });
+  const onFirst = P.readableOn(light.sticker[0]);
+  assert.ok(P.readsOnStickers(onFirst, P.stickersUsed(light, 1)));
+  assert.equal(P.readsOnStickers(onFirst, P.stickersUsed(light, 2)), P.contrast(onFirst, light.sticker[1]) >= 3);
+  // The default own colour, a pale tint of the default red, reads on that red.
+  assert.ok(P.readsOnStickers(C.sliderColour(D.DEFAULT_DESIGN.textHue, D.DEFAULT_DESIGN.textShade), [P.paletteFor(P.DEFAULT_COLOUR).sticker[0]]));
 });
 
 check("Stickery is laid out by the title and the shuffle: the same seed the same, another seed elsewhere, nothing all to one side", () => {

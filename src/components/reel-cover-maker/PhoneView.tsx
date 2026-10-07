@@ -1,6 +1,6 @@
 "use client";
 
-import { BatteryFull, CaretDown, CellSignalFull, FilmSlate, GridNine, House, List, Lock, MagnifyingGlass, PlusSquare, UserSquare, WifiHigh } from "@phosphor-icons/react";
+import { BatteryFull, CaretDown, CellSignalFull, FilmSlate, GridNine, House, List, MagnifyingGlass, PlusSquare, UserSquare, WifiHigh } from "@phosphor-icons/react";
 import type { CSSProperties, ReactNode } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { GROUNDS, type Ground } from "@/components/reel-cover-maker/palettes";
@@ -16,6 +16,9 @@ interface Props {
   /** Over the screen: what a file dragged over the preview would do. */
   children?: ReactNode;
 }
+
+/** Whose profile it is: the owner's own account (asked for on 7 Oct), public, so with no lock by its name. */
+const HANDLE = "eshaan.tm";
 
 /** The cover's place among the posts drawn: the middle row's middle. */
 const COVER_AT = Math.floor(GRID_ROWS / 2) * GRID_COLUMNS + Math.floor(GRID_COLUMNS / 2);
@@ -58,8 +61,7 @@ export function PhoneView({ tile, reel, ground, children }: Props) {
         </div>
         <div className={styles.phoneNav} aria-hidden="true">
           <span className={styles.phoneName}>
-            <Lock weight="bold" />
-            your.account
+            {HANDLE}
             <CaretDown weight="bold" />
           </span>
           <span className={styles.phoneIcons}>

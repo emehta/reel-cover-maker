@@ -1,12 +1,11 @@
 /**
  * What the maker remembers between visits: the title being worked on, the
- * style, Stickery's lettering and plain face, Pasty's lettering, the colour
- * (hue, shade and ground), the size, the shuffle, and how the photo behind
- * the cover is framed and adjusted (the photo itself is kept in
- * photo-store.ts, being too big for here), and where the letters have
- * been moved to, so
- * the next cover matches the last one on the grid. Kept in this browser
- * only.
+ * style, Stickery's lettering and plain face and the colour of its letters,
+ * Pasty's lettering, the colour (hue, shade and ground), the size, the
+ * shuffle, how the photo behind the cover is framed and adjusted (the
+ * photo itself is kept in photo-store.ts, being too big for here), and
+ * where the letters have been moved to, so the next cover matches the
+ * last one on the grid. Kept in this browser only.
  *
  * Read defensively: storage can hold anything (an older version's shape, a
  * hand edit, nothing at all), and whatever is not understood falls back to
@@ -15,7 +14,7 @@
 
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
 import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
-import { DEFAULT_COLOUR, isGround, type Ground } from "@/components/reel-cover-maker/palettes";
+import { DEFAULT_COLOUR, isGround, isTextMode, type Ground, type TextMode } from "@/components/reel-cover-maker/palettes";
 import { DEFAULT_ADJUST, DEFAULT_FRAME, readAdjust, readFrame, type PhotoAdjust, type PhotoFrame } from "@/components/reel-cover-maker/photo";
 import { HOME, readPlace, type Place } from "@/components/reel-cover-maker/place";
 import {
@@ -40,6 +39,10 @@ export interface Design {
   hue: number;
   shade: number;
   ground: Ground;
+  /** The colour of Stickery's letters on its stickers; with "colour", the hue and shade of its own two sliders. */
+  textMode: TextMode;
+  textHue: number;
+  textShade: number;
   format: FormatId;
   /** The shuffle: every random choice a style makes is seeded by it as well as by the title. */
   seed: number;
@@ -68,6 +71,10 @@ export const DEFAULT_DESIGN: Design = {
   hue: DEFAULT_COLOUR.hue,
   shade: DEFAULT_COLOUR.shade,
   ground: DEFAULT_COLOUR.ground,
+  textMode: "auto",
+  // A pale tint of the default red, for when a colour of its own is first picked: it reads on that red.
+  textHue: DEFAULT_COLOUR.hue,
+  textShade: 0.9,
   format: DEFAULT_FORMAT,
   seed: 0,
   photoFrame: DEFAULT_FRAME,
@@ -99,6 +106,9 @@ export function readDesign(raw: string | null): Design {
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
     ground: isGround(stored.ground) ? stored.ground : DEFAULT_DESIGN.ground,
+    textMode: isTextMode(stored.textMode) ? stored.textMode : DEFAULT_DESIGN.textMode,
+    textHue: number(stored.textHue, 0, 360) ?? DEFAULT_DESIGN.textHue,
+    textShade: number(stored.textShade, 0, 1) ?? DEFAULT_DESIGN.textShade,
     format: isFormatId(stored.format) ? stored.format : DEFAULT_DESIGN.format,
     seed: Number.isInteger(stored.seed) && Math.abs(stored.seed as number) < 2 ** 31 ? (stored.seed as number) : DEFAULT_DESIGN.seed,
     photoFrame: readFrame(stored.photoFrame),

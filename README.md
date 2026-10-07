@@ -8,12 +8,14 @@ Use it at **[emehta.github.io/reel-cover-maker](https://emehta.github.io/reel-co
 
 ## Using it
 
-Three columns: on the left a card of the text, its lettering, the colour
-and the size; in the middle the cover on a plain board, with a bar of
-tools over it (undo, redo, light or dark, shuffle, reset text and the
-phone view, each an icon that names itself on hover) and the styles in a
-row under it; on the
-right a card of the photo and its adjustments. In a narrower window the
+Three columns: on the left a card of the text, its lettering, Stickery's
+text colour, the colour and the size; in the middle the cover on the page
+itself, with a row of tools across the top of its column (undo and redo
+at the left; the background, shuffle and reset text in the middle;
+animate and the phone view at the right, each an icon that names itself
+on hover) and the styles in a row under it; on the right a card of the
+photo and its adjustments. The keyboard shortcuts are behind the **?**
+beside Download (or press **?**). In a narrower window the
 photo goes under the left column and the page scrolls past it while the
 cover stays in view; on a phone it is the cover and styles, then the text,
 then the photo. The cover keeps one height whatever the size or style,
@@ -50,7 +52,8 @@ on a label's row.
   carries on as you type the end of a word, and stops at a space. Words
   typed between stars turn bold too, the moment the second star is typed
   (`*actually*` becomes **actually**). Every other style sets a bold word as
-  it sets the rest. The keys are listed at the foot of the left card.
+  it sets the rest. Every shortcut is listed behind the **?** beside
+  Download.
 - **Pick a style** from the row of thumbnails under the cover: Stickery,
   Pasty, Pasty Flat, Editorial, Echo and Mono. Each thumbnail is your whole
   cover in that style, in the cover's own shape, so nothing of it is cut
@@ -104,14 +107,20 @@ on a label's row.
   the title and the shuffle together, so what you see is exactly what
   downloads, until you shuffle again.
 - **Pick a colour** with two sliders: the hue, and the shade from near-black
-  to near-white. The colour is the letters' (the paste, the ink, the
-  sticker). Dragging a slider only lights the paste again, so it keeps up
-  with your finger. The colour's hex code shows beside its label; click it
-  to copy it.
-- **Pick the background**, light or dark, with the two buttons over the
-  cover: what the letters are coloured, outlined and lit for. Beside the
-  colour, **Low contrast** says when the letters are near the background in
-  lightness.
+  to near-white. The colour is the letters' (the paste, the ink), and in
+  Stickery the stickers' (**Sticker colour**). Dragging a slider only
+  lights the paste again, so it keeps up with your finger. The colour's
+  hex code shows beside its label; click it to copy it.
+- **Pick Stickery's text colour**, under its lettering: **Auto** (black or
+  white, whichever reads on each sticker), **Black**, **White**, or
+  **Colour**, a colour of your own from two sliders like the stickers'.
+  The sliders stay in sight, quieter, while another choice is made;
+  pressing one picks its colour. **Low contrast** says when the letters
+  are near a sticker they are on in lightness.
+- **Pick the background**, light or dark, with the sun (or moon) button
+  over the cover, which turns from one to the other: what the letters are
+  coloured, outlined and lit for. Beside the colour, **Low contrast** says
+  when the letters are near the background in lightness.
 - **With no photo, the cover is a clear PNG**: the letters alone, with
   whatever is theirs (Stickery's stickers and their borders, Pasty's gel
   and the soft shadow it casts, Pasty Flat's paste, Editorial's, Echo's and
@@ -123,12 +132,16 @@ on a label's row.
   it as much. With a photo, the photo is the background, as before.
 - **Undo and redo** anything (the text and its bold, a style, a colour, a
   shuffle, a move of the text, the photo's framing) with the arrows over
-  the cover, or Cmd+Z and Cmd+Shift+Z (Ctrl+Z and Ctrl+Y on Windows), in
-  the Text field too. A slider dragged or a word typed is one step.
+  the cover, or Cmd+Z and Cmd+Shift+Z (Ctrl+Z and Ctrl+Shift+Z on Windows,
+  where Ctrl+Y redoes too), in the Text field too. A slider dragged or a
+  word typed is one step.
+- **Animate**, the sparkle by the phone button, is a mode still to be
+  made: for now the button turns on and off and changes nothing else.
 - **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5. Tick
   **Grid crop**, beside it, to dim what the profile grid cuts off.
-- **See it on a phone** with the phone button at the end of the bar: the
-  whole phone, to scale, with the cover in the middle of a profile grid.
+- **See it on a phone** with the phone button at the end of the row: the
+  whole phone, to scale, with the cover in the middle of the profile grid
+  of @eshaan.tm (a public account, so with no lock by its name).
   The screen is an iPhone 15 or 16's, 393 by 852 points, with its status
   bar (54), the profile's name bar and tabs from its safe area's top (59),
   the tab bar over the home indicator (34), and the grid between them
@@ -211,11 +224,11 @@ nothing a cover says is cut off wherever it appears.
 - **Colours that differ in lightness, not just hue.** Instagram stores colour
   at half resolution (4:2:0 chroma), so letters on a ground of the same
   lightness fringe at every edge. The sliders leave the choice to you, and
-  the page says so under them when the letters fall below 3:1 against the
-  background. The sliders work in OKLCH, so equal steps look equal and a
-  shade is as light at every hue; a sticker's or a highlight's words are
-  black or white, whichever reads, and the tests hold them to 4.5:1 at every
-  hue and shade.
+  the page says so beside them when the letters fall below 3:1 against the
+  background (or, for Stickery's text colour, a sticker). The sliders work
+  in OKLCH, so equal steps look equal and a shade is as light at every hue;
+  a sticker's words left to auto are black or white, whichever reads, and
+  the tests hold them to 4.5:1 at every hue and shade.
 
 ## How it works
 
@@ -349,7 +362,9 @@ Only the plain face chosen is loaded.
 | `title.ts` | What was typed, as lines and words, with bold (kept as stars) as Stickery's funky words; what typing, Cmd+B and typed stars do to the bold |
 | `TextField.tsx` | The Text field: a textarea for the typing, the same letters drawn over it with their bold |
 | `platform.ts` | Whether this is a Mac or an iPhone, for Cmd or Ctrl |
-| `PhoneView.tsx`, `phone.ts` | The phone view: a whole iPhone to scale, the cover in the middle of a profile grid |
+| `PhoneView.tsx`, `phone.ts` | The phone view: a whole iPhone to scale, the cover in the middle of @eshaan.tm's profile grid |
+| `ColourField.tsx` | A colour's sliders and its hex chip, and Stickery's Text colour field |
+| `Shortcuts.tsx` | The keyboard shortcuts, behind the ? beside Download |
 | `history.ts` | Undo and redo, a run of the same change one step |
 | `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows |
 | `liquid-layout.ts` | The liquid letters' hands, seeds, cases and spacing, and lines packed to fill their block |
@@ -367,7 +382,7 @@ Only the plain face chosen is loaded.
 | `PhotoControls.tsx`, `Camera.tsx` | The photo's column (its slot, zoom and adjustments), and the computer's camera |
 | `Dropdown.tsx` | The Lettering and Plain words lists: a select of the maker's own, each option in its own type |
 | `paint.ts` | Draws a scene on a canvas at any scale, from any origin |
-| `colour.ts`, `palettes.ts` | The sliders' colours in OKLCH, the roles a style reads, and WCAG contrast |
+| `colour.ts`, `palettes.ts` | The sliders' colours in OKLCH, the roles a style reads, Stickery's text colour, and WCAG contrast |
 | `noise.ts`, `grain.ts` | Seeded randomness, smooth noise, and film grain |
 | `fonts.ts`, `font-gate.ts` | The web faces, served by next/font, and whether every character of the title has its file yet |
 | `save.ts` | The file's name, and download or share sheet or press and hold |

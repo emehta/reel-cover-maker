@@ -113,18 +113,39 @@ npm run build   # the static site, in out/
 - **Three columns, and nothing moves** (the owner's asks, 7 Oct): on the
   left a card of Text, the lettering row (`.letteringRow`: Stickery's two
   lists, Pasty's one, or the fixed style's typeface, always one row),
-  Colour (its hex chip copies the code) and Size, with the keys at its
-  foot; in the middle the cover on a plain board (no dots: the owner's
-  ask, 7 Oct) at a height set by the
-  window alone (`.stage`), never by the size or style, and the styles in
-  one row under it; on the right a card of the photo (`PhotoControls`): a
-  slot of one height, empty or full, and zoom and adjustments shown,
-  disabled, before there is a photo, so adding one moves nothing. Over the
-  cover, one bar (`.toolbar`): undo, redo, Light and Dark, Shuffle, Reset
-  text and the phone view, icons only (the owner's ask, 7 Oct) with their names on hover
-  (`.tip`); a tool that cannot act is disabled, never removed. A warning
-  is a pill on its label row ("Low contrast"), never a line under a
-  control. From 900 to 1199 pixels the photo goes under the left column
+  Stickery's Text colour (below), Colour ("Sticker colour" in Stickery;
+  its hex chip copies the code) and Size; in the middle the cover on the
+  page itself, with no card or border round it (the owner's ask, 7 Oct),
+  at a height set by the window alone (`.stage`, grown into what the tools
+  and styles leave, up to 560), never by the size or style, and the
+  styles in one row under it; on the right a card of the photo
+  (`PhotoControls`): a slot of one height, empty or full, and zoom and
+  adjustments shown, disabled, before there is a photo, so adding one
+  moves nothing. Across the top of the cover's column, the tools
+  (`.toolbar`, three `.toolGroup`s, the owner's layout of 7 Oct): undo
+  and redo at its left corner; the background (one button, the sun
+  turning to the moon), Shuffle and Reset text in its middle; Animate
+  and the phone view at its right corner. Icons only, with their names on
+  hover (`.tip`); a tool that cannot act is disabled, never removed. A
+  warning is a pill on its label row ("Low contrast"), never a line under
+  a control; with one showing, the hex chip's copy icon gives way so the
+  row stays one line.
+- **The shortcuts are behind a ?** beside Download (`Shortcuts.tsx`, the
+  owner's ask, 7 Oct), not at the foot of the left card: a card opened by
+  the button or by ? (never while typing), closed by either again, by
+  Escape (claimed in the capture phase, so the phone view stays) or by a
+  press elsewhere. Hidden on a touch screen. Redo is Cmd+Shift+Z or
+  Ctrl+Shift+Z (Ctrl+Y still works).
+- **Stickery's text colour** (`TextColourField`, `textColour` in
+  palettes.ts, the owner's ask, 7 Oct): Auto (each sticker's black or
+  white, `readableOn`, as always), Black, White (`SOFT_BLACK`,
+  `SOFT_WHITE`) or a Colour of its own from two sliders. It reaches only
+  Stickery (`CoverInput.textColour`, and the scene cache keys it only for
+  Stickery, so a pick builds no other style). A press on a resting slider
+  and its drag are one undo step (`pickText` names all three fields).
+- **Animate** is a button only (the owner's ask, 7 Oct: "we will discuss
+  what that means later"): `animating` turns it on and off and nothing
+  reads it yet. From 900 to 1199 pixels the photo goes under the left column
   and the page scrolls with the cover sticky; under 900, one column.
   **No scrollbar shows anywhere** (the owner's ask): every scroller hides
   its bar, the page's too (`globals.css`).
@@ -146,7 +167,8 @@ npm run build   # the static site, in out/
   middle column of the middle row, its centre the grid's (`coverTile`).
   `--u` is a point, as large as the preview fits the whole phone and never
   above a CSS pixel. Every number comes from `phone.ts` as a custom
-  property, and the tests hold them. The tile is drawn from the scene like
+  property, and the tests hold them. The profile is the owner's own,
+  @eshaan.tm (`HANDLE`), public, so with no lock by its name. The tile is drawn from the scene like
   every canvas (`SceneCanvas`, `gridWindow`), on the ground picked. The
   cover to edit stays mounted and painted underneath (hidden), so Download
   never waits on it. Never say it is a phone's real size: on a laptop it
