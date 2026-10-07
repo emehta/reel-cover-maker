@@ -1,4 +1,8 @@
-# Reel Cover Maker
+# Reelic
+
+Called Reelic since 7 Oct 2026, the owner's name for it. The repo, the Pages
+path and the storage keys keep `reel-cover-maker`, so saved designs and links
+carry on.
 
 Type a title, over a photo if wanted, place it, get an Instagram reel cover
 or grid post as a 1080-wide PNG.

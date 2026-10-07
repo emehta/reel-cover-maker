@@ -1,4 +1,4 @@
-# Reel Cover Maker
+# Reelic
 
 Type a title, put it over a photo if you like, place it where you want it,
 and get an Instagram reel cover or grid post, made to read in the profile

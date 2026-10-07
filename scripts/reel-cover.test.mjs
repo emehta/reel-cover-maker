@@ -1,5 +1,5 @@
 /**
- * Reel Cover Maker, checked with no browser. `npm test`.
+ * Reelic, checked with no browser. `npm test`.
  *
  * What is wrong here leaves no error on screen: a word that falls outside the
  * part of the cover the profile grid shows, a line that is quietly dropped, a
