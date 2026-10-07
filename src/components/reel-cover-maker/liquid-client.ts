@@ -12,7 +12,7 @@
  * request from a canvas replaces its older one still waiting, so fast
  * typing never queues work for titles already gone.
  *
- * Two workers make them, each one at a time, in the order they are needed
+ * Two workers make them (up to four where there are cores to spare), each one at a time, in the order they are needed
  * (`LayerUse`): the preview's quick draft, the preview, the thumbnails, and
  * then, ahead of time, the preview as every other style would draw it, so
  * picking one shows it at once. Only one worker ever works ahead, so the
@@ -50,8 +50,13 @@ const LIT_KEPT = 24;
 /** How long a worker may take over one layer before it is taken to have died. */
 const PATIENCE_MS = 10_000;
 
-/** The most workers making layers at once. */
-const WORKERS = 2;
+/** The most workers making layers at once: two, and up to four where the device has cores to spare, for a video's frames. */
+const WORKERS = typeof navigator === "undefined" ? 2 : Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) - 2));
+
+/** How many layers can be made at once: what asking ahead for is worth. */
+export function layerWorkers(): number {
+  return WORKERS;
+}
 
 /**
  * What a canvas wants its layers for, most pressing first: the preview's

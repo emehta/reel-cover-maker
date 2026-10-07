@@ -14,8 +14,9 @@ itself, with a row of tools across the top of its column (undo and redo
 at the left; the background, shuffle and reset text in the middle;
 animate and the phone view at the right, each an icon that names itself
 on hover) and the styles in a row under it; on the right a card of the
-photo and its adjustments. The keyboard shortcuts are behind the **?**
-beside Download (or press **?**). In a narrower window the
+photo and its adjustments, with **Export** at its foot. The keyboard
+shortcuts are behind the **?** at the top right (or press **?**). In a
+narrower window the
 photo goes under the left column and the page scrolls past it while the
 cover stays in view; on a phone it is the cover and styles, then the text,
 then the photo. The cover keeps one height whatever the size or style,
@@ -52,8 +53,8 @@ on a label's row.
   carries on as you type the end of a word, and stops at a space. Words
   typed between stars turn bold too, the moment the second star is typed
   (`*actually*` becomes **actually**). Every other style sets a bold word as
-  it sets the rest. Every shortcut is listed behind the **?** beside
-  Download.
+  it sets the rest. Every shortcut is listed behind the **?** at the top
+  right.
 - **Pick a style** from the row of thumbnails under the cover: Stickery,
   Pasty, Pasty Flat, Editorial, Echo and Mono. Each thumbnail is your whole
   cover in that style, in the cover's own shape, so nothing of it is cut
@@ -135,16 +136,18 @@ on a label's row.
   word typed is one step.
 - **Animate** the cover with the sparkle by the phone button: a card
   opens with the cover playing in each of its style's animations; pick
-  one and **Save**, and the cover plays it, in the preview and on the
-  phone, until the sparkle is pressed again to stop. Each lays the cover
-  down over a few seconds and ends on it exactly:
+  one, set its **Speed** (half as fast to twice), and **Save**, and the
+  cover plays it, in the preview and on the phone, sharp at the screen's
+  own pixels, until the sparkle is pressed again to stop. Each lays the
+  cover down over a few seconds and ends on it exactly:
   - Stickery: **Type and draw** (each sticker laid, its plain words typed,
-    its funky words written on along their slant, or piped bead by bead in
-    Goo), **Pop** (each sticker springs on), **Rise** (each floats up).
+    its funky words written as a pen writes them, stroke by stroke, traced
+    from the letters themselves, or piped bead by bead in Goo) and
+    **Slap** (each sticker thrown on from beyond the cover, big as if near,
+    pressed flat where it lands, the ones already down jolting).
   - Pasty and Pasty Flat: **Written live** (letter after letter, each
     stroke piped as if by hand, the light on what is laid unchanged as more
-    comes), **All at once** (every letter piped together), **Pop** (letter
-    by letter, swelling into place).
+    comes).
   - Editorial: **Word by word**, **Typewriter**, **Line by line**.
   - Echo: **Ripple** (the words, then each echo out from them), **Spread**
     (the echoes slide out from the words to their places), **Cascade**
@@ -152,15 +155,16 @@ on a label's row.
   - Mono: **Typewriter**, its cursor following the letters, and **Word by
     word**.
 
-  Animated, **Download video** saves it at 1080 wide and 30 frames a
-  second, the motion and then the cover held for a second and a half. With
-  no photo it is a QuickTime movie (.mov) in ProRes 4444 with its
+  Animated, **Export** saves a video at 1080 wide and 30 frames a second,
+  the motion and then the cover held for a second and a half. With no
+  photo it is a QuickTime movie (.mov) in ProRes 4444 with its
   transparency, so it lays over a video in any editor (Final Cut,
   Premiere, DaVinci Resolve, CapCut) or on an iPhone; with a photo, an
-  MP4. It is made in the browser: the first one fetches the encoder
-  (ffmpeg, about 30 MB, from jsDelivr), and a video takes about 20 to 40
-  seconds to make and runs to tens of megabytes, as ProRes does. The
-  button fills as it goes; press it again to stop.
+  MP4. It is made in the browser by ffmpeg (about 30 MB, from jsDelivr),
+  fetched and readied the moment a cover is animated, and shared among a
+  few encoders at once: a few seconds for type, ten or so for paste, and
+  tens of megabytes, as ProRes is. The button fills as it goes; press it
+  again to stop.
 - **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5. Tick
   **Grid crop**, beside it, to dim what the profile grid cuts off.
 - **See it on a phone** with the phone button at the end of the row: the
@@ -208,8 +212,10 @@ on a label's row.
     were are carried with the pointer, and drawn sharp when you let go. On
     a photo, a press between the letters (not on them) still moves the
     photo; once they are selected, the whole box moves them.
-- **Download** (or Cmd/Ctrl+S). On an iPhone or iPad the button reads **Save
-  image** and opens the share sheet, where **Save Image** puts the cover in
+- **Export** (or Cmd/Ctrl+S), at the foot of the photo's card (held at the
+  foot of the screen on a phone); its tag says what it makes, PNG, or MOV
+  or MP4 when animated. On an iPhone or iPad the button reads **Save**
+  and opens the share sheet, where **Save Image** puts the cover in
   Photos. Android downloads it, and Instagram's picker finds it there.
   Inside an app's own browser (Instagram's, when the link is opened from a
   bio), the cover opens on its own: press and hold it to save it.
@@ -392,10 +398,12 @@ Only the plain face chosen is loaded.
 | `PhoneView.tsx`, `phone.ts` | The phone view: a whole iPhone to scale, the cover in the middle of @eshaan.tm's profile grid |
 | `ColourField.tsx` | A colour's sliders and its hex chip, and Stickery's Text colour field |
 | `animate.ts` | Each style's animations, as a function of time on the cover's own scene |
-| `animation-frames.ts`, `Motion.tsx`, `AnimateCard.tsx` | Frames drawn in the page, played in a loop, and the card to pick an animation in |
-| `video.ts`, `video.worker.ts` | The video: frames encoded by ffmpeg in WebAssembly, ProRes 4444 with alpha or H.264 |
+| `write-on.ts`, `writer.ts` | A script word written as a pen would: its strokes traced from its ink, and drawn part written |
+| `Motion.tsx`, `AnimateCard.tsx` | An animation played on the page, painted live at the screen's pixels (paste made ahead), and the card to pick one and its speed in |
+| `animation-frames.ts` | A video's frames, drawn at full size |
+| `video.ts`, `video.worker.ts` | The video: frames encoded by ffmpeg in WebAssembly, shared among encoders and joined, ProRes 4444 with alpha or H.264 |
 | `posts/` | @eshaan.tm's reel covers and profile picture, for the phone view |
-| `Shortcuts.tsx` | The keyboard shortcuts, behind the ? beside Download |
+| `Shortcuts.tsx` | The keyboard shortcuts, behind the ? at the top right |
 | `history.ts` | Undo and redo, a run of the same change one step |
 | `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows |
 | `liquid-layout.ts` | The liquid letters' hands, seeds, cases and spacing, and lines packed to fill their block |

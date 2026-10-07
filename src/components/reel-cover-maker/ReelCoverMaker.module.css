@@ -142,13 +142,6 @@
   min-width: 0;
 }
 
-.error {
-  margin: 0;
-  color: var(--rcm-danger);
-  font-size: 13px;
-  text-align: right;
-}
-
 .save {
   appearance: none;
   display: inline-flex;
@@ -196,6 +189,104 @@
 .save[data-making] {
   background: linear-gradient(to right, var(--rcm-primary) var(--rcm-made, 0%), color-mix(in srgb, var(--rcm-primary) 52%, var(--rcm-bg)) var(--rcm-made, 0%));
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Export, at the foot of the photo's card (the owner's ask, 7 Oct): the
+ * one thing to do once the cover is right, a field's height and the card's
+ * width, in sight however far the card is scrolled. It says what it makes
+ * (PNG, or MOV or MP4 animated) and, while a video is made, fills as it
+ * goes; a press then stops it.
+ */
+.exportBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: auto -18px -18px;
+  padding: 16px 18px 18px;
+  border-top: 1px solid var(--rcm-line);
+  border-radius: 0 0 var(--rcm-r-card) var(--rcm-r-card);
+  background: var(--rcm-card);
+}
+
+.exportError {
+  margin: 0;
+  color: var(--rcm-danger);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.exportButton {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  height: var(--rcm-h-field);
+  margin: 0;
+  padding: 0 8px 0 16px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--rcm-r-field);
+  background: var(--rcm-primary);
+  color: var(--rcm-on-primary);
+  box-shadow: var(--rcm-lift), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.exportButton:hover {
+  opacity: 0.9;
+}
+
+.exportButton:active {
+  transform: translateY(1px);
+}
+
+.exportButton:disabled {
+  opacity: 0.32;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.exportButton:focus-visible {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: 2px;
+}
+
+.exportButton[data-making] {
+  background: linear-gradient(to right, var(--rcm-primary) var(--rcm-made, 0%), color-mix(in srgb, var(--rcm-primary) 55%, var(--rcm-card)) var(--rcm-made, 0%));
+}
+
+.exportWord {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+/* What it makes, in a small tag at its end. */
+.exportKind {
+  display: inline-grid;
+  place-items: center;
+  height: var(--rcm-h-mini);
+  min-width: 46px;
+  padding: 0 9px;
+  border-radius: var(--rcm-r-mini);
+  background: color-mix(in srgb, var(--rcm-on-primary) 15%, transparent);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 /* A quiet button beside a primary one: Cancel. */
@@ -2216,8 +2307,40 @@
 
 .animateFoot {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+
+/* The throttle: how fast the animation plays, half as fast to twice. */
+.speed {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 12px;
+  max-width: 320px;
+}
+
+.speedName {
+  color: var(--rcm-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.speed .thinSlider {
+  flex: 1;
+  min-width: 0;
+}
+
+.speed .value {
+  min-width: 42px;
+}
+
+.animateButtons {
+  display: flex;
   gap: 8px;
+  margin-left: auto;
 }
 
 @media (max-width: 479.98px) {
@@ -2272,6 +2395,35 @@
   text-align: center;
 }
 
+/*
+ * Three columns on a window of a laptop's height: the photo's card drawn a
+ * little closer, so Dim and Export below it both show without scrolling
+ * the card (measured 7 Oct: 41 pixels over at 808 tall).
+ */
+@media (min-width: 1200px) and (max-height: 900px) {
+  .photoPanel {
+    gap: 16px;
+  }
+
+  .photoSlot {
+    height: 124px;
+  }
+
+  .adjustList {
+    gap: 4px;
+  }
+
+  .adjustRow .thinSlider {
+    height: 19px;
+  }
+
+  .exportBar {
+    padding-top: 14px;
+    padding-bottom: 16px;
+    margin-bottom: -18px;
+  }
+}
+
 /* A wide screen: the page is the viewport, each column its full height. */
 @media (min-width: 900px) {
   .root {
@@ -2312,6 +2464,27 @@
     height: calc(100dvh - 82px);
   }
 
+  /* The photo's card is below the words' here, off the screen: Export is held at the foot of its column, in sight. */
+  .main {
+    padding-bottom: 96px;
+  }
+
+  .exportBar {
+    position: fixed;
+    bottom: 0;
+    left: max(14px, env(safe-area-inset-left));
+    width: 316px;
+    margin: 0;
+    padding: 22px 0 max(14px, env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    background: linear-gradient(to bottom, transparent, var(--rcm-bg) 22px);
+  }
+
+  .exportButton {
+    box-shadow: var(--rcm-shadow);
+  }
+
   .stage {
     flex-basis: clamp(300px, calc(100dvh - 330px), 560px);
   }
@@ -2338,6 +2511,27 @@
   .photoPanel {
     overflow: visible;
     padding: 16px;
+  }
+
+  /* On a phone, Export is held at the foot of the screen, over the page, its thumb's reach. */
+  .main {
+    padding-bottom: calc(max(24px, env(safe-area-inset-bottom)) + 72px);
+  }
+
+  .exportBar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    margin: 0;
+    padding: 20px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    border: 0;
+    border-radius: 0;
+    background: linear-gradient(to bottom, transparent, var(--rcm-bg) 22px);
+  }
+
+  .exportButton {
+    box-shadow: var(--rcm-shadow);
   }
 
   .preview {
@@ -2369,6 +2563,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .save,
+  .exportButton,
   .quietButton,
   .animPreview,
   .thumb,

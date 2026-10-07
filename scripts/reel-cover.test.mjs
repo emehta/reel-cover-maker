@@ -38,6 +38,7 @@ const { createFontGate } = await import("@/components/reel-cover-maker/font-gate
 const { prepaintScript } = await import("@/components/reel-cover-maker/theme");
 const AN = await import("@/components/reel-cover-maker/animate");
 const VID = await import("@/components/reel-cover-maker/video");
+const WO = await import("@/components/reel-cover-maker/write-on");
 
 let passed = 0;
 const check = (name, fn) => {
@@ -732,14 +733,19 @@ check("a design round-trips through storage", () => {
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, textMode: "neon", textHue: 900, textShade: "light" })), { ...design, textMode: "auto", textHue: D.DEFAULT_DESIGN.textHue, textShade: D.DEFAULT_DESIGN.textShade });
   for (const textMode of ["black", "white"]) assert.equal(D.readDesign(JSON.stringify({ textMode })).textMode, textMode);
   // Animated or not, and each style's animation: one a style does not offer is let go, the rest kept.
-  const animated = { ...design, animated: true, animations: { stickery: "pop", pasty: "together", echo: "spread" } };
+  const animated = { ...design, animated: true, animations: { stickery: "slap", pasty: "written", echo: "spread" }, animationSpeed: 1.5 };
   assert.deepEqual(D.readDesign(D.writeDesign(animated)), animated);
-  assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "written", mono: "words", editorial: 7, "pasty-flat": "swell" } })).animations, { mono: "words", "pasty-flat": "swell" });
+  // An animation since cut (Pop, Rise, All at once) is let go, the style back on its first.
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "pop", mono: "words", editorial: 7, pasty: "together", "pasty-flat": "swell" } })).animations, { mono: "words" });
+  // A speed is held to half to twice, and is its own where unreadable.
+  assert.equal(D.readDesign(JSON.stringify({ animationSpeed: 9 })).animationSpeed, AN.FASTEST);
+  assert.equal(D.readDesign(JSON.stringify({ animationSpeed: 0.1 })).animationSpeed, AN.SLOWEST);
+  assert.equal(D.readDesign(JSON.stringify({ animationSpeed: "fast" })).animationSpeed, 1);
   assert.equal(D.readDesign(JSON.stringify({ animated: "yes" })).animated, false);
   assert.equal(D.DEFAULT_DESIGN.animated, false);
   // The animation a style is on: its pick, else its first.
-  assert.equal(D.animationOf({ style: "stickery", animations: { stickery: "rise" } }), "rise");
-  assert.equal(D.animationOf({ style: "echo", animations: { stickery: "rise" } }), "ripple");
+  assert.equal(D.animationOf({ style: "stickery", animations: { stickery: "slap" } }), "slap");
+  assert.equal(D.animationOf({ style: "echo", animations: { stickery: "slap" } }), "ripple");
   assert.equal(D.animationOf({ style: "pasty", animations: { pasty: "pop" } }), "written");
   // A placement stored wrong is home, or held to what can be drawn.
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, place: "moved" })).place, PL.HOME);
@@ -2474,7 +2480,7 @@ function shown(scene) {
     for (const op of ops) {
       if (op.kind === "fade") walk(op.ops, alpha * op.alpha);
       else if (op.kind === "turn" || op.kind === "matrix") walk(op.ops, alpha);
-      else if (op.kind === "wipe") walk(op.ops, alpha * op.at);
+      else if (op.kind === "write") walk(op.ops, alpha * op.at);
       else if (op.kind === "text") out.chars += T.graphemes(op.text).length * alpha * (op.alpha ?? 1);
       else if (op.kind === "shape") out.shapes += alpha;
       else if (op.kind === "box") out.boxes += alpha;
@@ -2501,7 +2507,7 @@ check("every animation of every style starts with less than the cover and ends o
     for (const [style, extra] of ANIMATED) {
       const scene = cover(title, style, "reel", extra);
       const whole = shown(scene);
-      assert.ok(AN.animationsFor(style).length >= 2, `${style} offers one animation`);
+      assert.ok(AN.animationsFor(style).length >= 1, `${style} offers no animation`);
       for (const { id } of AN.animationsFor(style)) {
         const p = AN.plan(scene, style, id, measurer);
         const name = `${style} ${JSON.stringify(extra)} ${id}`;
@@ -2509,8 +2515,10 @@ check("every animation of every style starts with less than the cover and ends o
         assert.equal(p.frame(p.duration), scene, `${name} does not end on the cover`);
         assert.equal(p.frame(p.duration + 5), scene);
         assert.ok(near(AN.videoLength(p), p.duration + AN.HOLD, 1e-12));
+        // At its start the cover is not yet laid: less of it is drawn, or (Slap) it is all still in the air.
         const first = shown(p.frame(0));
-        assert.ok(first.chars + first.shapes + first.paste < whole.chars + whole.shapes + whole.paste - 1e-6, `${name} starts with the cover drawn`);
+        if (id === "slap") assert.notDeepEqual(p.frame(0).ops, scene.ops, `${name} starts with the cover laid`);
+        else assert.ok(first.chars + first.shapes + first.paste < whole.chars + whole.shapes + whole.paste - 1e-6, `${name} starts with the cover drawn`);
         for (let t = 0; t <= p.duration; t += 1 / 30) {
           const frame = p.frame(t);
           assert.equal(frame.width, scene.width);
@@ -2524,7 +2532,7 @@ check("every animation of every style starts with less than the cover and ends o
 });
 
 check("typing and piping only ever add: characters typed, paste laid, never taken back, and every chain only ever a first part of its own", () => {
-  for (const [style, extra, id] of [["editorial", {}, "typewriter"], ["mono", {}, "typewriter"], ["stickery", { lettering: "yesteryear" }, "type-draw"], ["stickery", { lettering: "goo" }, "type-draw"], ["pasty", { pastyLettering: "goo" }, "written"], ["pasty", { pastyLettering: "drip" }, "together"]]) {
+  for (const [style, extra, id] of [["editorial", {}, "typewriter"], ["mono", {}, "typewriter"], ["stickery", { lettering: "yesteryear" }, "type-draw"], ["stickery", { lettering: "goo" }, "type-draw"], ["pasty", { pastyLettering: "goo" }, "written"], ["pasty", { pastyLettering: "drip" }, "written"]]) {
     const scene = cover("things *aren't*\n*what* they seem", style, "reel", extra);
     const p = AN.plan(scene, style, id, measurer);
     let last = { chars: 0, paste: 0 };
@@ -2568,7 +2576,7 @@ check("Stickery's Type and draw lays each sticker, then its words in reading ord
     const walk = (ops) => {
       for (const op of ops) {
         if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade") walk(op.ops);
-        else if (op.kind === "wipe") {
+        else if (op.kind === "write") {
           walk(op.ops);
           firstSeen.set("wiped", true);
         } else if (op.kind === "text") {
@@ -2595,10 +2603,11 @@ check("Stickery's Type and draw lays each sticker, then its words in reading ord
   assert.ok(papers[0] <= at("things") && papers[1] <= at("what") && papers[1] > at("things"));
 });
 
-check("an effect is where it is seen: a sticker springs about its own middle even on letters the owner has moved and turned", () => {
+check("an effect is where it is seen: a sticker pressed flat as it lands is pressed about its own middle, even on letters the owner has moved and turned", () => {
   const scene = S.placeScene(cover("things *aren't*", "stickery", "reel", { lettering: "yesteryear" }), { x: 120, y: -200, angle: 0.4, sx: 1.3, sy: 0.9 });
-  const p = AN.plan(scene, "stickery", "pop", measurer);
-  const frame = p.frame(0.2);
+  const p = AN.plan(scene, "stickery", "slap", measurer);
+  // Just landed: pressed flat, about its middle.
+  const frame = p.frame(0.37);
   // The sticker's shape, inside the placement and the frame's own map: its middle where the cover has it.
   const placed = scene.ops.find((op) => op.kind === "matrix");
   const sticker = placed.ops.find((op) => op.kind === "shape");
@@ -2620,7 +2629,7 @@ check("an effect is where it is seen: a sticker springs about its own middle eve
   assert.ok(found, "the sticker is not in the frame");
   const seen = PL.apply(found, local);
   assert.ok(near(seen.x, world.x, 1e-6) && near(seen.y, world.y, 1e-6), `the middle moved to ${seen.x},${seen.y} from ${world.x},${world.y}`);
-  // And its corner is nearer the middle than it will be: it is still springing on.
+  // And its corner is nearer the middle than it will be: it is still pressed down.
   const corner = PL.apply(found, { x: box.x, y: box.y });
   const final = PL.apply(placed.m, { x: box.x, y: box.y });
   assert.ok(Math.hypot(corner.x - world.x, corner.y - world.y) < Math.hypot(final.x - world.x, final.y - world.y));
@@ -2679,9 +2688,110 @@ check("Echo's Ripple and Spread bring the words first and each ring after the on
   assert.ok(near(boxAt(p.duration - 1e-6).x, cursor.x, 0.5), "the cursor does not land where the cover has it");
 });
 
-check("a frame's fades and wipes paint: a fade's alpha times a word's own, a wipe drawn in clipped bands, nothing once wholly clear", () => {
+check("the animations on offer: Stickery types and draws or slaps, Pasty and Pasty Flat are written live, and what was cut is gone", () => {
+  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.id), ["type-draw", "slap"]);
+  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.name), ["Type and draw", "Slap"]);
+  for (const style of ["pasty", "pasty-flat"]) assert.deepEqual(AN.animationsFor(style).map((a) => a.id), ["written"]);
+  for (const cut of ["pop", "rise", "together", "swell"]) for (const style of S.STYLES) assert.ok(!AN.offers(style.id, cut), `${style.id} still offers ${cut}`);
+});
+
+check("a speed only scales time: twice as fast is the same frames in half the time, and a speed is held to half to twice", () => {
+  const scene = cover("things *aren't*\n*what* they seem", "stickery", "reel", { lettering: "yesteryear" });
+  const own = AN.plan(scene, "stickery", "type-draw", measurer);
+  for (const speed of [0.5, 1.5, 2]) {
+    const p = AN.plan(scene, "stickery", "type-draw", measurer, speed);
+    assert.ok(near(p.duration, own.duration / speed, 1e-9));
+    // Moments exact in binary, so the times compared are the same to the last bit.
+    for (const at of [0.125, 0.25, 0.5, 0.75]) assert.deepEqual(p.frame(at), own.frame(at * speed));
+    assert.equal(p.frame(p.duration), scene);
+  }
+  assert.equal(AN.speedOf(7), AN.FASTEST);
+  assert.equal(AN.speedOf(0), AN.SLOWEST);
+  assert.equal(AN.speedOf(Number.NaN), 1);
+  assert.ok(near(AN.plan(scene, "stickery", "type-draw", measurer, 9).duration, own.duration / AN.FASTEST, 1e-9));
+});
+
+check("Slap throws each sticker on from beyond the cover, big and turned, and lands it exactly; one already down jolts at the next landing, then is still", () => {
+  const scene = cover("things *aren't*\n*what* they seem", "stickery", "reel", { lettering: "yesteryear" });
+  const p = AN.plan(scene, "stickery", "slap", measurer);
+  const shapeAt = (t, index) => {
+    let out = null;
+    let n = -1;
+    const walk = (ops, m) => {
+      for (const op of ops) {
+        if (op.kind === "matrix") walk(op.ops, PL.multiply(m, op.m));
+        else if (op.kind === "fade") walk(op.ops, m);
+        else if (op.kind === "shape") {
+          n += 1;
+          if (n === index || (index === 1 && n === 0 && false)) out = { op, m };
+        }
+      }
+    };
+    walk(p.frame(t).ops, [1, 0, 0, 1, 0, 0]);
+    return out;
+  };
+  const originals = scene.ops.filter((op) => op.kind === "shape");
+  // Just after it is thrown: most of the first sticker is off the cover, and it is bigger than it will be.
+  const early = shapeAt(0.02, 0);
+  assert.ok(early, "the first sticker is not in the air at once");
+  const box = SP.polygonBounds(originals[0].polygons);
+  const corners = [[box.x, box.y], [box.x + box.w, box.y], [box.x, box.y + box.h], [box.x + box.w, box.y + box.h]].map(([x, y]) => PL.apply(early.m, { x, y }));
+  const inside = corners.filter((c) => c.x >= 0 && c.x <= scene.width && c.y >= 0 && c.y <= scene.height).length;
+  assert.ok(inside <= 1, `${inside} corners already on the cover`);
+  const scale = Math.sqrt(Math.abs(early.m[0] * early.m[3] - early.m[1] * early.m[2]));
+  assert.ok(scale > 1.8, `thrown at ${scale.toFixed(2)} times its size`);
+  // The second waits its turn; once all have landed, everything is where the cover has it.
+  const before = p.frame(0.05);
+  assert.equal(before.ops.filter((op) => op.kind === "shape" || (op.kind === "matrix" && op.ops.some((o) => o.kind === "shape"))).length, 1, "the second sticker is in the air at once");
+  // The first jolts as the second lands, a moment, and no more.
+  let jolted = false;
+  for (let t = 0.6; t < p.duration; t += 1 / 120) {
+    const first = shapeAt(t, 0);
+    if (first && first.m[5] !== 0 && Math.abs(first.m[0] - 1) < 1e-9) jolted = true;
+  }
+  assert.ok(jolted, "the first sticker does not jolt at the second landing");
+  assert.equal(p.frame(p.duration), scene);
+});
+
+check("a word is written as a pen goes: a bar from its left end to its right, an L down then along, pieces left to right, every pixel of ink written", () => {
+  const w = 80;
+  const h = 40;
+  const image = (inside) => Uint8Array.from({ length: w * h }, (_, i) => (inside(i % w, Math.floor(i / w)) ? 255 : 0));
+  const at = (map, x, y) => map.time[y * w + x];
+  const bar = WO.revealMap(image((x, y) => x >= 5 && x < 75 && y >= 15 && y < 25), w, h);
+  assert.ok(at(bar, 6, 20) < at(bar, 30, 20) && at(bar, 30, 20) < at(bar, 55, 20) && at(bar, 55, 20) < at(bar, 73, 20), "a bar is not written left to right");
+  // Across a stroke, its whole width at once: the edge as the middle.
+  assert.ok(Math.abs(at(bar, 40, 15) - at(bar, 40, 20)) < 0.03);
+  const L = WO.revealMap(image((x, y) => (x >= 5 && x < 13 && y >= 3 && y < 37) || (x >= 5 && x < 70 && y >= 29 && y < 37)), w, h);
+  assert.ok(at(L, 9, 6) < at(L, 9, 22) && at(L, 9, 22) < at(L, 40, 33) && at(L, 40, 33) < at(L, 66, 33), "an L is not written down and then along");
+  const two = WO.revealMap(image((x, y) => Math.hypot(x - 20, y - 20) < 8 || Math.hypot(x - 60, y - 20) < 8), w, h);
+  assert.ok(at(two, 20, 20) < at(two, 60, 20), "the right piece is written first");
+  for (const map of [bar, L, two]) {
+    for (let i = 0; i < w * h; i += 1) {
+      const t = map.time[i];
+      if (map === bar ? i % w >= 5 && i % w < 75 && Math.floor(i / w) >= 15 && Math.floor(i / w) < 25 : false) assert.ok(t >= 0 && t <= 1, `ink at ${i} never written`);
+    }
+    assert.equal(at(map, 0, 0), Infinity, "clear paper is written");
+  }
+  // Shown: nothing before the pen, all of it once the pen has passed, all of the word at the end.
+  assert.equal(WO.revealAt(0.5, 0.4), 0);
+  assert.equal(WO.revealAt(0.5, 0.6), 1);
+  assert.equal(WO.revealAt(1, 1), 1);
+  assert.equal(WO.revealAt(0, 0), 0);
+  assert.equal(WO.revealAt(Infinity, 1), 0);
+});
+
+check("a frame's fades and written words paint: a fade's alpha times a word's own, a word traced where the page can and wiped in clipped bands where it cannot, nothing once wholly clear", () => {
   const word = { kind: "text", text: "draw", face: "funky-yesteryear", size: 100, x: 100, y: 500, color: "#000", alpha: 0.5 };
-  const scene = { width: 1080, height: 1920, ops: [{ kind: "fade", alpha: 0.4, ops: [word] }, { kind: "wipe", x: 100, y: 420, w: 300, h: 110, at: 0.5, ops: [{ ...word, alpha: 1 }] }, { kind: "fade", alpha: 0, ops: [word] }], readable: { x: 0, y: 0, w: 1, h: 1 }, truncated: false };
+  const scene = { width: 1080, height: 1920, ops: [{ kind: "fade", alpha: 0.4, ops: [word] }, { kind: "write", x: 100, y: 420, w: 300, h: 110, at: 0.5, ops: [{ ...word, alpha: 1 }] }, { kind: "fade", alpha: 0, ops: [word] }], readable: { x: 0, y: 0, w: 1, h: 1 }, truncated: false };
+  // Traced: the page's picture of it, part written, put where the word's box is, at the canvas's own pixels.
+  const traced = recorder();
+  const asked = [];
+  paint(traced, scene, { scale: 0.5, font, grain: null, written: (op, at, pixels) => (asked.push({ text: op.text, at, pixels }), { image: { traced: true }, x: 90, y: 410, w: 320, h: 130 }) });
+  assert.deepEqual(asked, [{ text: "draw", at: 0.5, pixels: 0.5 }]);
+  const drawn = traced.calls.find((c) => c.kind === "drawImage");
+  assert.ok(drawn && drawn.image.traced, "the traced word was not drawn");
+  assert.equal(traced.calls.filter((c) => c.kind === "clip").length, 0, "a traced word was wiped too");
   const ctx = recorder();
   paint(ctx, scene, { scale: 1, font, grain: null });
   const texts = ctx.calls.filter((c) => c.kind === "fillText");
@@ -2699,8 +2809,34 @@ check("a video is ProRes 4444 with its alpha in a QuickTime movie with no photo,
   for (const part of ["prores_ks", "yuva444p10le", "apl0"]) assert.ok(mov.includes(part), part);
   assert.equal(mov[mov.indexOf("-profile:v") + 1], "4");
   assert.equal(mov.at(-1), "out.mov");
-  const mp4 = VID.encodeArgs("mp4", 30, "out.mp4");
+  const mp4 = VID.encodeArgs("mp4", 30, "out.mp4", 1.5);
   for (const part of ["libx264", "yuv420p", "+faststart"]) assert.ok(mp4.includes(part), part);
+  assert.equal(mp4[mp4.indexOf("-vf") + 1], "tpad=stop_mode=clone:stop_duration=1.5", "an MP4's held end is not padded");
+  // The held end of a movie: one frame, the same ProRes, repeated by the join.
+  const hold = VID.holdArgs(30, "hold.png", "hold.mov");
+  assert.equal(hold[hold.indexOf("-frames:v") + 1], "1");
+  assert.equal(hold[hold.indexOf("-c:v") + 1], mov[mov.indexOf("-c:v") + 1]);
+  assert.equal(hold[hold.indexOf("-qscale:v") + 1], mov[mov.indexOf("-qscale:v") + 1]);
+  assert.equal(VID.joinList(["run0.mov", "run1.mov"], "hold.mov", 3), "file 'run0.mov'\nfile 'run1.mov'\nfile 'hold.mov'\nfile 'hold.mov'\nfile 'hold.mov'\n");
+  assert.equal(VID.joinList(["run0.mov"], null, 3), "file 'run0.mov'\n");
+  // Joined by copying, every frame then on its own thirtieth of a second.
+  const join = VID.joinArgs("runs.txt", "out.mov");
+  assert.deepEqual(join.slice(0, 8), ["-f", "concat", "-safe", "0", "-i", "runs.txt", "-c", "copy"]);
+  assert.equal(join[join.indexOf("-bsf:v") + 1], "setts=ts=N/(30*TB)");
+  assert.ok(!join.includes("-video_track_timescale"), "the movie is given a clock its ticks are not on");
+  assert.equal(join.at(-1), "out.mov");
+  // Frames shared out in runs that cover each frame once, in order, a run each to as many encoders as there are cores to spare.
+  for (const [count, runs] of [[106, 4], [61, 3], [12, 1], [7, 2]]) {
+    const out = VID.runsOf(count, runs);
+    assert.equal(out[0].start, 0);
+    assert.equal(out.at(-1).end, count);
+    for (let i = 1; i < out.length; i += 1) assert.equal(out[i].start, out[i - 1].end);
+    assert.ok(Math.max(...out.map((r) => r.end - r.start)) - Math.min(...out.map((r) => r.end - r.start)) <= 1);
+  }
+  assert.equal(VID.encoderCount(8, false, 106), 4);
+  assert.equal(VID.encoderCount(8, true, 106), 2, "a phone shares a video among more than two");
+  assert.equal(VID.encoderCount(2, false, 106), 1);
+  assert.equal(VID.encoderCount(16, false, 30), 2, "a short video is cut finer than a run's worth");
   assert.equal(VID.frameName(0), "f00000.png");
   assert.equal(VID.frameName(123), "f00123.png");
   assert.equal(VID.VIDEO_TYPE.mov, "video/quicktime");

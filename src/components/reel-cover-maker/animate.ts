@@ -6,22 +6,24 @@
  * still at any moment is the same still every time.
  *
  * - Stickery: Type and draw (each sticker laid, its plain words typed and
- *   its funky ones drawn: a script word written on along its slant, paste
- *   piped bead by bead), Pop (each sticker springs on), Rise (each floats
- *   up into place).
+ *   its funky ones written: a script word traced stroke by stroke as a pen
+ *   would, write-on.ts, paste piped bead by bead), and Slap (each sticker
+ *   thrown on from beyond the cover, big as if near, pressed flat where it
+ *   lands, the ones already down jolting).
  * - Pasty and Pasty Flat: Written live (letter after letter, each stroke
- *   piped as if by hand), All at once (every letter piped together), Pop
- *   (letter by letter, each swelling into place).
+ *   piped as if by hand). All at once and Pop were cut (the owner, 7 Oct:
+ *   "so bad"), as were Stickery's Pop and Rise.
  * - Editorial: Word by word, Typewriter, Line by line.
  * - Echo: Ripple (the words, then each echo out from them in turn), Spread
  *   (the echoes slide out from the words to their places), Cascade (every
  *   line drops in, top to bottom).
  * - Mono: Typewriter (its cursor typing), Word by word.
  *
- * An effect is worked out where it is seen (a sticker springs about its own
+ * An effect is worked out where it is seen (a sticker lands about its own
  * middle on the cover) and carried into each op's own frame, through the
  * turns and the owner's placement it is drawn inside; paste is moved bead
- * by bead, since its layer is made for where it lies.
+ * by bead, since its layer is made for where it lies. Any animation runs
+ * at a speed of its own (half to twice as fast), its times scaled.
  *
  * Pure: the tests run it.
  */
@@ -33,7 +35,7 @@ import { isBackdrop, pasteKey, type LiquidOp, type Op, type Scene, type StyleId 
 import { insidePolygon, polygonBounds, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { graphemes } from "@/components/reel-cover-maker/title";
 
-export type AnimationId = "type-draw" | "pop" | "rise" | "written" | "together" | "swell" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade";
+export type AnimationId = "type-draw" | "slap" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade";
 
 export interface Animation {
   id: AnimationId;
@@ -44,19 +46,10 @@ export interface Animation {
 export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
   stickery: [
     { id: "type-draw", name: "Type and draw" },
-    { id: "pop", name: "Pop" },
-    { id: "rise", name: "Rise" },
+    { id: "slap", name: "Slap" },
   ],
-  pasty: [
-    { id: "written", name: "Written live" },
-    { id: "together", name: "All at once" },
-    { id: "swell", name: "Pop" },
-  ],
-  "pasty-flat": [
-    { id: "written", name: "Written live" },
-    { id: "together", name: "All at once" },
-    { id: "swell", name: "Pop" },
-  ],
+  pasty: [{ id: "written", name: "Written live" }],
+  "pasty-flat": [{ id: "written", name: "Written live" }],
   editorial: [
     { id: "words", name: "Word by word" },
     { id: "typewriter", name: "Typewriter" },
@@ -85,8 +78,17 @@ export function offers(style: StyleId, id: unknown): id is AnimationId {
 /** How long the cover stands, finished, at the end of a video: long enough to read before an editor's next cut. */
 export const HOLD = 1.5;
 
-/** The longest the motion may run: anything set out longer is quickened to fit. */
+/** The longest the motion may run at its own speed: anything set out longer is quickened to fit. */
 export const LONGEST = 5;
+
+/** How fast an animation may be run, its own speed times this: half as fast to twice. */
+export const SLOWEST = 0.5;
+export const FASTEST = 2;
+
+/** A speed asked for, held to what an animation may run at. */
+export function speedOf(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(FASTEST, Math.max(SLOWEST, value)) : 1;
+}
 
 export interface Plan {
   /** How long the motion runs, in seconds; from then on the cover stands as it is. */
@@ -99,6 +101,8 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 /** How far through the stretch from `start`, `length` long, the time `t` is. */
 const span = (t: number, start: number, length: number) => (length <= 0 ? (t >= start ? 1 : 0) : clamp01((t - start) / length));
 const easeOut = (u: number) => 1 - (1 - clamp01(u)) ** 3;
+/** Quicker and quicker, as a hand slapping a sticker down. */
+const easeIn = (u: number) => clamp01(u) ** 2.4;
 /** Slow off, quick through the middle, slow to stop: a hand writing a word. */
 const easeInOut = (u: number) => {
   const x = clamp01(u);
@@ -110,17 +114,29 @@ function typedAt(t: number, start: number, length: number, count: number): numbe
   return Math.min(count, Math.floor(span(t, start, length) * count) + 1);
 }
 
-/** Past the mark and back, as a thing thrown on settles. */
-const springy = (u: number) => {
-  const x = clamp01(u) - 1;
-  return 1 + 2.4 * x ** 3 + 1.4 * x ** 2;
-};
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
 /** Scaled by `s` about (cx, cy), then moved by (dx, dy). */
 function about(cx: number, cy: number, s: number, dx = 0, dy = 0): Matrix {
   return [s, 0, 0, s, cx - s * cx + dx, cy - s * cy + dy];
+}
+
+/** Scaled by `s` and turned by `angle` about `centre`, then moved by (dx, dy): a sticker in the air. */
+function thrown(centre: Point, s: number, angle: number, dx: number, dy: number): Matrix {
+  const a = s * Math.cos(angle);
+  const b = s * Math.sin(angle);
+  return [a, b, -b, a, centre.x + dx - (a * centre.x - b * centre.y), centre.y + dy - (b * centre.x + a * centre.y)];
+}
+
+/** How far a sticker already down is knocked, at `t`, by others landing at `landings`: a quick shudder each, gone in `length`. */
+function joltAt(t: number, landings: readonly number[], length: number, size: number): number {
+  let dy = 0;
+  for (const at of landings) {
+    const w = span(t, at, length);
+    if (w > 0 && w < 1) dy += size * (1 - w) ** 2 * Math.sin(3 * Math.PI * w);
+  }
+  return dy;
 }
 
 /** A canvas's rotation by `angle` about (cx, cy), as a matrix. */
@@ -152,7 +168,7 @@ function leavesOf(ops: Op[], world: Matrix = IDENTITY, out: Leaf[] = []): Leaf[]
   for (const op of ops) {
     if (op.kind === "turn") leavesOf(op.ops, multiply(world, turnMatrix(op.cx, op.cy, op.angle)), out);
     else if (op.kind === "matrix") leavesOf(op.ops, multiply(world, op.m), out);
-    else if (op.kind === "fade" || op.kind === "wipe") leavesOf(op.ops, world, out);
+    else if (op.kind === "fade" || op.kind === "write") leavesOf(op.ops, world, out);
     else if (!isBackdrop(op)) out.push({ op, world });
   }
   return out;
@@ -207,7 +223,7 @@ function looked(leaf: Leaf, look: Look | null, measurer: Measurer): Op | null {
     if (look.drawn <= 0) return null;
     if (look.drawn < 1) {
       const box = textBox(leaf.op, measurer);
-      op = { kind: "wipe", ...box, at: look.drawn, ops: [op] };
+      op = { kind: "write", ...box, at: look.drawn, ops: [op] };
     }
   }
   if (look.move) {
@@ -343,11 +359,10 @@ function fitted(natural: number): number {
 }
 
 /** A thing faded and sprung or floated in, `start` on, over `length`: its look at `t`. */
-function arrive(kind: "pop" | "rise" | "drop" | "fade" | "settle", centre: Point, start: number, length: number, t: number, size: number): Look | null {
+function arrive(kind: "rise" | "drop" | "fade" | "settle", centre: Point, start: number, length: number, t: number, size: number): Look | null {
   const u = span(t, start, length);
   if (u >= 1) return null;
   const alpha = clamp01(u / 0.45);
-  if (kind === "pop") return { alpha, move: about(centre.x, centre.y, 0.35 + 0.65 * springy(u)) };
   if (kind === "settle") return { alpha, move: about(centre.x, centre.y, 0.9 + 0.1 * easeOut(u)) };
   if (kind === "rise") return { alpha, move: about(centre.x, centre.y, 1, 0, size * (1 - easeOut(u))) };
   if (kind === "drop") return { alpha, move: about(centre.x, centre.y, 1, 0, -size * (1 - easeOut(u))) };
@@ -369,7 +384,7 @@ function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
         return out;
       });
       const box = polygonBounds(polygons);
-      return { leaf: l, polygons, centre: centreOf(box), height: box.h };
+      return { leaf: l, polygons, centre: centreOf(box), height: box.h, reach: Math.hypot(box.w, box.h) / 2 };
     });
   const owner = (p: Point): number => {
     const inside = stickers.findIndex((s) => s.polygons.some((poly) => insidePolygon(poly, p.x, p.y)));
@@ -430,8 +445,9 @@ function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
         const funky = op.face.startsWith("funky-");
         const at = t;
         if (funky) {
-          const length = 0.28 + 0.07 * count;
-          sheet.set(op, (now) => (now >= (at + length) * k ? null : { drawn: easeInOut(span(now, at * k, length * k)) }));
+          // Written at a hand's even pace, slowing only to start and stop.
+          const length = 0.34 + 0.085 * count;
+          sheet.set(op, (now) => (now >= (at + length) * k ? null : { drawn: 0.15 * easeInOut(span(now, at * k, length * k)) + 0.85 * span(now, at * k, length * k) }));
           t += length + 0.05;
         } else {
           const each = 0.045;
@@ -452,14 +468,37 @@ function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
     k = fitted(natural);
     for (const p of plan) p.run(k);
   } else {
-    // Each sticker whole, one after another: sprung on, or floated up.
-    const each = id === "pop" ? 0.5 : 0.62;
-    const gap = id === "pop" ? 0.17 : 0.2;
-    natural = stickers.length ? (stickers.length - 1) * gap + each : 0;
+    // Slap: each sticker whole, thrown on from beyond the cover in turn, big
+    // as if near the eye, turning flat as it comes, pressed down where it
+    // lands; every one already down jolts at each landing after it.
+    const fly = 0.36;
+    const press = 0.26;
+    const gap = 0.32;
+    natural = stickers.length ? (stickers.length - 1) * gap + fly + press : 0;
     k = fitted(natural);
+    const landings = stickers.map((_, si) => (si * gap + fly) * k);
     stickers.forEach((s, si) => {
       const at = si * gap * k;
-      const look = (now: number) => arrive(id === "pop" ? "pop" : "rise", s.centre, at, each * k, now, s.height * 0.18);
+      // From wholly below the cover, from one side and then the other, as a right hand and a left would throw.
+      const side = si % 2 ? 1 : -1;
+      const scale = 2.5;
+      const from = { dx: side * scene.width * 0.38, dy: scene.height - s.centre.y + s.reach * scale * 1.05, angle: side * 0.42, scale };
+      const look = (now: number): Look | null => {
+        if (now < at) return { alpha: 0 };
+        const u = span(now, at, fly * k);
+        if (u < 1) {
+          const e = easeIn(u);
+          return { move: thrown(s.centre, from.scale + (1 - from.scale) * e, from.angle * (1 - e), from.dx * (1 - e), from.dy * (1 - e)) };
+        }
+        const v = span(now, at + fly * k, press * k);
+        if (v < 1) {
+          // Pressed flat on landing, then a little proud of it, then still.
+          const squash = 1 - 0.075 * (1 - v) ** 2 * Math.cos(3 * Math.PI * v);
+          return { move: about(s.centre.x, s.centre.y, squash) };
+        }
+        const jolt = joltAt(now, landings.slice(si + 1), 0.2 * k, s.height * 0.035);
+        return jolt ? { move: about(s.centre.x, s.centre.y, 1, 0, jolt) } : null;
+      };
       sheet.set(s.leaf.op, look);
       for (const w of words) if (w.on === si) sheet.set(w.leaf.op, look);
       paste?.chains.forEach((_, i) => {
@@ -487,64 +526,28 @@ function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   };
 }
 
-/** Pasty and Pasty Flat: the paste piped, or swelling, letter by letter; any letter without strokes faded in at the end. */
-function pasty(scene: Scene, id: AnimationId): Built {
+/** Pasty and Pasty Flat: the paste piped letter by letter, as written; its droplets fall in after, and any letter without strokes fades in at the end. */
+function pasty(scene: Scene): Built {
   const paste = scene.ops.find((op): op is LiquidOp => op.kind === "liquid") ?? null;
   if (!paste) return { duration: 0, look: () => null };
   const radius = typicalRadius(paste);
   const letters = paste.chains.slice(0, paste.letters).map((_, i) => i);
-  const glyphs = [...new Set(letters.map((i) => paste.glyphOf[i] ?? i))];
-  const byGlyph = new Map<number, number[]>();
-  for (const i of letters) {
-    const g = paste.glyphOf[i] ?? i;
-    byGlyph.set(g, [...(byGlyph.get(g) ?? []), i]);
-  }
+  const glyphs = new Set(letters.map((i) => paste.glyphOf[i] ?? i)).size;
   const drops = paste.chains.map((_, i) => i).filter((i) => i >= paste.letters);
   const times: { start: number; length: number; move?: (t: number) => Matrix | undefined }[] = [];
-  let natural: number;
-  if (id === "written") {
-    natural = Math.min(4.2, Math.max(1.4, 0.7 + 0.16 * glyphs.length)) + (drops.length ? 0.35 : 0);
-  } else if (id === "together") {
-    natural = 1.7 + (drops.length ? 0.35 : 0);
-  } else {
-    natural = (glyphs.length - 1) * 0.07 + 0.5 + (drops.length ? 0.3 : 0);
-  }
+  const writing = Math.min(4.2, Math.max(1.4, 0.7 + 0.16 * glyphs));
+  const natural = writing + (drops.length ? 0.35 : 0);
   const k = fitted(natural);
-  let writtenEnd: number;
-  if (id === "written") {
-    const length = natural - (drops.length ? 0.35 : 0);
-    const { piping, end } = pipeInTurn(paste.chains, letters, 0, length * k, paste.glyphOf);
-    for (const i of letters) times[i] = { start: piping.start[i], length: piping.length[i] };
-    writtenEnd = end;
-  } else if (id === "together") {
-    for (const indices of byGlyph.values()) {
-      const { piping } = pipeInTurn(paste.chains, indices, 0, 1.7 * k);
-      for (const i of indices) times[i] = { start: piping.start[i], length: piping.length[i] };
-    }
-    writtenEnd = 1.7 * k;
-  } else {
-    glyphs.forEach((g, n) => {
-      const indices = byGlyph.get(g) ?? [];
-      const beads = indices.flatMap((i) => paste.chains[i]);
-      const xs = beads.map((b) => b.x);
-      const ys = beads.map((b) => b.y);
-      const centre = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
-      const at = n * 0.07 * k;
-      for (const i of indices) {
-        times[i] = { start: at, length: 0, move: (t) => (t >= at + 0.5 * k ? undefined : about(centre.x, centre.y, 0.2 + 0.8 * springy(span(t, at, 0.5 * k)))) };
-      }
-    });
-    writtenEnd = ((glyphs.length - 1) * 0.07 + 0.5) * k;
-  }
+  const { piping, end: writtenEnd } = pipeInTurn(paste.chains, letters, 0, writing * k, paste.glyphOf);
+  for (const i of letters) times[i] = { start: piping.start[i], length: piping.length[i] };
   drops.forEach((i, n) => {
     const at = writtenEnd + n * 0.025 * k;
     const bead = paste.chains[i][0];
     times[i] = { start: at, length: 0, move: (t) => (t >= at + 0.25 * k || !bead ? undefined : about(bead.x, bead.y, Math.max(0.05, easeOut(span(t, at, 0.25 * k))))) };
   });
-  const missingAt = writtenEnd;
   return {
     duration: natural * k,
-    look: (leaf, t) => (leaf.op.kind === "text" ? (t >= missingAt + 0.3 ? null : { alpha: easeOut(span(t, missingAt, 0.3)) }) : null),
+    look: (leaf, t) => (leaf.op.kind === "text" ? (t >= writtenEnd + 0.3 ? null : { alpha: easeOut(span(t, writtenEnd, 0.3)) }) : null),
     paste: (op, t) =>
       pasteAt(op, radius, (i) => {
         const c = times[i];
@@ -711,21 +714,26 @@ function echo(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   return { duration: natural * k, look: (leaf, t) => sheet.get(leaf.op)?.(t) ?? null };
 }
 
-/** The animation `id` of a cover's scene. The style is read from what the scene holds, as each style's ops are its own. */
-export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Measurer): Plan {
+/**
+ * The animation `id` of a cover's scene in `style`, at `speed` (1 its own,
+ * 2 twice as fast, 0.5 half): every time in it divided by the speed.
+ */
+export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Measurer, speed = 1): Plan {
+  const pace = speedOf(speed);
   const built: Built =
     style === "stickery"
       ? stickery(scene, id, measurer)
       : style === "pasty" || style === "pasty-flat"
-        ? pasty(scene, id)
+        ? pasty(scene)
         : style === "echo"
           ? echo(scene, id, measurer)
           : typeset(scene, id, measurer);
   const leafWorld = new Map<Op, Matrix>();
   for (const leaf of leavesOf(scene.ops)) leafWorld.set(leaf.op, leaf.world);
   return {
-    duration: built.duration,
-    frame(t: number): Scene {
+    duration: built.duration / pace,
+    frame(at: number): Scene {
+      const t = at * pace;
       if (t >= built.duration) return scene;
       const ops = mapLeaves(scene.ops, (op) => {
         const leaf: Leaf = { op, world: leafWorld.get(op) ?? IDENTITY };

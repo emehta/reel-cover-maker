@@ -120,11 +120,12 @@ export type Op =
   /** Ops drawn see-through, `alpha` of their own: an animation's frame, fading them in. */
   | { kind: "fade"; alpha: number; ops: Op[] }
   /**
-   * Ops shown left of an edge that leans as handwriting does and sweeps
-   * across the box as `at` goes from 0 to 1, softly, so a word is drawn on
-   * as if written: an animation's frame (animate.ts).
+   * A word written on, `at` of the way, as a pen would trace it (write-on.ts),
+   * in the box its ink fills: an animation's frame (animate.ts). Where the
+   * page cannot trace it, shown left of an edge that leans as handwriting
+   * does and sweeps across the box.
    */
-  | { kind: "wipe"; x: number; y: number; w: number; h: number; at: number; ops: Op[] };
+  | { kind: "write"; x: number; y: number; w: number; h: number; at: number; ops: Op[] };
 
 export interface Scene {
   width: number;
@@ -1550,7 +1551,7 @@ export function liquidOps(scene: Scene): LiquidOp[] {
   const walk = (ops: Op[]) => {
     for (const op of ops) {
       if (op.kind === "liquid") out.push(op);
-      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "wipe") walk(op.ops);
+      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write") walk(op.ops);
     }
   };
   walk(scene.ops);

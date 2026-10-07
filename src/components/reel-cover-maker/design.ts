@@ -13,7 +13,7 @@
  * the default rather than breaking the page.
  */
 
-import { animationsFor, offers, type AnimationId } from "@/components/reel-cover-maker/animate";
+import { animationsFor, offers, speedOf, type AnimationId } from "@/components/reel-cover-maker/animate";
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
 import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, isTextMode, type Ground, type TextMode } from "@/components/reel-cover-maker/palettes";
@@ -57,6 +57,8 @@ export interface Design {
   animated: boolean;
   /** The animation picked for each style; a style not named is on its first. */
   animations: Partial<Record<StyleId, AnimationId>>;
+  /** How fast it plays, times its own: half as fast to twice (the card's throttle). */
+  animationSpeed: number;
 }
 
 export const STORAGE_KEY = "reel-cover-maker:v1";
@@ -89,6 +91,7 @@ export const DEFAULT_DESIGN: Design = {
   place: HOME,
   animated: false,
   animations: {},
+  animationSpeed: 1,
 };
 
 /** The animation a design's style is on: the one picked for it, else the style's first. */
@@ -142,6 +145,7 @@ export function readDesign(raw: string | null): Design {
     place: readPlace(stored.place),
     animated: stored.animated === true,
     animations: readAnimations(stored.animations),
+    animationSpeed: speedOf(stored.animationSpeed),
   };
 }
 

@@ -65,6 +65,13 @@ export interface PaintOptions {
   liquid?: (op: LiquidOp, part: "paste" | "shadow") => { image: CanvasImageSource; sx: number; sy: number; w: number; h: number; x: number; y: number; dw?: number; dh?: number } | null;
   /** The photo behind the letters and the window of it that covers the picture, in its own pixels; mirrored if `flip`. */
   photo?: { image: CanvasImageSource; sx: number; sy: number; sw: number; sh: number; flip: boolean } | null;
+  /**
+   * A word written on part way, traced as a pen would write it (writer.ts),
+   * drawn for `pixelScale` canvas pixels to the picture's: a picture and
+   * where it goes in the word's own frame. Absent or null, the word is
+   * wiped on instead.
+   */
+  written?: (op: Extract<Op, { kind: "text" }>, at: number, pixelScale: number) => { image: CanvasImageSource; x: number; y: number; w: number; h: number } | null;
 }
 
 function roundedRect(ctx: PaintTarget, x: number, y: number, w: number, h: number, radius: number) {
@@ -187,9 +194,25 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
       for (const inner of op.ops) draw(ctx, scene, inner, options);
       ctx.restore();
       return;
-    case "wipe":
+    case "write": {
+      const word = op.ops.length === 1 && op.ops[0].kind === "text" ? op.ops[0] : null;
+      const made = word && op.at > 0 && op.at < 1 ? options.written?.(word, op.at, pixelsPerUnit(ctx, options.scale)) : null;
+      if (word && made) {
+        ctx.save();
+        ctx.globalAlpha *= word.alpha ?? 1;
+        ctx.drawImage(made.image, made.x, made.y, made.w, made.h);
+        ctx.restore();
+        return;
+      }
       wipe(ctx, scene, op, options);
+    }
   }
+}
+
+/** How many canvas pixels the context draws for one of the picture's here, every turn and scale it is under taken in. */
+function pixelsPerUnit(ctx: PaintTarget, fallback: number): number {
+  const m = (ctx as Partial<Pick<CanvasRenderingContext2D, "getTransform">>).getTransform?.();
+  return m ? Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) : fallback;
 }
 
 /** How far a wipe's edge leans, across for each pixel down: handwriting's slant, about 15 degrees. */
@@ -199,12 +222,12 @@ export const WIPE_LEAN = 0.27;
 const WIPE_BANDS = 8;
 
 /**
- * A wipe: the ops shown left of a leaning edge, solid behind a soft band
- * that runs from solid to clear. Drawn in clipped bands that never overlap,
+ * A word wiped on where it cannot be traced: the ops shown left of a
+ * leaning edge, solid behind a soft band that runs from solid to clear. Drawn in clipped bands that never overlap,
  * each once at its own alpha, so the edge is exact and needs no second
  * canvas.
  */
-function wipe(ctx: PaintTarget, scene: Scene, op: Extract<Op, { kind: "wipe" }>, options: PaintOptions) {
+function wipe(ctx: PaintTarget, scene: Scene, op: Extract<Op, { kind: "write" }>, options: PaintOptions) {
   if (op.at <= 0) return;
   if (op.at >= 1) {
     for (const inner of op.ops) draw(ctx, scene, inner, options);

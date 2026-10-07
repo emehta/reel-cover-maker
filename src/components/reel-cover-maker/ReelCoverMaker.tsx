@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DeviceMobile, DownloadSimple, Moon, Shuffle, Sparkle, Sun } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DeviceMobile, DownloadSimple, Export, Moon, Shuffle, Sparkle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { sliderColour } from "@/components/reel-cover-maker/colour";
@@ -24,14 +24,14 @@ import { tilePixels } from "@/components/reel-cover-maker/phone";
 import { DEFAULT_ADJUST, DEFAULT_FRAME, keptSize, sourceRect } from "@/components/reel-cover-maker/photo";
 import { adjustedPhoto } from "@/components/reel-cover-maker/photo-gl";
 import { forgetPhoto, loadPhoto, savePhoto } from "@/components/reel-cover-maker/photo-store";
-import { MotionCanvas, PLAY_FPS, useMotion, type MotionRequest } from "@/components/reel-cover-maker/Motion";
+import { PlayCanvas, usePaste, type PlayRequest } from "@/components/reel-cover-maker/Motion";
 import { PhoneView } from "@/components/reel-cover-maker/PhoneView";
 import { PhotoControls } from "@/components/reel-cover-maker/PhotoControls";
 import { HOME, invert, isHome, keepOnCover, multiply, placeMatrix, type Matrix, type Place, type Point } from "@/components/reel-cover-maker/place";
 import { textColour, type TextMode } from "@/components/reel-cover-maker/palettes";
 import { isApple, subscribeNothing } from "@/components/reel-cover-maker/platform";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, videoName, type SaveMethod } from "@/components/reel-cover-maker/save";
-import { VIDEO_FPS, videoMaker, type VideoKind } from "@/components/reel-cover-maker/video";
+import { prepareVideo, VIDEO_FPS, videoJob, type VideoKind } from "@/components/reel-cover-maker/video";
 import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers, type LiquidLayer } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
 import {
@@ -192,21 +192,11 @@ function planFor(scene: Scene, style: Design["style"], id: AnimationId, measurer
   return made;
 }
 
-/** The most a playing animation may hold, in bytes: every frame is kept as a picture. */
-const MOTION_BUDGET = 110 * 1024 * 1024;
-
 /** How soon after a video is begun a press on its button stops it: sooner is a double click's second half. */
 const STOP_AFTER_MS = 800;
 
-/** A tile's width in the Animate card, in canvas pixels: half again its size on screen, sharp enough while it moves. */
-const CARD_WIDTH = 270;
-
-/** A playing animation's width, in canvas pixels: as sharp as the preview shows it, within the budget for all its frames. */
-function motionWidth(shown: number, format: Format, duration: number): number {
-  const frames = Math.ceil(duration * PLAY_FPS) + 1;
-  const most = Math.sqrt(MOTION_BUDGET / (4 * frames * (format.height / format.width)));
-  return Math.max(160, Math.round(Math.min(shown, 720, most)));
-}
+/** A tile's width in the Animate card, in canvas pixels: twice its size on screen, as sharp as the cover. */
+const CARD_WIDTH = 440;
 
 /** Each scene's letters as last placed: placing makes the paste's beads again, so it is done once a placement. */
 const placedScenes = new WeakMap<Scene, { key: string; scene: Scene }>();
@@ -584,21 +574,22 @@ export default function ReelCoverMaker() {
 
   /** The animation the cover is on, picked or its style's first, whether or not it is animated. */
   const animation = animationOf(design);
-  const motionPlan = design.animated && scene && measurer ? planFor(scene, design.style, animation, measurer) : null;
-  const motionTarget = motionPlan ? wholeCover(format, motionWidth(shownWidth, format, motionPlan.duration)) : null;
-  // Drawn while the letters are not being moved: pressed, they stand still to be placed.
-  const motionRequest: MotionRequest | null =
-    motionPlan && motionTarget && scene && photoChecked && !selected
+  const speed = design.animationSpeed;
+  /** The canvas the animation plays on over the preview: its pixels on screen, so it is as sharp as the cover. */
+  const playTarget = wholeCover(format, Math.max(240, Math.min(format.width, shownWidth)));
+  // Played while the letters are not being moved: pressed, they stand still to be placed.
+  const playRequest: PlayRequest | null =
+    design.animated && scene && measurer && photoChecked && !selected
       ? {
-          key: `${key}|${animation}|${motionTarget.width}`,
-          plan: motionPlan,
-          setting: () => ({ target: motionTarget, font: fontCss, grain: grain(), photo: photoForRef.current(scene) }),
+          key: `${key}|${animation}`,
+          plan: planFor(scene, design.style, animation, measurer),
+          look: () => ({ font: fontCss, grain: grain(), photo: photoForRef.current(scene) }),
           slot: "motion-main",
         }
       : null;
-  const motion = useMotion(motionRequest);
-  /** The animation playing on the preview: only one drawn for the cover as it is now. */
-  const playing = motion && motionRequest && motion.key === motionRequest.key ? motion : null;
+  const paste = usePaste(playRequest, playRequest ? playTarget : null);
+  /** The animation playing on the preview, once any paste it holds is made for the cover as it is now. */
+  const playing = playRequest && paste ? { request: playRequest, paste } : null;
 
   const plainFace = design.plainFace;
   const funkyFace = letteringFace(design.lettering);
@@ -818,6 +809,11 @@ export default function ReelCoverMaker() {
     if (videoFile && dialog && !dialog.open) dialog.showModal();
   }, [videoFile]);
 
+  // Animated, or about to be: the video's encoder fetched and compiled now, so Export does not wait on it.
+  useEffect(() => {
+    if (design.animated || animateOpen) prepareVideo();
+  }, [design.animated, animateOpen]);
+
   // The preview's width on screen, followed: a playing animation is drawn as sharp as it is shown, and no sharper.
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -855,7 +851,7 @@ export default function ReelCoverMaker() {
       return;
     }
     if (!scene || !measurer || !filled) return;
-    const full = planFor(scene, design.style, animation, measurer);
+    const full = animationPlan(scene, design.style, animation, measurer, speed);
     const kind: VideoKind = photo ? "mp4" : "mov";
     const fileTitle = videoName(design.text, design.format, kind);
     const controller = new AbortController();
@@ -863,30 +859,26 @@ export default function ReelCoverMaker() {
     makingRef.current = job;
     setError(null);
     setMaking(0);
-    let maker: Awaited<ReturnType<typeof videoMaker>> | null = null;
-    // Stopped while it encodes: the encoder let go at once.
+    let maker: Awaited<ReturnType<typeof videoJob>> | null = null;
+    // Stopped while it encodes: the encoders let go at once.
     controller.signal.addEventListener("abort", () => maker?.close(), { once: true });
     try {
-      maker = await videoMaker(kind);
+      const times = frameTimes(full.duration, VIDEO_FPS);
+      maker = await videoJob(kind, times.length, holdFrames(VIDEO_FPS), { cores: navigator.hardwareConcurrency || 4, touch: window.matchMedia(TOUCH_QUERY).matches });
       if (controller.signal.aborted) throw new DOMException("Called off.", "AbortError");
       const encoder = maker;
       setMaking(0.04);
-      const times = frameTimes(full.duration, VIDEO_FPS);
-      const hold = holdFrames(VIDEO_FPS);
+      // The frames, each handed on as it is drawn: a run is encoded as soon as its last frame is in.
       await drawFrames(full, times, { target: fullSize(scene), font: fontCss, grain: grain(), photo: photoFor(scene) }, {
         slot: "video",
         use: "main",
         signal: controller.signal,
         onFrame: async (frame, i) => {
-          const png = await pngOf(frame);
-          await encoder.add(png);
-          // The finished cover, held: the last frame again and again.
-          if (i === times.length - 1) for (let h = 0; h < hold; h += 1) await encoder.add(png);
-          setMaking(0.04 + 0.31 * ((i + 1) / times.length));
+          await encoder.add(await pngOf(frame));
+          setMaking(0.04 + 0.56 * ((i + 1) / times.length));
         },
       });
-      // Encoding takes the most time: the most of the bar.
-      const blob = await encoder.finish((done) => setMaking(0.35 + 0.65 * done));
+      const blob = await encoder.finish((done) => setMaking(Math.max(0.6, 0.6 + 0.4 * done)));
       if (controller.signal.aborted) return;
       const file = new File([blob], fileTitle, { type: blob.type });
       if (method === "download") download(file);
@@ -975,9 +967,16 @@ export default function ReelCoverMaker() {
 
   const stickery = design.style === "stickery";
   const frameStyle = { "--rcm-ratio": `${format.width} / ${format.height}`, "--rcm-ratio-n": format.width / format.height } as CSSProperties;
-  const saveLabel = design.animated ? (method === "share" ? "Save video" : "Download video") : method === "share" ? "Save image" : "Download";
-  /** The profile grid's window of each frame of a playing animation, for the phone view's post. */
-  const motionCrop = playing && format.grid ? { x: (format.grid.x * playing.frames[0].width) / format.width, y: (format.grid.y * playing.frames[0].width) / format.width, w: (format.grid.w * playing.frames[0].width) / format.width, h: (format.grid.h * playing.frames[0].width) / format.width } : undefined;
+  /** What Export makes: a PNG, or animated, a see-through MOV (an MP4 over a photo). */
+  const exportKind = design.animated ? (photo ? "MP4" : "MOV") : "PNG";
+  const saveLabel = method === "share" ? "Save" : "Export";
+  const exportDetail = !filled
+    ? "Type a title first"
+    : design.animated
+      ? photo
+        ? `MP4 video, ${format.width} × ${format.height}`
+        : `MOV video, ProRes 4444 with no background, ${format.width} × ${format.height}`
+      : `PNG, ${format.width} × ${format.height}${photo ? "" : ", no background"}`;
   const mod = apple ? "⌘" : "Ctrl+";
   const dark = design.ground === "dark";
 
@@ -991,36 +990,7 @@ export default function ReelCoverMaker() {
           {APP_NAME}
         </h1>
         <div className={styles.actions}>
-          {error && (
-            <p className={styles.error} role="alert">
-              {error}
-            </p>
-          )}
           <Shortcuts apple={apple} saveLabel={saveLabel} />
-          <button
-            type="button"
-            className={styles.save}
-            onClick={() => void save()}
-            disabled={making === null && (!scene || !filled || !pictureReady)}
-            aria-busy={making !== null || (filled && !pictureReady)}
-            aria-label={making !== null ? "Stop making the video" : undefined}
-            data-making={making !== null || undefined}
-            style={{ "--rcm-made": `${Math.round((making ?? 0) * 100)}%` } as CSSProperties}
-            title={
-              making !== null
-                ? "Press to stop"
-                : !filled
-                  ? "Type a title first"
-                  : design.animated
-                    ? photo
-                      ? `MP4 video, ${format.width} by ${format.height}`
-                      : `MOV video with no background, ${format.width} by ${format.height}`
-                    : `PNG, ${format.width} by ${format.height}`
-            }
-          >
-            <DownloadSimple size={18} weight="bold" aria-hidden="true" />
-            {making !== null ? `Making video ${Math.round(making * 100)}%` : saveLabel}
-          </button>
         </div>
       </header>
 
@@ -1232,7 +1202,7 @@ export default function ReelCoverMaker() {
                 aria-label={`${format.label} preview`}
               />
               {/* The animation playing over the cover, which stays drawn under it for its file; gone while the letters are pressed, to be placed. */}
-              {playing && <MotionCanvas motion={playing} className={`${styles.canvas} ${styles.motion}`} />}
+              {playing && <PlayCanvas request={playing.request} speed={speed} paste={playing.paste} target={playTarget} className={`${styles.canvas} ${styles.motion}`} />}
 
               {showGrid && <GridMask format={format} />}
               {scene && base && (
@@ -1264,7 +1234,13 @@ export default function ReelCoverMaker() {
               <PhoneView
                 reel={format.id === "reel"}
                 ground={design.ground}
-                tile={playing ? <MotionCanvas motion={playing} crop={motionCrop} className={styles.thumbCanvas} /> : <SceneCanvas scene={scene} target={gridWindow(format, tilePixels())} slot="phone" photoFor={photoFor} />}
+                tile={
+                  playing ? (
+                    <PlayCanvas request={playing.request} speed={speed} paste={playing.paste} target={gridWindow(format, tilePixels())} className={styles.thumbCanvas} />
+                  ) : (
+                    <SceneCanvas scene={scene} target={gridWindow(format, tilePixels())} slot="phone" photoFor={photoFor} />
+                  )
+                }
               >
                 {dropping && (
                   <div className={styles.dropHint} aria-hidden="true">
@@ -1303,6 +1279,32 @@ export default function ReelCoverMaker() {
           onRemove={removePhoto}
           onFrame={(photoFrame) => update({ photoFrame })}
           onAdjust={(photoAdjust) => update({ photoAdjust })}
+          footer={
+            // The one thing to do once the cover is right, at the foot of the photo's card (the owner's ask, 7 Oct).
+            <div className={styles.exportBar}>
+              {error && (
+                <p className={styles.exportError} role="alert">
+                  {error}
+                </p>
+              )}
+              <button
+                type="button"
+                className={styles.exportButton}
+                onClick={() => void save()}
+                disabled={making === null && (!scene || !filled || !pictureReady)}
+                aria-busy={making !== null || (filled && !pictureReady)}
+                aria-label={making !== null ? "Stop exporting" : `${saveLabel} the ${design.animated ? "video" : "cover"} as ${exportKind}`}
+                aria-keyshortcuts={apple ? "Meta+S" : "Control+S"}
+                data-making={making !== null || undefined}
+                style={{ "--rcm-made": `${Math.round((making ?? 0) * 100)}%` } as CSSProperties}
+                title={making !== null ? "Press to stop" : exportDetail}
+              >
+                <Export size={19} weight="bold" aria-hidden="true" />
+                <span className={styles.exportWord}>{making !== null ? `Exporting ${Math.round(making * 100)}%` : saveLabel}</span>
+                <span className={styles.exportKind}>{making !== null ? "Stop" : exportKind}</span>
+              </button>
+            </div>
+          }
         />
       </div>
 
@@ -1320,19 +1322,21 @@ export default function ReelCoverMaker() {
         <AnimateCard
           options={animationsFor(design.style)}
           current={animation}
+          speed={speed}
+          target={wholeCover(format, CARD_WIDTH)}
           requestFor={(id) => ({
             key: `card|${key}|${id}`,
             plan: planFor(scene, design.style, id, measurer),
-            setting: () => ({ target: wholeCover(format, CARD_WIDTH), font: fontCss, grain: grain(), photo: photoForRef.current(scene) }),
+            look: () => ({ font: fontCss, grain: grain(), photo: photoForRef.current(scene) }),
             slot: `motion-card-${id}`,
           })}
           still={<SceneCanvas scene={scene} target={wholeCover(format, CARD_WIDTH)} slot="animate-still" photoFor={photoFor} />}
           ratio={format.width / format.height}
           clear={!photo}
           ground={design.ground}
-          onSave={(id) => {
+          onSave={(id, pace) => {
             setAnimateOpen(false);
-            update({ animated: true, animations: { ...design.animations, [design.style]: id } });
+            update({ animated: true, animations: { ...design.animations, [design.style]: id }, animationSpeed: pace });
           }}
           onClose={() => setAnimateOpen(false)}
         />

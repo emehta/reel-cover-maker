@@ -8,7 +8,9 @@
  *
  * ffmpeg.wasm's own worker is not used: it loads the core by an address
  * worked out at run time, which the bundler refuses, so this one loads it
- * itself, with the bundler told to leave that import alone.
+ * itself, with the bundler told to leave that import alone. Its WebAssembly
+ * comes compiled from the page where it can, so a second encoder starts at
+ * once.
  */
 
 // A module, so its names are its own.
@@ -25,7 +27,7 @@ interface Core {
 }
 
 type Ask =
-  | { id: number; type: "load"; coreURL: string; wasmURL: string }
+  | { id: number; type: "load"; coreURL: string; wasmURL: string; module: WebAssembly.Module | null }
   | { id: number; type: "write"; path: string; data: Uint8Array }
   | { id: number; type: "exec"; args: string[] }
   | { id: number; type: "read"; path: string }
@@ -45,8 +47,20 @@ self.onmessage = async (event: MessageEvent<Ask>) => {
     if (request.type === "load") {
       if (!core) {
         const made = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ request.coreURL)) as { default: (options: object) => Promise<Core> };
-        // ffmpeg.wasm's way of telling the core where its WebAssembly is: after a hash on the script's address.
-        core = await made.default({ mainScriptUrlOrBlob: `${request.coreURL}#${btoa(JSON.stringify({ wasmURL: request.wasmURL, workerURL: "" }))}` });
+        const compiled = request.module;
+        core = await made.default({
+          // ffmpeg.wasm's way of telling the core where its WebAssembly is: after a hash on the script's address.
+          mainScriptUrlOrBlob: `${request.coreURL}#${btoa(JSON.stringify({ wasmURL: request.wasmURL, workerURL: "" }))}`,
+          // Handed over compiled, it is only instantiated here: a fraction of a second, not a compile of 30 MB.
+          ...(compiled
+            ? {
+                instantiateWasm: (imports: WebAssembly.Imports, done: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void) => {
+                  void WebAssembly.instantiate(compiled, imports).then((instance) => done(instance, compiled));
+                  return {};
+                },
+              }
+            : {}),
+        });
         core.setLogger(({ message }) => {
           lines.push(message);
           if (lines.length > 40) lines.shift();

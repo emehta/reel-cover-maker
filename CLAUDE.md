@@ -134,7 +134,7 @@ npm run build   # the static site, in out/
   scrolls with the cover sticky; under 900, one column. **No scrollbar
   shows anywhere** (the owner's ask): every scroller hides its bar, the
   page's too (`globals.css`).
-- **The shortcuts are behind a ?** beside Download (`Shortcuts.tsx`, the
+- **The shortcuts are behind a ?** at the top right (`Shortcuts.tsx`, the
   owner's ask, 7 Oct), not at the foot of the left card: a card opened by
   the button or by ? (never while typing), closed by either again, by
   Escape (claimed in the capture phase, so the phone view stays) or by a
@@ -147,32 +147,53 @@ npm run build   # the static site, in out/
   Stickery (`CoverInput.textColour`, and the scene cache keys it only for
   Stickery, so a pick builds no other style). A press on a resting slider
   and its drag are one undo step (`pickText` names all three fields).
-- **Animate** (the owner's ask, 7 Oct). The sparkle opens a card
+- **Animate** (the owner's asks, 7 Oct). The sparkle opens a card
   (`AnimateCard`) of the cover playing in each of its style's
-  animations; Save sets `animated` and the style's pick
-  (`design.animations`), and the sparkle pressed again stops it. Every
+  animations, with a speed throttle (half to twice); Save sets
+  `animated`, the style's pick (`design.animations`) and
+  `animationSpeed`, and the sparkle pressed again stops it. Stickery has
+  Type and draw and Slap, Pasty and Pasty Flat Written live; All at once,
+  Pop and Rise were cut ("so bad"), so do not bring them back. Every
   animation (`animate.ts`, pure, tested) is a function of time on the
-  style's own scene, so its last frame is the cover exactly: an effect is
-  worked out where it is seen and carried into each op's frame through
-  its turns and the placement (`looked`), paste is moved bead by bead
-  (`pasteAt`), piped by length (`chainPart`) with the finished paste's
-  radius pinned (`LiquidOp.radius`) so its light holds, and its seed kept
-  so its gloss does not flicker. Two new ops draw frames: `fade`, and
-  `wipe` (a word written on behind a leaning edge, in clipped bands, no
-  second canvas). Frames are drawn in the page (`animation-frames.ts`,
-  three asked of the workers at a time) and kept as bitmaps to loop
-  (`Motion.tsx`, 24 a second, within a 110 MB budget), drawn again a
-  moment after the cover settles; the preview plays them over the cover,
-  which stays drawn underneath for its file, and stops while the letters
-  are pressed. The video (`video.ts`, `video.worker.ts`) is every frame at
-  full size, 30 a second, then the cover held 1.5 s, encoded by ffmpeg's
-  WebAssembly core (fetched from jsDelivr on first use, pinned 0.12.10):
-  ProRes 4444 with alpha in a .mov with no photo, H.264 MP4 with one.
-  Browsers' own encoders keep no alpha (none offered VP9, AV1 or HEVC
-  with alpha, measured in Chromium and WebKit), and ffmpeg.wasm's own
-  worker cannot be bundled (Turbopack refuses its computed import), so
-  this repo has its own worker. A press on Download video in its first
-  800 ms is a double click, not a stop.
+  style's own scene, so its last frame is the cover exactly, and a speed
+  only scales time (`plan(..., speed)`); an effect is worked out where
+  it is seen and carried into each op's frame through its turns and the
+  placement (`looked`), paste is moved bead by bead (`pasteAt`), piped by
+  length (`chainPart`) with the finished paste's radius pinned
+  (`LiquidOp.radius`) and its seed kept. A script word is written as a
+  pen would write it (`write` op): its strokes traced once from its ink
+  (`write-on.ts`: thinned to its middle line, spurs cut, followed from
+  the left straight on through forks, the other way at a fork begun a
+  moment after so a bowl fills as the pen passes, each ink pixel taking
+  its nearest line point's time straight across the stroke), drawn part
+  written by `writer.ts`; with no page to trace in, paint wipes it on.
+  The preview is painted live at the canvas's own pixels every frame
+  (`PlayCanvas`, no stored frames: the owner said it was too low-res);
+  only paste is made ahead (`usePaste`, 24 a second, within 200 MB, kept
+  in the picture's own pixels so the phone's post draws it too, made once
+  for every speed). The video (`video.ts`, `video.worker.ts`) is every
+  frame at full size, 30 a second, then the cover held 1.5 s: ProRes 4444
+  with alpha in a .mov with no photo (fixed quality `-qscale:v 4`, four
+  times as quick as ProRes's own rate control), H.264 MP4 with one. The
+  frames are shared out in runs among up to four encoders (two on a
+  phone), each run encoded as soon as its last frame is in, joined by
+  copy with the held end encoded once and repeated, then retimed
+  (`setts=ts=N/(30*TB)`: the join leaves ticks over at each seam, and the
+  core's muxer ignores `-video_track_timescale` on retimed packets, which
+  played a video twice as fast); MP4s are not joined (H.264 seams drift)
+  and pad their held end with `tpad`. ffmpeg's core (jsDelivr, pinned
+  0.12.10) is fetched and compiled once a cover is animated
+  (`prepareVideo`) and handed to each encoder compiled (`instantiateWasm`).
+  Browsers' own encoders keep no alpha, and ffmpeg.wasm's own worker
+  cannot be bundled (Turbopack refuses its computed import), so this repo
+  has its own worker. Measured 7 Oct: Stickery 3 to 9 s, Pasty 6 to 14 s.
+  A press on Export in its first 800 ms is a double click, not a stop.
+- **Export is at the foot of the photo's card** (the owner's ask, 7 Oct:
+  "below dim"), sticky there, the card drawn closer on windows under 900
+  tall so Dim and Export both show (`@media (max-height: 900px)`); from
+  900 to 1199 wide it is held at the foot of the left column, and on a
+  phone at the foot of the screen. It reads Export (Save where the share
+  sheet is used) with a tag of what it makes: PNG, MOV or MP4.
 - **The phone view's posts are the owner's** (the owner's ask, 7 Oct):
   @eshaan.tm's four reels, newest first, after the cover as they would
   follow a new post, and its profile picture in the tab bar
@@ -183,7 +204,7 @@ npm run build   # the static site, in out/
   the favicon.
 - **Three heights** (the owner's ask, 7 Oct): `--rcm-h-field` (44: a text
   field, a list, a segmented control), `--rcm-h-button` (36: every button,
-  the toolbar's, Download, the photo's) and `--rcm-h-mini` (28: a button
+  the toolbar's, the photo's) and `--rcm-h-mini` (28: a button
   on a label's row). A label row is exactly a mini button tall, with no
   negative margin: one with a margin let the photo's buttons be cut off by
   their card's top.
@@ -202,7 +223,7 @@ npm run build   # the static site, in out/
   property, and the tests hold them. The profile is the owner's own,
   @eshaan.tm (`HANDLE`), public, so with no lock by its name. The tile is drawn from the scene like
   every canvas (`SceneCanvas`, `gridWindow`), on the ground picked. The
-  cover to edit stays mounted and painted underneath (hidden), so Download
+  cover to edit stays mounted and painted underneath (hidden), so Export
   never waits on it. Never say it is a phone's real size: on a laptop it
   is smaller.
 - **With no photo the cover is clear** (the owner's ask, 7 Oct): no fill,

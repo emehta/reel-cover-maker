@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowCounterClockwise, Camera as CameraIcon, CornersIn, FlipHorizontal, Image as ImageIcon, Trash, UploadSimple } from "@phosphor-icons/react";
-import { useId, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import { useId, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { ADJUSTMENTS, DEFAULT_ADJUST, DEFAULT_FRAME, MAX_ZOOM, adjustLabel, isNeutral, type PhotoAdjust, type PhotoFrame } from "@/components/reel-cover-maker/photo";
 
@@ -17,6 +17,8 @@ interface Props {
   onRemove: () => void;
   onFrame: (frame: PhotoFrame) => void;
   onAdjust: (adjust: PhotoAdjust) => void;
+  /** At the card's foot, held in sight however the card scrolls: Export. */
+  footer?: ReactNode;
 }
 
 /**
@@ -28,7 +30,7 @@ interface Props {
  * keeps one height and the sliders are there, waiting, before a photo is,
  * so nothing moves when one is added.
  */
-export function PhotoControls({ thumb, frame, adjust, onFile, onCamera, onRemove, onFrame, onAdjust }: Props) {
+export function PhotoControls({ thumb, frame, adjust, onFile, onCamera, onRemove, onFrame, onAdjust, footer }: Props) {
   const id = useId();
   const uploadRef = useRef<HTMLInputElement>(null);
   const captureRef = useRef<HTMLInputElement>(null);
@@ -178,6 +180,7 @@ export function PhotoControls({ thumb, frame, adjust, onFile, onCamera, onRemove
           ))}
         </div>
       </div>
+      {footer}
     </aside>
   );
 }
