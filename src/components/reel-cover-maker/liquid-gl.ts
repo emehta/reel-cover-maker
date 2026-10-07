@@ -105,10 +105,13 @@ void main() {
   float h = float(f.g) / 256.0;
   vec3 C = clamp(uColours[min(int(f.b), 3)] * (float(f.a) / 1000.0), vec3(0.0005), vec3(1.0));
   // The edge by the depth's own slope: where two shapes blend, the depth
-  // climbs slowly, and an edge read off it unscaled smears over pixels.
+  // climbs slowly, and an edge read off it unscaled smears over pixels. A
+  // distance never climbs faster than a pixel a pixel: where it seems to,
+  // it is the edge of where the depth was worked out, far from any paste,
+  // and read as an edge it drew a faint line there on a small canvas.
   float dx = (float(at(p + ivec2(1, 0)).r) - float(at(p - ivec2(1, 0)).r)) / 512.0;
   float dy = (float(at(p + ivec2(0, 1)).r) - float(at(p - ivec2(0, 1)).r)) / 512.0;
-  float slope = max(length(vec2(dx, dy)), 0.25);
+  float slope = clamp(length(vec2(dx, dy)), 0.25, 1.0);
   // A pixel and a half of smooth edge, so a curve never steps.
   float cover = smoothstep(-0.75, 0.75, d / slope);
 

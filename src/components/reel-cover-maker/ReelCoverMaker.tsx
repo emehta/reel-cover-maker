@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, Copy, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
@@ -21,8 +21,9 @@ import { forgetPhoto, loadPhoto, savePhoto } from "@/components/reel-cover-maker
 import { PhotoControls } from "@/components/reel-cover-maker/PhotoControls";
 import { HOME, invert, isHome, keepOnCover, multiply, placeMatrix, type Matrix, type Place, type Point } from "@/components/reel-cover-maker/place";
 import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-maker/palettes";
+import { isApple, subscribeNothing } from "@/components/reel-cover-maker/platform";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, type SaveMethod } from "@/components/reel-cover-maker/save";
-import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers } from "@/components/reel-cover-maker/liquid-client";
+import { drawLayers, layerFailed, layerReady, layersVersion, liquidLayer, subscribeLayers, type LiquidLayer } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
 import {
   buildScene,
@@ -49,6 +50,20 @@ const PREPARE_DELAY_MS = 250;
 
 /** A style thumbnail's width in canvas pixels: twice its widest on screen, for sharp text on a retina screen. */
 const THUMB_WIDTH = 240;
+
+/**
+ * How much smaller the preview's quick draft of its paste is made, to show
+ * while its own is still being made: a quarter of the pixels, so about a
+ * quarter of the time, and on screen, where the cover is shown at about
+ * half its size, hard to tell from the real one.
+ */
+const DRAFT_SCALE = 0.5;
+
+/** How long the picture must have been ready before every other style is made ahead of time. */
+const AHEAD_DELAY_MS = 120;
+
+/** How long a copied colour says it was copied. */
+const COPIED_MS = 1600;
 
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
 
@@ -164,6 +179,18 @@ function placed(base: Scene, place: Place): Scene {
   return scene;
 }
 
+/**
+ * A style's cover as the preview draws it: the scene as the style sets it,
+ * the placement asked for kept on it, and the scene with its letters there.
+ * The thumbnails and the styles made ahead of time are made the same way,
+ * so the cover a style shows once picked is the one made ahead for it.
+ */
+function coverFor(input: CoverInput, loads: number, asked: Place): { base: Scene; place: Place; scene: Scene } {
+  const base = sceneFor(input, loads);
+  const place = keepOnCover(base.readable, asked, { w: base.width, h: base.height });
+  return { base, place, scene: placed(base, place) };
+}
+
 let shareFiles: boolean | null = null;
 
 /** Whether this browser can hand a PNG to the system's share sheet. Asked once. */
@@ -228,14 +255,44 @@ function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-/** The part of the picture the profile grid shows, or all of it. */
-function gridWindow(format: Format) {
-  return format.grid ?? { x: 0, y: 0, w: format.width, h: format.height };
-}
-
 /** The canvas a scene is drawn on at its own size: the preview's, and the download's. */
 function fullSize(scene: Scene): LiquidTarget {
   return { width: scene.width, height: scene.height, scale: 1, origin: { x: 0, y: 0 } };
+}
+
+/** The smaller canvas the preview's quick draft of its paste is made for. */
+function draftSize(scene: Scene): LiquidTarget {
+  return { width: Math.ceil(scene.width * DRAFT_SCALE), height: Math.ceil(scene.height * DRAFT_SCALE), scale: DRAFT_SCALE, origin: { x: 0, y: 0 } };
+}
+
+/** A draft's layer, made for the smaller canvas, as big as it is on the preview. */
+function grown(layer: LiquidLayer | null | undefined, scale: number) {
+  if (!layer) return null;
+  return { ...layer, x: layer.x / scale, y: layer.y / scale, dw: layer.w / scale, dh: layer.h / scale };
+}
+
+/** Text put on the clipboard; false if the browser would not. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // No clipboard API (an old browser, a page not served securely): the old way.
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const done = document.execCommand("copy");
+      area.remove();
+      return done;
+    } catch {
+      return false;
+    }
+  }
 }
 
 /** The liquid layers of a scene for a canvas: whether every one is drawn, and whether any could not be. */
@@ -249,21 +306,24 @@ function layersFor(scene: Scene | null, target: LiquidTarget | null) {
   };
 }
 
-/** A style's swatch: the title in that style, as the profile grid would show it. */
+/**
+ * A style's swatch: the whole cover in that style, in the cover's own
+ * shape, so nothing of it is cut off at its sides (the profile grid's crop
+ * is the Grid crop check's to show, on the cover itself).
+ */
 function Thumb({ scene, format, slot, photoFor }: { scene: Scene | null; format: Format; slot: string; photoFor: (scene: Scene) => PaintOptions["photo"] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   // Drawn again when a liquid layer it waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
-  const window = gridWindow(format);
-  const scale = THUMB_WIDTH / window.w;
-  const height = Math.round(window.h * scale);
-  const target: LiquidTarget = { width: THUMB_WIDTH, height, scale, origin: { x: window.x, y: window.y } };
+  const scale = THUMB_WIDTH / format.width;
+  const height = Math.round(format.height * scale);
+  const target: LiquidTarget = { width: THUMB_WIDTH, height, scale, origin: { x: 0, y: 0 } };
   const { ops, ready } = layersFor(scene, target);
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas || !scene) return;
     // Asked every time: what this canvas shows is kept, what it waits on is drawn.
-    drawLayers(ops, target, slot);
+    drawLayers(ops, target, slot, "thumb");
     if (!ready) return;
     if (canvas.width !== THUMB_WIDTH) canvas.width = THUMB_WIDTH;
     if (canvas.height !== target.height) canvas.height = target.height;
@@ -272,7 +332,7 @@ function Thumb({ scene, format, slot, photoFor }: { scene: Scene | null; format:
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     paint(ctx, scene, { scale, origin: target.origin, font: fontCss, grain: null, liquid: (op, part) => liquidLayer(op, target, part) ?? null, photo: photoFor(scene) });
   });
-  return <canvas ref={ref} className={styles.thumbCanvas} width={THUMB_WIDTH} height={320} aria-hidden="true" />;
+  return <canvas ref={ref} className={styles.thumbCanvas} width={THUMB_WIDTH} height={height} aria-hidden="true" />;
 }
 
 /** The grid's window on the preview, everything outside it dimmed. */
@@ -315,10 +375,12 @@ export default function ReelCoverMaker() {
   const [selected, setSelected] = useState(false);
   /** Moves when a gesture is called off, so the picture as it was is painted again. */
   const [repaint, setRepaint] = useState(0);
+  /** The colour last copied, said to be copied while it is still the colour and for a moment after. */
+  const [copied, setCopied] = useState<string | null>(null);
+  const copiedTimer = useRef(0);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const stylesRef = useRef<HTMLDivElement>(null);
   const holdRef = useRef<HTMLDialogElement>(null);
   const prepared = useRef<{ key: string; file: File } | null>(null);
   /** What is on the canvas. */
@@ -331,6 +393,7 @@ export default function ReelCoverMaker() {
   /** The letters as they were drawn when a gesture began, carried with it until they are drawn again where it left them. */
   const liveRef = useRef<{ layer: HTMLCanvasElement; shadow: HTMLCanvasElement | null; from: Matrix } | null>(null);
   const interimRef = useRef<() => void>(() => {});
+  const aheadRef = useRef<() => void>(() => {});
   const surfaceRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   /** The letters alone, drawn once a picture, to tell a press on them from one between them. */
@@ -343,6 +406,7 @@ export default function ReelCoverMaker() {
   const faces = facesFor(design.plainFace, letteringFace(design.lettering));
   const loads = useSyncExternalStore(subscribeFonts, () => fontsSnapshot(title, faces), () => -1);
   const method = useSyncExternalStore<SaveMethod>(subscribeTouch, currentSaveMethod, () => "download");
+  const apple = useSyncExternalStore(subscribeNothing, isApple, () => true);
 
   const measurer = loads >= 0 ? measurerFor(loads) : null;
   const input: CoverInput = {
@@ -358,17 +422,22 @@ export default function ReelCoverMaker() {
     seed: design.seed,
     photo: photo !== null,
   };
-  const base = measurer ? sceneFor(input, loads) : null;
+  const cover = measurer ? coverFor(input, loads, design.place) : null;
+  const base = cover?.base ?? null;
   /** Where the letters are, kept on the cover whatever its size now. */
-  const place = base ? keepOnCover(base.readable, design.place, { w: base.width, h: base.height }) : design.place;
-  const scene = base ? placed(base, place) : null;
-  const thumbs = measurer ? STYLES.map((style) => placed(sceneFor({ ...input, style: style.id }, loads), place)) : null;
+  const place = cover?.place ?? design.place;
+  const scene = cover?.scene ?? null;
+  /** The cover in every style: the thumbnails, and what is made ahead of time for each. */
+  const thumbs = measurer ? STYLES.map((style) => (style.id === design.style ? scene : coverFor({ ...input, style: style.id }, loads, design.place).scene)) : null;
   const name = fileName(design.text, design.format);
   // Drawn again when a liquid layer the preview waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
   const layers = layersFor(scene, scene && fullSize(scene));
   /** The whole picture can be drawn now: no liquid layer of it is still being drawn, none failed, and the photo is in. */
   const pictureReady = layers.ready && !layers.failed && photoChecked;
+  const draft = layersFor(scene, scene && draftSize(scene));
+  /** A quick draft of the picture can be shown while it is made: its paste made smaller, and the photo in. */
+  const draftReady = draft.ready && !draft.failed && photoChecked;
   /** What the drawn picture is of; a prepared file is handed over only if it is of the same. */
   const key = JSON.stringify([
     design.text,
@@ -461,6 +530,15 @@ export default function ReelCoverMaker() {
     update({ seed });
   };
 
+  const hex = sliderColour(design.hue, design.shade);
+  /** The colour's hex code on the clipboard, said so for a moment. */
+  const copyHex = async () => {
+    if (!(await copyText(hex))) return;
+    setCopied(hex);
+    window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(null), COPIED_MS);
+  };
+
   const plainFace = design.plainFace;
   const funkyFace = letteringFace(design.lettering);
   useEffect(() => requestFonts(title, facesFor(plainFace, funkyFace)), [title, plainFace, funkyFace]);
@@ -477,35 +555,6 @@ export default function ReelCoverMaker() {
       clearBackdrop();
     };
   }, []);
-
-  // The styles are one row, scrolled sideways: a mouse's wheel, which only
-  // turns up and down, scrolls it too while it can go further, then lets
-  // the page have the wheel back.
-  useEffect(() => {
-    const row = stylesRef.current;
-    if (!row) return;
-    const onWheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
-      const most = row.scrollWidth - row.clientWidth;
-      const step = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? row.clientWidth : 1);
-      if (most <= 0 || (step < 0 && row.scrollLeft <= 0) || (step > 0 && row.scrollLeft >= most - 1)) return;
-      event.preventDefault();
-      row.scrollLeft = Math.max(0, Math.min(most, row.scrollLeft + step));
-    };
-    row.addEventListener("wheel", onWheel, { passive: false });
-    return () => row.removeEventListener("wheel", onWheel);
-  }, []);
-
-  // The chosen style kept in sight along its row, however it was chosen.
-  useEffect(() => {
-    const row = stylesRef.current;
-    const chosen = row?.querySelector<HTMLElement>("[data-chosen]");
-    if (!row || !chosen) return;
-    const r = row.getBoundingClientRect();
-    const c = chosen.getBoundingClientRect();
-    if (c.left < r.left) row.scrollBy({ left: c.left - r.left - 16 });
-    else if (c.right > r.right) row.scrollBy({ left: c.right - r.right + 16 });
-  }, [design.style]);
 
   // The photo kept from last time, read back before the cover is first drawn.
   useEffect(() => {
@@ -621,7 +670,18 @@ export default function ReelCoverMaker() {
   useEffect(() => {
     photoForRef.current = photoFor;
     interimRef.current = () => showLive(place);
+    aheadRef.current = () => thumbs?.forEach((s, i) => s && drawLayers(liquidOps(s), fullSize(s), `ahead-${STYLES[i].id}`, "ahead"));
   });
+
+  // Once the picture is drawn, the cover in every other style is made at its
+  // own size, ahead of time and on a worker of its own, so a style picked
+  // shows at once. Asked again for each new picture; what is no longer the
+  // picture is dropped before it is made.
+  useEffect(() => {
+    if (!pictureReady) return;
+    const timer = window.setTimeout(() => aheadRef.current(), AHEAD_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [key, pictureReady]);
 
   // Draw the cover, then make its file, so a tap on Save can share it at
   // once: Safari refuses a share that waits on anything. Only a change to
@@ -631,13 +691,29 @@ export default function ReelCoverMaker() {
     const canvas = canvasRef.current;
     if (!canvas || !scene) return;
     const mainTarget = fullSize(scene);
+    const ops = liquidOps(scene);
     // Asked every time: what the preview shows is kept, what it waits on is drawn.
     // The canvas's size is set only here, as it is painted, so the last
     // picture stays up, whole, until this one is ready.
-    drawLayers(liquidOps(scene), mainTarget, "main");
+    drawLayers(ops, mainTarget, "main", "main");
+    // A quick draft of the paste, made smaller first, only while the preview's own is still to come.
+    const draftTarget = draftSize(scene);
+    drawLayers(layers.ready ? [] : ops, draftTarget, "draft", "draft");
     if (!pictureReady) {
       // Moved letters wait for their paste to be made again where they now are: until then, carried there from where they were.
-      if (liveRef.current) interimRef.current();
+      if (liveRef.current) {
+        interimRef.current();
+        return;
+      }
+      // Anything else shows its draft as soon as it is made, and sharpens when the paste is.
+      const drafted = `draft ${key}`;
+      if (!draftReady || painted.current === drafted) return;
+      if (canvas.width !== scene.width) canvas.width = scene.width;
+      if (canvas.height !== scene.height) canvas.height = scene.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op, part) => grown(liquidLayer(op, draftTarget, part), draftTarget.scale), photo: photoForRef.current(scene) });
+      painted.current = drafted;
       return;
     }
     if (painted.current !== key) {
@@ -664,7 +740,7 @@ export default function ReelCoverMaker() {
       first ? 0 : PREPARE_DELAY_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [scene, name, key, pictureReady, repaint]);
+  }, [scene, name, key, pictureReady, draftReady, layers.ready, repaint]);
 
   useEffect(() => {
     const dialog = holdRef.current;
@@ -730,11 +806,20 @@ export default function ReelCoverMaker() {
   const lowContrast = design.style !== "stickery" && !photo && !standsOut(paletteFor(design));
   const frameStyle = { "--rcm-ratio": `${format.width} / ${format.height}`, "--rcm-ratio-n": format.width / format.height } as CSSProperties;
   const saveLabel = method === "share" ? "Save image" : "Download";
+  const mod = apple ? "⌘" : "Ctrl+";
+  const isCopied = copied === hex;
 
   return (
     <main className={`${styles.root} ${interTight.variable}`}>
       <header className={styles.header}>
-        <h1 className={styles.title}>{APP_NAME}</h1>
+        <h1 className={styles.title}>
+          {/* A reel, in the colour picked. */}
+          <svg className={styles.mark} viewBox="0 0 18 24" aria-hidden="true">
+            <rect x="1.25" y="1.25" width="15.5" height="21.5" rx="4.25" fill="none" stroke="currentColor" strokeWidth="2.5" />
+            <rect x="5" y="8" width="8" height="8" rx="2" fill={hex} />
+          </svg>
+          {APP_NAME}
+        </h1>
         <div className={styles.actions}>
           {error && (
             <p className={styles.error} role="alert">
@@ -766,12 +851,6 @@ export default function ReelCoverMaker() {
             inputRef={inputRef}
             placeholder={PLACEHOLDER_TITLE}
             maxLength={MAX_TITLE_LENGTH}
-            side={
-              <button type="button" className={styles.toggle} onClick={shuffle} title="Draw the letters another way">
-                <Shuffle size={16} weight="bold" aria-hidden="true" />
-                Shuffle
-              </button>
-            }
           >
             {scene?.truncated && <p className={styles.note}>Too long for the cover: the end is cut.</p>}
             {layers.failed && <p className={styles.note}>This style could not be drawn here. Try another.</p>}
@@ -834,7 +913,17 @@ export default function ReelCoverMaker() {
                     Low contrast
                   </span>
                 )}
-                <span className={styles.chip} style={{ background: sliderColour(design.hue, design.shade) }} aria-hidden="true" />
+                {/* The colour, and its hex code, which a click copies. */}
+                <button type="button" className={`${styles.hexChip} ${styles.tip}`} onClick={() => void copyHex()} data-tip={isCopied ? "Copied" : "Copy hex"} data-copied={isCopied || undefined} aria-label={`Copy the colour's hex code, ${hex}`}>
+                  <span className={styles.chip} style={{ background: hex }} aria-hidden="true" />
+                  <span className={styles.hex}>{hex}</span>
+                  <span className={styles.hexIcon} aria-hidden="true">
+                    {isCopied ? <Check size={12} weight="bold" /> : <Copy size={12} weight="bold" />}
+                  </span>
+                </button>
+                <span className={styles.hidden} role="status">
+                  {isCopied ? `${hex} copied` : ""}
+                </span>
               </span>
             </div>
             <div className={styles.sliders} role="group" aria-labelledby="rcm-colour-label">
@@ -897,10 +986,33 @@ export default function ReelCoverMaker() {
               ))}
             </div>
           </div>
+
+          {/* What the keys do, at the foot of the card: bold has no button of its own. */}
+          <dl className={styles.keys} aria-label="Keyboard shortcuts">
+            <div className={styles.key}>
+              <dt>Bold the selected words</dt>
+              <dd>
+                <kbd>{mod}B</kbd>
+              </dd>
+            </div>
+            <div className={styles.key}>
+              <dt>Undo</dt>
+              <dd>
+                <kbd>{mod}Z</kbd>
+              </dd>
+            </div>
+            <div className={styles.key}>
+              <dt>{saveLabel}</dt>
+              <dd>
+                <kbd>{mod}S</kbd>
+              </dd>
+            </div>
+          </dl>
         </div>
 
         <section
           className={styles.preview}
+          style={frameStyle}
           aria-label="Preview"
           onDragOver={(event) => {
             if (!carriesFiles(event)) return;
@@ -919,24 +1031,18 @@ export default function ReelCoverMaker() {
             if (file) void takePhoto(file);
           }}
         >
-          <div className={styles.previewTop}>
-            <div className={styles.history}>
-              <button type="button" className={styles.iconButton} onClick={undo} disabled={steps.back === 0} aria-label="Undo" title="Undo">
-                <ArrowUUpLeft size={17} weight="bold" />
-              </button>
-              <button type="button" className={styles.iconButton} onClick={redo} disabled={steps.forward === 0} aria-label="Redo" title="Redo">
-                <ArrowUUpRight size={17} weight="bold" />
-              </button>
-            </div>
-            {!isHome(place) && (
-              <button type="button" className={`${styles.toggle} ${styles.resetText}`} onClick={() => update({ place: HOME })} title="Put the text back where the style sets it" aria-label="Reset text">
-                <ArrowCounterClockwise size={15} weight="bold" aria-hidden="true" />
-                <span className={styles.resetLabel}>Reset text</span>
-              </button>
-            )}
-            <div className={`${styles.segments} ${styles.compact}`} role="radiogroup" aria-label="Background">
+          {/* Everything that acts on the cover as a whole, in one row of one height. Nothing in it comes or goes, so nothing moves. */}
+          <div className={styles.toolbar} role="group" aria-label="Cover">
+            <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={undo} disabled={steps.back === 0} aria-label="Undo" aria-keyshortcuts={apple ? "Meta+Z" : "Control+Z"} data-tip={`Undo  ${mod}Z`}>
+              <ArrowUUpLeft size={18} weight="bold" aria-hidden="true" />
+            </button>
+            <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={redo} disabled={steps.forward === 0} aria-label="Redo" aria-keyshortcuts={apple ? "Meta+Shift+Z" : "Control+Shift+Z"} data-tip={apple ? "Redo  ⇧⌘Z" : "Redo  Ctrl+Y"}>
+              <ArrowUUpRight size={18} weight="bold" aria-hidden="true" />
+            </button>
+            <span className={styles.toolRule} aria-hidden="true" />
+            <div className={styles.toolSegments} role="radiogroup" aria-label="Background">
               {(["light", "dark"] as const satisfies readonly Ground[]).map((ground) => (
-                <label key={ground} className={styles.segment}>
+                <label key={ground} className={styles.toolSegment}>
                   <input
                     type="radio"
                     name="rcm-ground"
@@ -944,14 +1050,21 @@ export default function ReelCoverMaker() {
                     checked={design.ground === ground}
                     onChange={() => update({ ground })}
                   />
-                  {ground === "light" ? <Sun size={15} weight="bold" aria-hidden="true" /> : <Moon size={15} weight="bold" aria-hidden="true" />}
-                  {ground === "light" ? "Light" : "Dark"}
+                  {ground === "light" ? <Sun size={16} weight="bold" aria-hidden="true" /> : <Moon size={16} weight="bold" aria-hidden="true" />}
+                  <span className={styles.toolWord}>{ground === "light" ? "Light" : "Dark"}</span>
                 </label>
               ))}
             </div>
+            <span className={styles.toolRule} aria-hidden="true" />
+            <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={shuffle} aria-label="Shuffle" data-tip="Shuffle">
+              <Shuffle size={18} weight="bold" aria-hidden="true" />
+            </button>
+            <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={() => update({ place: HOME })} disabled={isHome(place)} aria-label="Reset text" data-tip="Reset text">
+              <ArrowCounterClockwise size={18} weight="bold" aria-hidden="true" />
+            </button>
           </div>
           <div className={styles.stage} ref={stageRef}>
-            <div className={styles.frame} style={frameStyle}>
+            <div className={styles.frame}>
               <canvas
                 ref={canvasRef}
                 className={styles.canvas}
@@ -987,7 +1100,7 @@ export default function ReelCoverMaker() {
             </div>
           </div>
 
-          <div ref={stylesRef} className={styles.styles} role="radiogroup" aria-label="Style">
+          <div className={styles.styles} role="radiogroup" aria-label="Style">
             {STYLES.map((style, i) => (
               <label key={style.id} className={styles.style} data-chosen={design.style === style.id || undefined}>
                 <input

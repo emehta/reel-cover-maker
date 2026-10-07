@@ -8,7 +8,7 @@
 html,
 body {
   margin: 0;
-  background: #f3f2ef;
+  background: #ecebe7;
 }
 
 /* The page scrolls on a phone, with no bar showing (the owner's ask, 7 Oct). */
@@ -23,6 +23,6 @@ html::-webkit-scrollbar {
 @media (prefers-color-scheme: dark) {
   html,
   body {
-    background: #121212;
+    background: #0e0e0f;
   }
 }

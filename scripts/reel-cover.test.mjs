@@ -1214,6 +1214,62 @@ check("gel's shadow is a stain of its colour, never grey", () => {
   assert.ok(stain("gloss") > bare + 3, `gel shadow ${stain("gloss")} against ground ${bare}`);
 });
 
+check("a field's depth is its deepest capsule's, exactly, however few of them are worked out in full", () => {
+  // Most capsules are passed over at most pixels, for being no deeper than
+  // the beads before them could be: here every one is measured, the slow way.
+  let seed = 11;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+  for (let n = 0; n < 24; n += 1) {
+    let x = 120 + rnd() * 160;
+    let y = 120 + rnd() * 160;
+    const chain = Array.from({ length: 1 + Math.floor(rnd() * 30) }, () => {
+      x += (rnd() - 0.5) * 24;
+      y += (rnd() - 0.5) * 24;
+      return { x, y, r: 1 + rnd() * 26 };
+    });
+    const target = { width: 400, height: 400, scale: 0.4 + rnd() * 0.8, origin: { x: rnd() * 30, y: rnd() * 30 } };
+    const field = LR.liquidField(paintOf(rnd() < 0.5 ? "gloss" : "flat", [chain]), target);
+    const beads = chain.map((b) => ({ x: (b.x - target.origin.x) * target.scale, y: (b.y - target.origin.y) * target.scale, r: b.r * target.scale }));
+    const segments = beads.length === 1 ? [[beads[0], beads[0]]] : beads.slice(1).map((b, i) => [beads[i], b]);
+    const radii = beads.map((b) => b.r).sort((p, q) => p - q);
+    const reach = Math.max(0.5, radii[Math.floor(radii.length / 2)]) * 2.4;
+    let compared = 0;
+    for (let py = 0; py < field.h; py += 1) {
+      for (let px = 0; px < field.w; px += 1) {
+        let deepest = -Infinity;
+        for (const [a, b] of segments) deepest = Math.max(deepest, LR.capsuleDepth(field.x + px + 0.5, field.y + py + 0.5, a, b));
+        // Out past what the shadow reads, the depth is not worked out at all.
+        if (deepest < -reach) continue;
+        compared += 1;
+        const want = Math.round((Math.max(-128, Math.min(127, Math.fround(deepest))) + 128) * 256);
+        assert.equal(field.data[(py * field.w + px) * 4], want, `chain ${n} at ${px},${py}`);
+      }
+    }
+    assert.ok(compared > 20, `chain ${n}: ${compared} pixels compared`);
+  }
+});
+
+check("paste made small has no edge but its own: where its depth was not worked out, nothing is drawn", () => {
+  // Letters apart, each worked out in a box of its own; a small canvas (a
+  // thumbnail, the preview's quick draft) once drew a faint line along the
+  // boxes' edges, read as an edge of the paste.
+  const chains = [
+    Array.from({ length: 8 }, (_, i) => ({ x: 120 + i * 12, y: 140, r: 22 })),
+    Array.from({ length: 6 }, (_, i) => ({ x: 250, y: 120 + i * 18, r: 16 })),
+    [{ x: 160, y: 290, r: 34 }],
+  ];
+  for (const scale of [0.22, 0.5, 1]) {
+    for (const finish of ["gloss", "flat"]) {
+      const field = LR.liquidField(paintOf(finish, chains, { colourOf: [0, 0, 0], tone: [1, 1, 1] }), { width: 400, height: 400, scale, origin: { x: 0, y: 0 } });
+      const img = LR.shadeField(field, { colours: ["#9E1B1B"], ground: null });
+      for (let i = 0; i < field.w * field.h; i += 1) {
+        const d = field.data[i * 4] / 256 - 128;
+        if (d < -1.5) assert.equal(img.data[i * 4 + 3], 0, `${finish} at ${scale}: paste drawn ${(-d).toFixed(1)} pixels out`);
+      }
+    }
+  }
+});
+
 check("flat paste is one colour exactly: no light, no shadow, no texture, no dither, every letter alike", () => {
   const chains = [Array.from({ length: 9 }, (_, i) => ({ x: 160 + i * 15, y: 200 + (i % 3) * 6, r: 26 + (i % 4) * 3 })), [{ x: 230, y: 150, r: 30 }, { x: 260, y: 120, r: 18 }]];
   const field = LR.liquidField(paintOf("flat", chains), TARGET);

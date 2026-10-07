@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
+import { isApple, subscribeNothing } from "@/components/reel-cover-maker/platform";
 import { boldRuns, convertStars, editMarked, isBold, readMarked, toggleBold, writeMarked, type Marked } from "@/components/reel-cover-maker/title";
 
 interface Props {
@@ -16,14 +17,9 @@ interface Props {
   /** Shown, bold and all, while the field is empty. */
   placeholder: string;
   maxLength: number;
-  /** Beside the field's label: what acts on the text as drawn (Shuffle). */
-  side?: ReactNode;
   /** Under the field: a note the text needs (too long for the cover, a style that could not be drawn). */
   children?: ReactNode;
 }
-
-const subscribeNothing = () => () => {};
-const isApple = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform) || navigator.userAgent.includes("Mac OS");
 
 /**
  * The Text field: the words as typed, with bold, which is Stickery's
@@ -38,7 +34,7 @@ const isApple = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform) || navigat
  * by a stroke round the letters rather than a bolder face, which would be
  * wider and put every letter after it out of line with the caret.
  */
-export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, placeholder, maxLength, side, children }: Props) {
+export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, placeholder, maxLength, children }: Props) {
   const marked = readMarked(value);
   const mirrorRef = useRef<HTMLDivElement>(null);
   /** Cmd+B with nothing selected: whether what is typed at that caret is bold. */
@@ -150,7 +146,6 @@ export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, place
         <label className={styles.label} htmlFor={id}>
           Text
         </label>
-        {side}
       </div>
       <div className={styles.textBox}>
         <textarea

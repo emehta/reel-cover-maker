@@ -13,7 +13,7 @@
 export type Theme = "light" | "dark";
 
 /** The page behind everything, as the stylesheet's `--rcm-bg` has it. */
-export const BACKDROP: Record<Theme, string> = { light: "#F3F2EF", dark: "#121212" };
+export const BACKDROP: Record<Theme, string> = { light: "#ECEBE7", dark: "#0E0E0F" };
 
 const META_ATTRIBUTE = "data-reel-cover-maker";
 

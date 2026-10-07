@@ -56,11 +56,12 @@ export interface PaintOptions {
   grain: CanvasImageSource | null;
   /**
    * A liquid layer lit for this canvas: the part of `image` to copy, and
-   * where to, in this canvas's pixels; null while it is being made. The
-   * paste, or the shadow it casts with no ground of its own, to be
-   * multiplied onto what is under it.
+   * where to, in this canvas's pixels, and as how big if not as it is (a
+   * draft, made smaller); null while it is being made. The paste, or the
+   * shadow it casts with no ground of its own, to be multiplied onto what
+   * is under it.
    */
-  liquid?: (op: LiquidOp, part: "paste" | "shadow") => { image: CanvasImageSource; sx: number; sy: number; w: number; h: number; x: number; y: number } | null;
+  liquid?: (op: LiquidOp, part: "paste" | "shadow") => { image: CanvasImageSource; sx: number; sy: number; w: number; h: number; x: number; y: number; dw?: number; dh?: number } | null;
   /** The photo behind the letters and the window of it that covers the picture, in its own pixels; mirrored if `flip`. */
   photo?: { image: CanvasImageSource; sx: number; sy: number; sw: number; sh: number; flip: boolean } | null;
 }
@@ -112,7 +113,7 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalCompositeOperation = blend;
-        ctx.drawImage(layer.image, layer.sx, layer.sy, layer.w, layer.h, layer.x, layer.y, layer.w, layer.h);
+        ctx.drawImage(layer.image, layer.sx, layer.sy, layer.w, layer.h, layer.x, layer.y, layer.dw ?? layer.w, layer.dh ?? layer.h);
         ctx.restore();
       };
       if (op.shadow) place("shadow", "multiply");

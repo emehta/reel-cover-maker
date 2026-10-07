@@ -8,14 +8,19 @@ Use it at **[emehta.github.io/reel-cover-maker](https://emehta.github.io/reel-co
 
 ## Using it
 
-Three columns: on the left the text (with Shuffle), its lettering, the
-colour and the size; in the middle the cover, the styles in a row under
-it; on the right the photo and its adjustments. In a narrower window the
+Three columns: on the left a card of the text, its lettering, the colour
+and the size; in the middle the cover on a dotted board, with a bar of
+tools over it (undo, redo, light or dark, shuffle, reset text, each an
+icon that names itself on hover) and the styles in a row under it; on the
+right a card of the photo and its adjustments. In a narrower window the
 photo goes under the left column and the page scrolls past it while the
 cover stays in view; on a phone it is the cover and styles, then the text,
 then the photo. The cover keeps one height whatever the size or style,
 and every control keeps its place: nothing moves when another style, size
-or photo is picked. No scrollbar shows anywhere.
+or photo is picked, and a tool that cannot act yet is dimmed, never taken
+away. No scrollbar shows anywhere, and nothing scrolls sideways.
+Everything is one of three heights: a field, a button, or a small button
+on a label's row.
 
 - **Type the text.** It is set as large as the cover allows. A line break
   you type is kept.
@@ -44,11 +49,13 @@ or photo is picked. No scrollbar shows anywhere.
   carries on as you type the end of a word, and stops at a space. Words
   typed between stars turn bold too, the moment the second star is typed
   (`*actually*` becomes **actually**). Every other style sets a bold word as
-  it sets the rest.
+  it sets the rest. The keys are listed at the foot of the left card.
 - **Pick a style** from the row of thumbnails under the cover: Stickery,
-  Pasty, Pasty Flat, Editorial, Echo and Mono. Each thumbnail is your title
-  in that style, cropped to the 3:4 window the profile grid shows, so you
-  choose by how it will look on your grid.
+  Pasty, Pasty Flat, Editorial, Echo and Mono. Each thumbnail is your whole
+  cover in that style, in the cover's own shape, so nothing of it is cut
+  off; all six fit in one row however narrow the window (three by two on
+  a phone), never scrolled. Once the cover is drawn, it is drawn in every
+  other style too, ahead of time, so a style you pick shows at once.
   - **Stickery**: each line you type is a sticker with stepped, cut paper
     edges, in turn the colour and one a hundred degrees round the colour
     wheel from it (pink, then blue, as Main Sticker 2's), with a border that
@@ -91,14 +98,15 @@ or photo is picked. No scrollbar shows anywhere.
     they are set in, in one row of the same height for every style.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
-- **Shuffle** draws the letters another way: every random choice a style
+- **Shuffle**, over the cover, draws the letters another way: every random choice a style
   makes (each letter's hand, the drips, where the stickers sit) is seeded by
   the title and the shuffle together, so what you see is exactly what
   downloads, until you shuffle again.
 - **Pick a colour** with two sliders: the hue, and the shade from near-black
   to near-white. The colour is the letters' (the paste, the ink, the
   sticker). Dragging a slider only lights the paste again, so it keeps up
-  with your finger.
+  with your finger. The colour's hex code shows beside its label; click it
+  to copy it.
 - **Pick the background**, light or dark, with the two buttons over the
   cover. Beside the colour, **Low contrast** says when the letters are near
   the background in lightness.
@@ -125,7 +133,8 @@ or photo is picked. No scrollbar shows anywhere.
   - Keys, once selected: the arrows nudge a pixel (Shift, ten); **+** and
     **-** scale; **[** and **]** turn a degree (Shift, fifteen); **Escape**
     lets go. **Double-click** the letters to change what they say.
-  - **Reset text**, over the cover, puts them back where the style set them.
+  - **Reset text**, over the cover, puts them back where the style set them
+    (dimmed while they are there already).
   - Placed letters are drawn again where they land, never stretched as a
     picture: paste is made again from its beads, so it stays sharp and lit
     from above however it is turned. While you drag, the letters as they
@@ -265,13 +274,21 @@ drawn from scratch for every title:
    smooth ramp, blended in the display's own values as type is, so a pale
    paste on the dark ground never steps. Without WebGL 2 the same light is
    worked out on the page (`shadeField`).
-9. **Off the page's thread.** The field is made in a web worker, a few
-   hundred milliseconds at full size, the preview first and then the
-   thumbnails; a newer title replaces an older one still waiting. If the
-   worker fails or stops answering, the page makes it itself. Fields are
-   kept up to a budget in bytes, known by their paste and never by their
-   colour, so a colour change makes nothing again and a field is never
-   drawn where paste that has since moved used to be.
+9. **Off the page's thread, and ahead of time.** The field is made in two
+   web workers, a few hundred milliseconds at full size, in the order it is
+   needed: a quick draft of the preview's at half the size (a quarter of
+   the time, shown until the real one is made, and on screen hard to tell
+   from it), the preview's own, the thumbnails', and then, once the cover
+   is drawn, the cover in every other style, at full size, so picking one
+   shows it at once. Only one worker works ahead, so the other is always
+   free for what is on screen; a newer title replaces an older one still
+   waiting. A capsule no deeper anywhere than the beads before it is
+   passed over without being measured, which halves the work and changes
+   no pixel. If a worker fails or stops answering, the page makes the
+   fields itself, and nothing ahead. Fields are kept up to a budget in
+   bytes, known by their paste and never by their colour, so a colour
+   change makes nothing again and a field is never drawn where paste that
+   has since moved used to be.
 
 Stickery's stickers follow the ink itself: every plain word and typeface
 word as thin upright strips of its letters' ink (read from the canvas a
@@ -298,13 +315,14 @@ Only the plain face chosen is loaded.
 | `formats.ts` | The three sizes, Instagram's crop windows, and the safe area they agree on |
 | `title.ts` | What was typed, as lines and words, with bold (kept as stars) as Stickery's funky words; what typing, Cmd+B and typed stars do to the bold |
 | `TextField.tsx` | The Text field: a textarea for the typing, the same letters drawn over it with their bold |
+| `platform.ts` | Whether this is a Mac or an iPhone, for Cmd or Ctrl |
 | `history.ts` | Undo and redo, a run of the same change one step |
 | `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows |
 | `liquid-layout.ts` | The liquid letters' hands, seeds, cases and spacing, and lines packed to fill their block |
 | `liquid.ts` | A letter's paste: the hand's bow and sway, beads, pressure, blobs, drips and droplets |
 | `liquid-render.ts` | The paste as a field (distance fields, smooth union, height), and its light worked out on the page |
 | `liquid-gl.ts` | The same light, in a WebGL 2 shader |
-| `liquid.worker.ts`, `liquid-client.ts` | The worker that makes the fields, and the page's queue and lighting of them |
+| `liquid.worker.ts`, `liquid-client.ts` | The workers that make the fields, and the page's queue (draft, preview, thumbnails, ahead) and lighting of them |
 | `strokes/` | The single-line fonts, Drip and Goo, from `scripts/drip-font.mjs` and `scripts/goo-font.mjs`, with their licences |
 | `stepped.ts` | Stickery's stepped sticker outline |
 | `scene.ts` | Each style, as a list of fills, the photo, grain, shapes, text and liquid layers; and the letters placed (`placeScene`) |
@@ -355,9 +373,11 @@ letter back, and check: that no larger size that fits was passed over; that
 letters keep their gap and touch only now and then; that a word is drawn the
 same wherever it goes, and the hand mixes its cases at about the rate it
 should; that drips stay above their floor; that a tapered capsule's distance
-matches the slow way of working it out; that two strokes pool when close and
+matches the slow way of working it out, and a field's depth is its deepest
+capsule's however few are measured in full; that two strokes pool when close and
 stay apart when not; that paste shades the ground away from the light, gel's
-shadow in its colour, and the layer's edge is exactly the ground; that only
+shadow in its colour, and the layer's edge is exactly the ground, and
+paste made small draws nothing where its depth was not worked out; that only
 Stickery reads the bold; that bold goes to stars and back exactly,
 carries on as typed and stops at a space, and typed stars turn into it;
 that undo takes back a thing done, a slider dragged as one step; that

@@ -2,22 +2,50 @@
  * The maker's own look, the same wherever it is served: every rule is here
  * and none is assumed from the page around it, so a site's resets (or the
  * lack of them) change nothing. Light and dark follow the system.
+ *
+ * Black and white, warm and quiet, so the cover is the only colour on the
+ * page (and the picked colour shows in the mark and the hex chip alone):
+ * a neutral surround is what the eye judges colour against. Two panels of
+ * controls as cards either side of the cover, which sits on a dotted
+ * board, as an artboard does.
+ *
+ * Three heights, and only three: a field (44), a button (36), and a small
+ * button on a label's row (28).
  */
 
 .root {
-  --rcm-bg: #f3f2ef;
+  --rcm-bg: #ecebe7;
+  --rcm-board: #e5e3de;
+  --rcm-dot: rgba(28, 26, 22, 0.13);
+  --rcm-card: #fbfaf8;
+  --rcm-card-line: rgba(28, 26, 22, 0.07);
+  --rcm-card-shadow: 0 1px 2px rgba(28, 26, 22, 0.04), 0 6px 20px rgba(28, 26, 22, 0.04);
   --rcm-surface: #ffffff;
-  --rcm-inset: rgba(21, 21, 20, 0.06);
-  --rcm-text: #151514;
-  --rcm-muted: #6e6d68;
-  --rcm-line: rgba(21, 21, 20, 0.12);
-  --rcm-strong: #151514;
-  --rcm-primary: #151514;
-  --rcm-on-primary: #ffffff;
-  --rcm-focus: #3b6cf6;
+  --rcm-inset: rgba(28, 26, 22, 0.055);
+  --rcm-inset-strong: rgba(28, 26, 22, 0.09);
+  --rcm-text: #171614;
+  --rcm-muted: #75736c;
+  --rcm-faint: #a3a19a;
+  --rcm-line: rgba(28, 26, 22, 0.11);
+  --rcm-line-strong: rgba(28, 26, 22, 0.24);
+  --rcm-strong: #171614;
+  --rcm-primary: #171614;
+  --rcm-on-primary: #fbfaf8;
+  --rcm-focus: #2f6bff;
   --rcm-danger: #b42318;
-  --rcm-shadow: 0 0 0 1px rgba(21, 21, 20, 0.08), 0 2px 6px rgba(21, 21, 20, 0.06), 0 18px 48px rgba(21, 21, 20, 0.14);
-  --rcm-pop: 0 0 0 1px rgba(21, 21, 20, 0.1), 0 4px 10px rgba(21, 21, 20, 0.08), 0 16px 40px rgba(21, 21, 20, 0.16);
+  --rcm-tip-bg: #171614;
+  --rcm-tip-text: #fbfaf8;
+  --rcm-lift: 0 1px 2px rgba(28, 26, 22, 0.1), 0 1px 1px rgba(28, 26, 22, 0.04);
+  --rcm-shadow: 0 0 0 1px rgba(28, 26, 22, 0.06), 0 2px 6px rgba(28, 26, 22, 0.06), 0 22px 56px rgba(28, 26, 22, 0.16);
+  --rcm-pop: 0 0 0 1px rgba(28, 26, 22, 0.08), 0 4px 10px rgba(28, 26, 22, 0.08), 0 18px 44px rgba(28, 26, 22, 0.16);
+
+  --rcm-h-field: 44px;
+  --rcm-h-button: 36px;
+  --rcm-h-mini: 28px;
+  --rcm-r-card: 18px;
+  --rcm-r-field: 11px;
+  --rcm-r-button: 9px;
+  --rcm-r-mini: 7px;
 
   box-sizing: border-box;
   width: 100%;
@@ -39,19 +67,30 @@
 
 @media (prefers-color-scheme: dark) {
   .root {
-    --rcm-bg: #121212;
-    --rcm-surface: #1c1c1b;
-    --rcm-inset: rgba(242, 241, 238, 0.07);
+    --rcm-bg: #0e0e0f;
+    --rcm-board: #131314;
+    --rcm-dot: rgba(242, 241, 238, 0.11);
+    --rcm-card: #18181a;
+    --rcm-card-line: rgba(242, 241, 238, 0.07);
+    --rcm-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+    --rcm-surface: #212124;
+    --rcm-inset: rgba(242, 241, 238, 0.06);
+    --rcm-inset-strong: rgba(242, 241, 238, 0.1);
     --rcm-text: #f2f1ee;
-    --rcm-muted: #9c9a95;
-    --rcm-line: rgba(242, 241, 238, 0.14);
+    --rcm-muted: #9a9892;
+    --rcm-faint: #66645f;
+    --rcm-line: rgba(242, 241, 238, 0.11);
+    --rcm-line-strong: rgba(242, 241, 238, 0.26);
     --rcm-strong: #f2f1ee;
     --rcm-primary: #f2f1ee;
-    --rcm-on-primary: #121212;
+    --rcm-on-primary: #121213;
     --rcm-focus: #7ea2ff;
     --rcm-danger: #ff8a80;
-    --rcm-shadow: 0 0 0 1px rgba(242, 241, 238, 0.12), 0 18px 48px rgba(0, 0, 0, 0.5);
-    --rcm-pop: 0 0 0 1px rgba(242, 241, 238, 0.14), 0 16px 40px rgba(0, 0, 0, 0.55);
+    --rcm-tip-bg: #f2f1ee;
+    --rcm-tip-text: #121213;
+    --rcm-lift: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --rcm-shadow: 0 0 0 1px rgba(242, 241, 238, 0.1), 0 22px 56px rgba(0, 0, 0, 0.55);
+    --rcm-pop: 0 0 0 1px rgba(242, 241, 238, 0.12), 0 18px 44px rgba(0, 0, 0, 0.6);
   }
 }
 
@@ -68,16 +107,26 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: max(14px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 14px
-    max(24px, env(safe-area-inset-left));
+  padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px
+    max(20px, env(safe-area-inset-left));
 }
 
 .title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.015em;
   white-space: nowrap;
+}
+
+.mark {
+  display: block;
+  width: 15px;
+  height: 20px;
+  flex: none;
 }
 
 .actions {
@@ -100,13 +149,14 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 40px;
+  height: var(--rcm-h-button);
   margin: 0;
-  padding: 0 16px;
+  padding: 0 16px 0 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--rcm-r-button);
   background: var(--rcm-primary);
   color: var(--rcm-on-primary);
+  box-shadow: var(--rcm-lift), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   font: inherit;
   font-size: 14px;
   font-weight: 600;
@@ -117,7 +167,7 @@
 }
 
 .save:hover {
-  opacity: 0.86;
+  opacity: 0.88;
 }
 
 .save:active {
@@ -125,60 +175,93 @@
 }
 
 .save:disabled {
-  opacity: 0.35;
+  opacity: 0.32;
+  box-shadow: none;
   cursor: not-allowed;
   transform: none;
 }
 
-.save:focus-visible,
-.toggle:focus-visible {
+.save:focus-visible {
   outline: 2px solid var(--rcm-focus);
   outline-offset: 2px;
 }
 
-/* The controls on the left and the preview on the right on a wide screen;
-   on a phone the preview first, so the cover is in sight while typing. */
+/* The controls for the words on the left, the cover in the middle, the photo on the right. */
 
 .main {
   flex: 1;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 300px;
+  grid-template-columns: 316px minmax(0, 1fr) 316px;
   grid-template-areas: "left centre right";
-  gap: 36px;
+  gap: 14px;
   min-height: 0;
-  padding: 4px max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
-    max(24px, env(safe-area-inset-left));
+  padding: 0 max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+}
+
+/* A panel of controls: a card, scrolled inside (with no bar) only where a window is too short for it. */
+.panel,
+.photoPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px;
+  overflow-y: auto;
+  border-radius: var(--rcm-r-card);
+  background: var(--rcm-card);
+  box-shadow: 0 0 0 1px var(--rcm-card-line), var(--rcm-card-shadow);
+  scrollbar-width: none;
+}
+
+.panel {
+  grid-area: left;
+}
+
+.photoPanel {
+  grid-area: right;
+}
+
+.panel::-webkit-scrollbar,
+.photoPanel::-webkit-scrollbar {
+  display: none;
 }
 
 /*
- * The cover, then the styles under it, as one group of a fixed height:
- * the stage's height is set by the window, never by the size or the style
- * chosen, so the row of styles under it never moves.
+ * The cover, on its board: the row of tools over it, the styles under it.
+ * The cover's height comes from the window, never from the size or the
+ * style chosen, so the tools and the styles never move; on a short window
+ * it gives way first.
  */
 .preview {
+  --rcm-tile-h: clamp(96px, 15.5dvh, 138px);
+
   grid-area: centre;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: safe center;
   gap: 14px;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.preview::-webkit-scrollbar {
-  display: none;
+  padding: 14px;
+  overflow: hidden;
+  border-radius: var(--rcm-r-card);
+  background-color: var(--rcm-board);
+  background-image: radial-gradient(circle at center, var(--rcm-dot) 1px, transparent 1.25px);
+  background-size: 18px 18px;
+  background-position: center;
+  box-shadow: inset 0 0 0 1px var(--rcm-card-line);
 }
 
 .stage {
-  flex: none;
-  height: clamp(300px, calc(100dvh - 400px), 560px);
+  flex: 0 1 clamp(300px, calc(100dvh - 370px), 560px);
+  align-self: stretch;
+  min-height: 220px;
   container-type: size;
   display: grid;
   place-items: center;
 }
-
 
 .frame {
   position: relative;
@@ -192,7 +275,7 @@
   height: 100%;
   /* While a new size is being drawn, the last picture shows whole, not stretched. */
   object-fit: contain;
-  border-radius: 3px;
+  border-radius: 4px;
   box-shadow: var(--rcm-shadow);
 }
 
@@ -200,7 +283,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: 3px;
+  border-radius: 4px;
   pointer-events: none;
 }
 
@@ -223,8 +306,8 @@
 }
 
 .surface:focus-visible {
-  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-focus);
-  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--rcm-board), 0 0 0 4px var(--rcm-focus);
+  border-radius: 4px;
 }
 
 /* The box round the selected text, drawn in the picture's own pixels, its lines a fixed width on screen. */
@@ -309,79 +392,210 @@
   display: grid;
   place-items: center;
   border: 2px dashed var(--rcm-focus);
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--rcm-bg) 70%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--rcm-board) 72%, transparent);
   color: var(--rcm-text);
   font-size: 15px;
   font-weight: 600;
   pointer-events: none;
 }
 
-/* Above the cover: its background, light or dark, in the middle, and putting the text back, at the side, once it is moved. */
-.previewTop {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.previewTop > .segments {
-  grid-column: 2;
-}
-
-/* Undo and redo, by the background's buttons as Reset text is on their other side. */
-.history {
-  grid-column: 1;
-  grid-row: 1;
-  justify-self: end;
+/*
+ * Over the cover: undo and redo, its background light or dark, a shuffle
+ * of the letters and the text put back, in one bar of one height. A
+ * button that cannot act now is dimmed, never taken away.
+ */
+.toolbar {
+  flex: none;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 2px;
+  height: var(--rcm-h-field);
+  padding: 4px;
+  border-radius: 13px;
+  background: var(--rcm-card);
+  box-shadow: 0 0 0 1px var(--rcm-card-line), 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 18px rgba(0, 0, 0, 0.06);
 }
 
-.history .iconButton {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+.tool {
+  appearance: none;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--rcm-h-button);
+  height: var(--rcm-h-button);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--rcm-r-button);
   background: transparent;
+  color: var(--rcm-text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
-.resetText {
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: start;
-  height: 34px;
+.tool:hover:not(:disabled) {
+  background: var(--rcm-inset);
+}
+
+.tool:active:not(:disabled) {
+  background: var(--rcm-inset-strong);
+}
+
+.tool:disabled {
+  color: var(--rcm-faint);
+  cursor: default;
+}
+
+.toolRule {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 5px;
+  background: var(--rcm-line);
+}
+
+.toolSegments {
+  display: flex;
+  gap: 2px;
+}
+
+.toolSegment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--rcm-h-button);
+  padding: 0 12px;
+  border-radius: var(--rcm-r-button);
+  color: var(--rcm-muted);
+  font-size: 13.5px;
+  font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-/* On a phone, the arrow alone: the words would run off the screen. */
-@media (max-width: 519.98px) {
-  .resetText {
-    width: 36px;
-    padding: 0;
-    justify-content: center;
-  }
+.toolSegment:hover {
+  color: var(--rcm-text);
+}
 
-  .resetLabel {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+.toolSegment:has(.radio:checked) {
+  background: var(--rcm-inset-strong);
+  color: var(--rcm-text);
+}
+
+.toolSegment:has(.radio:focus-visible) {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: -2px;
+}
+
+/* A button's name, shown by it on a pointer's hover (or a key's focus), after a moment: the bar is icons. */
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 30;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--rcm-tip-bg);
+  color: var(--rcm-tip-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: pre;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -3px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+@media (hover: hover) {
+  .tip:hover::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition-delay: 0.35s;
   }
+}
+
+.tip:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* At either end of the bar, a name runs inward from its button, so it never runs off a narrow window. */
+.tool.tip:first-child::after {
+  left: 0;
+  transform: translate(0, -3px);
+}
+
+.tool.tip:last-child::after {
+  left: auto;
+  right: 0;
+  transform: translate(0, -3px);
+}
+
+@media (hover: hover) {
+  .tool.tip:first-child:hover::after,
+  .tool.tip:last-child:hover::after {
+    transform: none;
+  }
+}
+
+.tool.tip:first-child:focus-visible::after,
+.tool.tip:last-child:focus-visible::after {
+  transform: none;
+}
+
+/* The hex chip ends its row: its name runs inward too. */
+.hexChip.tip::after {
+  left: auto;
+  right: 0;
+  transform: translate(0, -3px);
+}
+
+@media (hover: hover) {
+  .hexChip.tip:hover::after {
+    transform: none;
+  }
+}
+
+.hexChip.tip:focus-visible::after {
+  transform: none;
+}
+
+/* Copied: said at once, on a touch screen too, which has no hover to show it. */
+.hexChip.tip[data-copied]::after {
+  opacity: 1;
+  transform: none;
+  transition-delay: 0s;
+}
+
+.tool:focus-visible,
+.hexChip:focus-visible,
+.photoButton:focus-visible,
+.glassButton:focus-visible,
+.smallIcon:focus-visible,
+.linkButton:focus-visible {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: 2px;
 }
 
 /* The size's pixels beside its label: quieter than the label, in plain case. */
 .dims {
   margin-left: 6px;
-  color: var(--rcm-muted);
+  color: var(--rcm-faint);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 550;
   letter-spacing: 0;
   text-transform: none;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  opacity: 0.8;
 }
 
 /* A checkbox drawn as the maker's own: a rounded square that fills with a tick. */
@@ -390,7 +604,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
+  height: var(--rcm-h-mini);
   color: var(--rcm-text);
   font-size: 13px;
   font-weight: 550;
@@ -410,16 +624,21 @@
   place-items: center;
   width: 18px;
   height: 18px;
-  border: 1.5px solid var(--rcm-muted);
+  border: 1.5px solid var(--rcm-line-strong);
   border-radius: 5px;
+  background: var(--rcm-surface);
   color: transparent;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.check:hover .checkBox {
+  border-color: var(--rcm-muted);
 }
 
 .check:has(.radio:checked) .checkBox {
   border-color: var(--rcm-strong);
   background: var(--rcm-strong);
-  color: var(--rcm-bg);
+  color: var(--rcm-card);
 }
 
 .check:has(.radio:focus-visible) .checkBox {
@@ -427,50 +646,7 @@
   outline-offset: 2px;
 }
 
-.toggle {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  margin: 0;
-  padding: 0 12px;
-  border: 1px solid var(--rcm-line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--rcm-text);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 550;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.toggle[aria-pressed="true"] {
-  border-color: var(--rcm-strong);
-  background: var(--rcm-strong);
-  color: var(--rcm-bg);
-}
-
 /* Controls. */
-
-.panel {
-  grid-area: left;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  /* Room for the focus rings the scroller would otherwise clip. */
-  margin: -4px;
-  padding: 4px;
-  scrollbar-width: none;
-}
-
-.panel::-webkit-scrollbar {
-  display: none;
-}
 
 /* The style's own type, under the text: two choices for Stickery, one for Pasty, the style's face for the rest, always one row. */
 .letteringRow {
@@ -487,9 +663,9 @@
 .fixedFace {
   display: flex;
   align-items: center;
-  height: 46px;
+  height: var(--rcm-h-field);
   padding: 0 14px;
-  border-radius: 10px;
+  border-radius: var(--rcm-r-field);
   background: var(--rcm-inset);
   color: var(--rcm-text);
   white-space: nowrap;
@@ -500,20 +676,29 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
+/* A field's name, and what acts on it beside it, in a row as tall as a small button and no taller, so nothing in it is cut off. */
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--rcm-h-mini);
+}
+
 .label {
   margin: 0;
   padding: 0;
   color: var(--rcm-muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -531,7 +716,7 @@
   margin: 0;
   padding: 12px 14px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--rcm-r-field);
   font: inherit;
   /* 16px or more, or iOS zooms the page when the field is focused. */
   font-size: 16px;
@@ -547,7 +732,7 @@
 .input {
   display: block;
   width: 100%;
-  min-height: 92px;
+  min-height: 96px;
   max-height: 200px;
   border-color: var(--rcm-line);
   background: var(--rcm-surface);
@@ -557,10 +742,15 @@
   resize: none;
   field-sizing: content;
   scrollbar-width: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .input::-webkit-scrollbar {
   display: none;
+}
+
+.input:hover {
+  border-color: var(--rcm-line-strong);
 }
 
 .input::placeholder {
@@ -574,6 +764,12 @@
   -webkit-text-fill-color: transparent;
 }
 
+.input:focus {
+  border-color: var(--rcm-focus);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rcm-focus) 18%, transparent);
+}
+
 .mirror {
   position: absolute;
   inset: 0;
@@ -584,7 +780,7 @@
 }
 
 .mirror[data-empty] {
-  color: var(--rcm-muted);
+  color: var(--rcm-faint);
 }
 
 /* Bold, as a stroke round the letters: a bolder face would be wider, and every letter after it out of line with the caret. */
@@ -592,7 +788,13 @@
   -webkit-text-stroke: 0.75px currentColor;
 }
 
-/* The colour's label row: a word on its contrast, then the colour. */
+.note {
+  margin: 0;
+  color: var(--rcm-danger);
+  font-size: 13px;
+}
+
+/* The colour's label row: a word on its contrast, then the colour and its hex code, to copy. */
 .colourSide {
   display: inline-flex;
   align-items: center;
@@ -600,7 +802,10 @@
 }
 
 .warnPill {
-  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--rcm-danger) 12%, transparent);
   color: var(--rcm-danger);
@@ -611,22 +816,105 @@
   cursor: help;
 }
 
-.input:focus {
-  border-color: var(--rcm-focus);
-  outline: 1px solid var(--rcm-focus);
+.hexChip {
+  appearance: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--rcm-h-mini);
+  margin: 0 -6px 0 0;
+  padding: 0 7px 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--rcm-text);
+  font: inherit;
+  cursor: copy;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease;
 }
 
-.input:focus + .mirror {
-  /* The textarea's border is the one that shows; the mirror only matches its width. */
-  border-color: transparent;
+.hexChip:hover {
+  background: var(--rcm-inset);
 }
 
-.note {
+.hexChip:active {
+  background: var(--rcm-inset-strong);
+}
+
+/* The colour the two sliders name. */
+.chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
+}
+
+.hex {
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.hexIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  color: var(--rcm-faint);
+  transition: color 0.15s ease;
+}
+
+.hexChip:hover .hexIcon {
+  color: var(--rcm-text);
+}
+
+/* The keys, at the foot of the words' card; not on a touch screen, which has none. */
+.keys {
+  display: grid;
+  gap: 6px;
+  margin: auto 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--rcm-line);
+}
+
+.key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--rcm-muted);
+  font-size: 12.5px;
+}
+
+.key dt,
+.key dd {
   margin: 0;
-  color: var(--rcm-danger);
-  font-size: 13px;
 }
 
+.key kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--rcm-inset);
+  box-shadow: inset 0 -1px 0 var(--rcm-line);
+  color: var(--rcm-text);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .keys {
+    display: none;
+  }
+}
 
 /* A radio is the control; what is drawn is its label. */
 .radio {
@@ -647,99 +935,85 @@
   white-space: nowrap;
 }
 
-/* The styles in one row, scrolled sideways, the next one showing at the edge. */
-/* Under the cover, centred under it: each thumbnail shares the width, from 80 to 104 pixels, and the row scrolls sideways only where six cannot fit. */
+/*
+ * The styles, under the cover: each the whole cover in that style, in the
+ * cover's own shape, all six in one row as wide as they fit and never
+ * wider, so there is never anything to scroll.
+ */
 .styles {
-  display: flex;
-  justify-content: safe center;
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, calc(var(--rcm-tile-h) * var(--rcm-ratio-n))));
+  justify-content: center;
+  align-items: start;
   gap: 10px;
-  margin: 0 -4px;
+  width: 100%;
   padding: 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  scroll-padding-inline: 4px;
-  scrollbar-width: none;
-}
-
-.styles::-webkit-scrollbar {
-  display: none;
 }
 
 .style {
   position: relative;
-  flex: 1 1 0;
-  max-width: 104px;
-  min-width: 80px;
   display: flex;
   flex-direction: column;
   gap: 7px;
   min-width: 0;
-  scroll-snap-align: start;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
 .thumb {
   display: block;
-  aspect-ratio: 3 / 4;
+  width: 100%;
+  aspect-ratio: var(--rcm-ratio);
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--rcm-inset);
-  box-shadow: 0 0 0 1px var(--rcm-line);
-  transition: box-shadow 0.15s ease;
+  box-shadow: 0 0 0 1px var(--rcm-line), 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .thumbCanvas {
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: cover;
 }
 
-.style:hover .thumb {
-  box-shadow: 0 0 0 1px var(--rcm-muted);
+@media (hover: hover) {
+  .style:hover .thumb {
+    box-shadow: 0 0 0 1px var(--rcm-line-strong), 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
 }
 
 .style:has(.radio:checked) .thumb {
-  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-strong);
+  box-shadow: 0 0 0 2px var(--rcm-board), 0 0 0 4px var(--rcm-strong);
+  transform: none;
 }
 
 .style:has(.radio:focus-visible) .thumb {
-  box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-focus);
+  box-shadow: 0 0 0 2px var(--rcm-board), 0 0 0 4px var(--rcm-focus);
 }
 
 .styleName {
+  overflow: hidden;
   color: var(--rcm-muted);
-  font-size: 13px;
-  font-weight: 550;
+  font-size: 12.5px;
+  font-weight: 600;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.style:hover .styleName,
 .style:has(.radio:checked) .styleName {
   color: var(--rcm-text);
-}
-
-.labelRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 32px;
-  margin: -6px 0 -4px;
-}
-
-/* The colour the two sliders name. */
-.chip {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
 }
 
 .sliders {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 /* A slider is its own track: the colours it runs through, under a round thumb. */
@@ -753,7 +1027,7 @@
   padding: 0;
   border-radius: 14px;
   background: var(--rcm-track, var(--rcm-inset));
-  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.25);
   cursor: pointer;
   touch-action: pan-y;
   -webkit-tap-highlight-color: transparent;
@@ -779,7 +1053,7 @@
   border: 3px solid #ffffff;
   border-radius: 50%;
   background: transparent;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.28);
 }
 
 .slider::-moz-range-thumb {
@@ -788,7 +1062,7 @@
   border: 3px solid #ffffff;
   border-radius: 50%;
   background: transparent;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.28);
 }
 
 .slider:focus-visible {
@@ -796,32 +1070,53 @@
   outline-offset: 2px;
 }
 
+/* A segmented control: a field's height, its choices a button's. */
 .segments {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
+  gap: 2px;
+  height: var(--rcm-h-field);
   padding: 4px;
-  border-radius: 10px;
+  border-radius: var(--rcm-r-field);
   background: var(--rcm-inset);
 }
 
-/* Two buttons, as wide as their words: the background, over the preview. */
-.compact {
-  display: inline-grid;
-  grid-template-columns: repeat(2, auto);
+.segment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--rcm-h-button);
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--rcm-muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.compact .segment {
-  gap: 6px;
-  height: 34px;
-  padding: 0 14px;
+.segment:hover {
+  color: var(--rcm-text);
 }
 
+.segment:has(.radio:checked) {
+  background: var(--rcm-surface);
+  color: var(--rcm-text);
+  box-shadow: var(--rcm-lift);
+}
+
+.segment:has(.radio:focus-visible) {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: 1px;
+}
 
 .dropdown {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -832,11 +1127,11 @@
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  height: 46px;
+  height: var(--rcm-h-field);
   margin: 0;
   padding: 0 12px 0 14px;
   border: 1px solid var(--rcm-line);
-  border-radius: 10px;
+  border-radius: var(--rcm-r-field);
   background: var(--rcm-surface);
   color: var(--rcm-text);
   font: inherit;
@@ -848,9 +1143,8 @@
 }
 
 .dropdownButton:hover {
-  border-color: var(--rcm-muted);
+  border-color: var(--rcm-line-strong);
 }
-
 
 .dropdownButton[aria-expanded="true"] {
   border-color: var(--rcm-strong);
@@ -889,10 +1183,15 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   list-style: none;
-  border-radius: 12px;
+  border-radius: 13px;
   background: var(--rcm-surface);
   box-shadow: var(--rcm-pop);
   outline: none;
+  scrollbar-width: none;
+}
+
+.dropdownList::-webkit-scrollbar {
+  display: none;
 }
 
 .dropdownOption {
@@ -900,7 +1199,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 44px;
+  min-height: var(--rcm-h-field);
   padding: 6px 10px 6px 12px;
   border-radius: 8px;
   color: var(--rcm-text);
@@ -918,63 +1217,15 @@
   box-shadow: inset 0 0 0 2px var(--rcm-focus);
 }
 
-.segment {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 38px;
-  padding: 0 6px;
-  border-radius: 7px;
-  color: var(--rcm-muted);
-  font-size: 13.5px;
-  font-weight: 550;
-  white-space: nowrap;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.segment:hover {
-  color: var(--rcm-text);
-}
-
-.segment:has(.radio:checked) {
-  background: var(--rcm-surface);
-  color: var(--rcm-text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
-}
-
-.segment:has(.radio:focus-visible) {
-  outline: 2px solid var(--rcm-focus);
-  outline-offset: 1px;
-}
-
 /*
- * The photo, in its own column beside the cover: a slot of one height,
+ * The photo, in its own card beside the cover: a slot of one height,
  * empty (a place to drop one, Upload, Take photo) or showing the photo
  * with Replace and a new photo over it; then its zoom and adjustments,
  * there before a photo is, waiting, so nothing moves when one is added.
  */
-.photoPanel {
-  grid-area: right;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  margin: -4px;
-  padding: 4px;
-  scrollbar-width: none;
-}
-
-.photoPanel::-webkit-scrollbar {
-  display: none;
-}
-
 .photoSlot {
   position: relative;
+  flex: none;
   height: 150px;
   overflow: hidden;
   border-radius: 12px;
@@ -988,7 +1239,7 @@
   place-items: center;
   background: transparent;
   box-shadow: none;
-  border: 1.5px dashed var(--rcm-line);
+  border: 1.5px dashed var(--rcm-line-strong);
 }
 
 .photoSlot[data-over] {
@@ -1005,7 +1256,7 @@
 }
 
 .photoAddIcon {
-  color: var(--rcm-muted);
+  color: var(--rcm-faint);
 }
 
 .photoAddButtons {
@@ -1019,13 +1270,14 @@
   align-items: center;
   justify-content: center;
   gap: 7px;
-  height: 36px;
+  height: var(--rcm-h-button);
   margin: 0;
   padding: 0 13px;
   border: 1px solid var(--rcm-line);
-  border-radius: 8px;
+  border-radius: var(--rcm-r-button);
   background: var(--rcm-surface);
   color: var(--rcm-text);
+  box-shadow: var(--rcm-lift);
   font: inherit;
   font-size: 13.5px;
   font-weight: 600;
@@ -1036,7 +1288,7 @@
 }
 
 .photoButton:hover {
-  border-color: var(--rcm-muted);
+  border-color: var(--rcm-line-strong);
 }
 
 .photoPicture {
@@ -1061,12 +1313,12 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 32px;
+  height: var(--rcm-h-button);
   margin: 0;
-  padding: 0 11px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 8px;
-  background: rgba(18, 18, 18, 0.58);
+  border-radius: var(--rcm-r-button);
+  background: rgba(18, 18, 18, 0.6);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   color: #ffffff;
@@ -1079,12 +1331,12 @@
 }
 
 .glassButton[aria-label] {
-  width: 32px;
+  width: var(--rcm-h-button);
   padding: 0;
 }
 
 .glassButton:hover {
-  background: rgba(18, 18, 18, 0.75);
+  background: rgba(18, 18, 18, 0.78);
 }
 
 /* Mirror, Fit and Remove, on the Photo label's row. */
@@ -1095,80 +1347,39 @@
 
 .smallIcon {
   appearance: none;
+  position: relative;
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: var(--rcm-h-mini);
+  height: var(--rcm-h-mini);
   margin: 0;
   padding: 0;
-  border: 1px solid var(--rcm-line);
-  border-radius: 7px;
+  border: 0;
+  border-radius: var(--rcm-r-mini);
   background: transparent;
   color: var(--rcm-text);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .smallIcon:hover:not(:disabled) {
-  border-color: var(--rcm-muted);
+  background: var(--rcm-inset);
 }
 
 .smallIcon[aria-pressed="true"] {
-  border-color: var(--rcm-strong);
   background: var(--rcm-strong);
-  color: var(--rcm-bg);
+  color: var(--rcm-card);
 }
 
 .smallIcon:disabled {
-  opacity: 0.35;
+  color: var(--rcm-faint);
   cursor: default;
 }
 
 .smallIcon.danger:hover {
-  border-color: var(--rcm-danger);
+  background: color-mix(in srgb, var(--rcm-danger) 12%, transparent);
   color: var(--rcm-danger);
-}
-
-.photoButton:focus-visible,
-.glassButton:focus-visible,
-.smallIcon:focus-visible,
-.iconButton:focus-visible,
-.linkButton:focus-visible {
-  outline: 2px solid var(--rcm-focus);
-  outline-offset: 2px;
-}
-
-.iconButton {
-  appearance: none;
-  display: inline-grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--rcm-line);
-  border-radius: 9px;
-  background: var(--rcm-surface);
-  color: var(--rcm-text);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
-}
-
-.iconButton:hover:not(:disabled) {
-  border-color: var(--rcm-muted);
-}
-
-.iconButton[aria-pressed="true"] {
-  border-color: var(--rcm-strong);
-  background: var(--rcm-strong);
-  color: var(--rcm-bg);
-}
-
-.iconButton:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 .value {
@@ -1200,12 +1411,11 @@
   border-radius: 2px;
   background: linear-gradient(
     to right,
-    var(--rcm-inset) var(--rcm-from, 0%),
+    var(--rcm-inset-strong) var(--rcm-from, 0%),
     var(--rcm-strong) var(--rcm-from, 0%),
     var(--rcm-strong) var(--rcm-to, 0%),
-    var(--rcm-inset) var(--rcm-to, 0%)
+    var(--rcm-inset-strong) var(--rcm-to, 0%)
   );
-  box-shadow: inset 0 0 0 1px var(--rcm-line);
 }
 
 .thinSlider::-moz-range-track {
@@ -1213,12 +1423,11 @@
   border-radius: 2px;
   background: linear-gradient(
     to right,
-    var(--rcm-inset) var(--rcm-from, 0%),
+    var(--rcm-inset-strong) var(--rcm-from, 0%),
     var(--rcm-strong) var(--rcm-from, 0%),
     var(--rcm-strong) var(--rcm-to, 0%),
-    var(--rcm-inset) var(--rcm-to, 0%)
+    var(--rcm-inset-strong) var(--rcm-to, 0%)
   );
-  box-shadow: inset 0 0 0 1px var(--rcm-line);
 }
 
 .thinSlider::-webkit-slider-thumb {
@@ -1227,19 +1436,19 @@
   width: 16px;
   height: 16px;
   margin-top: -6px;
-  border: 2px solid var(--rcm-surface);
+  border: 0;
   border-radius: 50%;
-  background: var(--rcm-strong);
-  box-shadow: 0 0 0 1px var(--rcm-line), 0 1px 3px rgba(0, 0, 0, 0.25);
+  background: var(--rcm-surface);
+  box-shadow: 0 0 0 1px var(--rcm-line-strong), 0 1px 3px rgba(0, 0, 0, 0.22);
 }
 
 .thinSlider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--rcm-surface);
+  width: 16px;
+  height: 16px;
+  border: 0;
   border-radius: 50%;
-  background: var(--rcm-strong);
-  box-shadow: 0 0 0 1px var(--rcm-line), 0 1px 3px rgba(0, 0, 0, 0.25);
+  background: var(--rcm-surface);
+  box-shadow: 0 0 0 1px var(--rcm-line-strong), 0 1px 3px rgba(0, 0, 0, 0.22);
 }
 
 .thinSlider:focus-visible {
@@ -1253,34 +1462,30 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  margin: 0;
-  padding: 0 4px;
+  height: var(--rcm-h-mini);
+  margin: 0 -6px 0 0;
+  padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--rcm-r-mini);
   background: transparent;
-  color: var(--rcm-text);
+  color: var(--rcm-muted);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-}
-
-.linkButton {
-  color: var(--rcm-muted);
-  font-weight: 550;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .linkButton:hover {
+  background: var(--rcm-inset);
   color: var(--rcm-text);
 }
 
 .adjustList {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 2px 0;
+  gap: 6px;
 }
 
 .adjustRow {
@@ -1430,8 +1635,8 @@
   margin: auto;
   padding: 18px;
   border: 0;
-  border-radius: 14px;
-  background: var(--rcm-surface);
+  border-radius: var(--rcm-r-card);
+  background: var(--rcm-card);
   color: var(--rcm-text);
   font: inherit;
 }
@@ -1464,7 +1669,7 @@
   text-align: center;
 }
 
-/* A wide screen: the page is the viewport, the preview its full height. */
+/* A wide screen: the page is the viewport, each column its full height. */
 @media (min-width: 900px) {
   .root {
     height: 100vh;
@@ -1473,9 +1678,9 @@
 }
 
 /*
- * A laptop's narrower window: the photo under the text's controls, the
- * page scrolling past them (no bar) while the cover stays in view beside
- * them, rather than a column cut off part way down a slider.
+ * A laptop's narrower window: the photo's card under the text's, the page
+ * scrolling past them (no bar) while the cover stays in view beside them,
+ * rather than a card cut off part way down a slider.
  */
 @media (min-width: 900px) and (max-width: 1199.98px) {
   .root {
@@ -1484,12 +1689,12 @@
   }
 
   .main {
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: 316px minmax(0, 1fr);
     grid-template-rows: auto auto;
     grid-template-areas:
       "left centre"
       "right centre";
-    row-gap: 28px;
+    align-items: start;
   }
 
   .panel,
@@ -1499,18 +1704,17 @@
 
   .preview {
     position: sticky;
-    top: 12px;
-    align-self: start;
+    top: 14px;
     grid-row: 1 / span 2;
-    overflow: visible;
+    height: calc(100dvh - 82px);
   }
 
   .stage {
-    height: clamp(300px, calc(100dvh - 330px), 560px);
+    flex-basis: clamp(300px, calc(100dvh - 330px), 560px);
   }
 }
 
-/* A phone or a narrow window: preview, then controls, the page scrolling. */
+/* A phone or a narrow window: the cover, then the words' card, then the photo's, the page scrolling. */
 @media (max-width: 899.98px) {
   .header {
     padding-left: max(16px, env(safe-area-inset-left));
@@ -1523,42 +1727,60 @@
       "centre"
       "left"
       "right";
-    gap: 22px;
-    padding: 0 max(16px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom))
-      max(16px, env(safe-area-inset-left));
+    gap: 12px;
+    padding: 0 max(12px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   }
 
-  .preview,
+  .panel,
   .photoPanel {
     overflow: visible;
+    padding: 16px;
+  }
+
+  .preview {
+    --rcm-tile-h: 150px;
+
+    padding: 12px;
   }
 
   .stage {
+    flex: none;
     height: min(46svh, 500px);
   }
 
-  .panel {
-    overflow: visible;
-  }
-
-  /* The row runs to the screen's edges, its thumbnails snapping to the gutter. */
+  /* Three across and two down: six would be too small to tell apart on a phone. */
   .styles {
-    margin: 0 calc(-1 * max(16px, env(safe-area-inset-right))) 0 calc(-1 * max(16px, env(safe-area-inset-left)));
-    padding: 4px max(16px, env(safe-area-inset-right)) 4px max(16px, env(safe-area-inset-left));
-    scroll-padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
-  }
-
-  .style {
-    flex: 0 0 88px;
-    max-width: none;
+    grid-template-columns: repeat(3, minmax(0, calc(var(--rcm-tile-h) * var(--rcm-ratio-n))));
+    row-gap: 12px;
   }
 }
 
+/* A small phone: the background's two words would crowd the bar, so its sun and moon say it. */
+@media (max-width: 389.98px) {
+  .toolSegment {
+    padding: 0 10px;
+  }
+
+  .toolWord {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .save,
   .thumb,
   .segment,
+  .tool,
+  .toolSegment,
+  .tip::after,
+  .hexChip,
+  .hexIcon,
+  .input,
   .dropdownButton,
   .dropdownCaret,
   .checkBox,
@@ -1566,8 +1788,12 @@
   .photoSlot,
   .glassButton,
   .smallIcon,
-  .iconButton,
+  .linkButton,
   .shutter {
     transition: none;
+  }
+
+  .style:hover .thumb {
+    transform: none;
   }
 }

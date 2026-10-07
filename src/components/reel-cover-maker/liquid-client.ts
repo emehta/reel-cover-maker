@@ -8,15 +8,21 @@
  * canvas; and the light on it, done on the GPU each time the canvas is
  * painted, so a colour or ground being dragged never waits on the worker.
  * Fields are kept, so turning back to a style makes nothing again, up to a
- * budget in bytes, and never one a canvas on screen still needs. The worker
- * makes one at a time, the preview's first; a newer request from a canvas
- * replaces its older one still waiting, so fast typing never queues work
- * for titles already gone.
+ * budget in bytes, and never one a canvas on screen still needs. A newer
+ * request from a canvas replaces its older one still waiting, so fast
+ * typing never queues work for titles already gone.
+ *
+ * Two workers make them, each one at a time, in the order they are needed
+ * (`LayerUse`): the preview's quick draft, the preview, the thumbnails, and
+ * then, ahead of time, the preview as every other style would draw it, so
+ * picking one shows it at once. Only one worker ever works ahead, so the
+ * other is always free for what is on screen.
  *
  * A worker can fail: its script may not load, or it may never answer. Then
- * it is set aside and the page draws the layers itself, a little slower but
- * never stuck. A layer that cannot be drawn at all is recorded as failed,
- * never as empty, so a cover is never offered without its letters.
+ * the workers are set aside and the page draws the layers itself, a little
+ * slower but never stuck, and nothing ahead of time. A layer that cannot be
+ * drawn at all is recorded as failed, never as empty, so a cover is never
+ * offered without its letters.
  */
 
 import { shadeOnGpu } from "@/components/reel-cover-maker/liquid-gl";
@@ -41,13 +47,26 @@ const BUDGET = 96 * 1024 * 1024;
 /** Layers lit without a GPU, kept by field and colours: lighting them again is slow. */
 const LIT_KEPT = 24;
 
-/** How long the worker may take over one layer before it is taken to have died. */
+/** How long a worker may take over one layer before it is taken to have died. */
 const PATIENCE_MS = 10_000;
+
+/** The most workers making layers at once. */
+const WORKERS = 2;
+
+/**
+ * What a canvas wants its layers for, most pressing first: the preview's
+ * quick draft, shown while the preview's own is made; the preview's own;
+ * a thumbnail's; and the preview's for a style not showing yet.
+ */
+export type LayerUse = "draft" | "main" | "thumb" | "ahead";
+
+const RANK: Record<LayerUse, number> = { draft: 0, main: 1, thumb: 2, ahead: 3 };
 
 interface Job {
   key: string;
   paint: LiquidPaint;
   target: LiquidTarget;
+  use: LayerUse;
 }
 
 const drawn = new Map<string, LiquidField | null>();
@@ -57,13 +76,22 @@ const failed = new Set<string>();
 const wanted = new Map<string, Set<string>>();
 /** The latest request from each canvas, not yet sent. */
 const queued = new Map<string, Job>();
+/** The layers being made now, and what for. */
+const making = new Map<string, LayerUse>();
 const listeners = new Set<() => void>();
 let held = 0;
-let busy = false;
 let nextId = 1;
 let version = 0;
-/** The worker; null once it has failed or could not be made, when the page draws instead. */
-let worker: Worker | null | undefined;
+/** A worker, and how to call off the layer it is making, if it is making one. */
+interface Lane {
+  worker: Worker;
+  abort: (() => void) | null;
+}
+
+/** The workers; null once one has failed or none could be made, when the page draws instead. */
+let lanes: Lane[] | null = [];
+/** The page drawing a layer itself, with no workers. */
+let drawingHere = false;
 
 /** For useSyncExternalStore: told whenever a layer has been drawn, or has failed. */
 export function subscribeLayers(listener: () => void): () => void {
@@ -179,45 +207,88 @@ function drawHere(job: Job) {
   }
 }
 
-function getWorker(): Worker | null {
-  if (worker !== undefined) return worker;
+/** A worker free to take a layer, made if there is room for one more; null if every one is busy, or there are none. */
+function freeLane(): Lane | null {
+  if (!lanes) return null;
+  const idle = lanes.find((lane) => !lane.abort);
+  if (idle || lanes.length >= WORKERS) return idle ?? null;
   try {
-    worker = new Worker(new URL("./liquid.worker.ts", import.meta.url), { type: "module" });
+    const lane: Lane = { worker: new Worker(new URL("./liquid.worker.ts", import.meta.url), { type: "module" }), abort: null };
+    lanes.push(lane);
+    return lane;
   } catch {
-    worker = null;
+    giveUpWorkers();
+    return null;
   }
-  return worker;
+}
+
+/** The workers set aside for good: the page draws from now on, beginning with what they were making. */
+function giveUpWorkers() {
+  const old = lanes ?? [];
+  lanes = null;
+  // Nothing is made ahead of time on the page's own thread: it would be felt.
+  for (const [slot, job] of queued) if (job.use === "ahead") queued.delete(slot);
+  for (const lane of old) {
+    lane.worker.terminate();
+    lane.abort?.();
+  }
+}
+
+/** The next layer to make: the most pressing waiting, ahead of time only with nothing else waiting and no other being made ahead. */
+function nextJob(): Job | null {
+  let best: [string, Job] | null = null;
+  for (const entry of queued) {
+    const [slot, job] = entry;
+    if (drawn.has(job.key) || failed.has(job.key) || making.has(job.key)) {
+      // Made, or being made for another canvas: this one hears when it is.
+      queued.delete(slot);
+      continue;
+    }
+    if (!best || RANK[job.use] < RANK[best[1].use]) best = entry;
+  }
+  if (!best) return null;
+  if (best[1].use === "ahead" && [...making.values()].includes("ahead")) return null;
+  queued.delete(best[0]);
+  return best[1];
 }
 
 function pump() {
-  if (busy || !queued.size) return;
-  // The preview's layers before the thumbnails'.
-  const slot = [...queued.keys()].find((s) => s === "main" || s.startsWith("main#")) ?? (queued.keys().next().value as string);
-  const job = queued.get(slot) as Job;
-  queued.delete(slot);
-  if (drawn.has(job.key) || failed.has(job.key)) {
-    pump();
-    return;
+  while (queued.size) {
+    if (!lanes) {
+      // No workers: drawn here, one at a time and a moment later, so a typed letter shows first.
+      if (drawingHere) return;
+      const job = nextJob();
+      if (!job) return;
+      drawingHere = true;
+      making.set(job.key, job.use);
+      window.setTimeout(() => {
+        try {
+          drawHere(job);
+        } finally {
+          making.delete(job.key);
+          drawingHere = false;
+          pump();
+        }
+      }, 0);
+      return;
+    }
+    const lane = freeLane();
+    if (!lane) {
+      // Every worker busy, or the workers just set aside: the page's turn, if so.
+      if (!lanes) continue;
+      return;
+    }
+    const job = nextJob();
+    if (!job) return;
+    send(lane, job);
   }
-  busy = true;
-  const finish = () => {
-    busy = false;
-    pump();
-  };
-  const w = getWorker();
-  if (!w) {
-    // No worker: drawn here, a moment later, so a typed letter shows first.
-    window.setTimeout(() => {
-      try {
-        drawHere(job);
-      } finally {
-        finish();
-      }
-    }, 0);
-    return;
-  }
+}
+
+function send(lane: Lane, job: Job) {
+  const w = lane.worker;
   const id = nextId;
   nextId += 1;
+  making.set(job.key, job.use);
   let over = false;
   const end = (field: LiquidField | null | undefined, dead: boolean) => {
     if (over) return;
@@ -226,12 +297,15 @@ function pump() {
     w.removeEventListener("message", onMessage);
     w.removeEventListener("error", onError);
     w.removeEventListener("messageerror", onError);
+    lane.abort = null;
+    making.delete(job.key);
     try {
       if (dead) {
-        // Set the worker aside for good; the page draws from now on, this layer first.
-        if (worker === w) worker = null;
-        w.terminate();
-        drawHere(job);
+        // Set the workers aside for good; the page draws from now on, this layer first.
+        giveUpWorkers();
+        // One made ahead is let go; a canvas that came to wait on it asks again, and the page makes it.
+        if (job.use === "ahead") changed();
+        else drawHere(job);
       } else if (field === undefined) {
         // The worker could not draw it: neither, most likely, can the page, but it is tried.
         drawHere(job);
@@ -239,7 +313,7 @@ function pump() {
         settle(job.key, field);
       }
     } finally {
-      finish();
+      pump();
     }
   };
   const onMessage = (event: MessageEvent<{ id: number; field: LiquidField | null; error?: string }>) => {
@@ -248,6 +322,7 @@ function pump() {
   };
   const onError = () => end(undefined, true);
   const watchdog = window.setTimeout(() => end(undefined, true), PATIENCE_MS);
+  lane.abort = onError;
   w.addEventListener("message", onMessage);
   w.addEventListener("error", onError);
   w.addEventListener("messageerror", onError);
@@ -257,19 +332,25 @@ function pump() {
 /**
  * Ask for every layer of `ops`, made for a canvas. `slot` names the
  * canvas: what it asked for before and has not yet been sent is dropped,
- * and what it asks for now is kept while it shows it. The canvas hears that
- * a layer is ready through `subscribeLayers`.
+ * and what it asks for now is kept while it shows it. `use` says how soon
+ * it is needed. The canvas hears that a layer is ready through
+ * `subscribeLayers`.
  */
-export function drawLayers(ops: LiquidOp[], target: LiquidTarget, slot: string): void {
+export function drawLayers(ops: LiquidOp[], target: LiquidTarget, slot: string, use: LayerUse): void {
   for (const s of [...queued.keys()]) if (s === slot || s.startsWith(`${slot}#`)) queued.delete(s);
+  if (use === "ahead" && !lanes) {
+    wanted.delete(slot);
+    return;
+  }
   const keys = ops.map((op) => layerKey(op, target));
   wanted.set(slot, new Set(keys));
   ops.forEach((op, i) => {
     const key = keys[i];
-    if (drawn.has(key) || failed.has(key)) return;
+    if (drawn.has(key) || failed.has(key) || making.has(key)) return;
     queued.set(i ? `${slot}#${i}` : slot, {
       key,
       target,
+      use,
       paint: { chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, seed: op.seed },
     });
   });

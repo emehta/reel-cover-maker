@@ -107,19 +107,41 @@ npm run build   # the static site, in out/
   default, takes Goo Teardrop. The tests' `cover` helper names Drip, since
   Pasty's Drip tests were written on it.
 - **Three columns, and nothing moves** (the owner's asks, 7 Oct): on the
-  left Text (Shuffle on its label row), the lettering row (`.letteringRow`:
-  Stickery's two lists, Pasty's one, or the fixed style's typeface, always
-  one row), Colour and Size; in the middle the cover at a height set by the
+  left a card of Text, the lettering row (`.letteringRow`: Stickery's two
+  lists, Pasty's one, or the fixed style's typeface, always one row),
+  Colour (its hex chip copies the code) and Size, with the keys at its
+  foot; in the middle the cover on a dotted board at a height set by the
   window alone (`.stage`), never by the size or style, and the styles in
-  one row under it; on the right the photo (`PhotoControls`): a slot of one
-  height, empty or full, and zoom and adjustments shown, disabled, before
-  there is a photo, so adding one moves nothing. Over the cover: undo and
-  redo, Light and Dark, and Reset text once the text is moved. A warning is
-  a pill on its label row ("Low contrast"), never a line under a control.
-  From 900 to 1199 pixels the photo goes under the left column and the page
-  scrolls with the cover sticky; under 900, one column. **No scrollbar
-  shows anywhere** (the owner's ask): every scroller hides its bar, the
-  page's too (`globals.css`).
+  one row under it; on the right a card of the photo (`PhotoControls`): a
+  slot of one height, empty or full, and zoom and adjustments shown,
+  disabled, before there is a photo, so adding one moves nothing. Over the
+  cover, one bar (`.toolbar`): undo, redo, Light and Dark, Shuffle, Reset
+  text, icons only (the owner's ask, 7 Oct) with their names on hover
+  (`.tip`); a tool that cannot act is disabled, never removed. A warning
+  is a pill on its label row ("Low contrast"), never a line under a
+  control. From 900 to 1199 pixels the photo goes under the left column
+  and the page scrolls with the cover sticky; under 900, one column.
+  **No scrollbar shows anywhere** (the owner's ask): every scroller hides
+  its bar, the page's too (`globals.css`).
+- **Three heights** (the owner's ask, 7 Oct): `--rcm-h-field` (44: a text
+  field, a list, a segmented control), `--rcm-h-button` (36: every button,
+  the toolbar's, Download, the photo's) and `--rcm-h-mini` (28: a button
+  on a label's row). A label row is exactly a mini button tall, with no
+  negative margin: one with a margin let the photo's buttons be cut off by
+  their card's top.
+- **The style thumbnails are the whole cover**, in its own shape, six to a
+  row as wide as fits (three by two under 900): never the profile grid's
+  crop, which cut a reel cover's sides off (the owner's ask, 7 Oct), and
+  never a row that scrolls. Grid crop shows the grid's window on the
+  cover itself.
+- **A style picked shows at once.** Once the picture is drawn the page
+  asks for the cover in every style at full size (`ahead` in
+  `liquid-client.ts`), on one of two workers, so the other is free for the
+  screen; until a full-size field is made the preview shows a draft made
+  at half size (`DRAFT_SCALE`), drawn up. Every style's scene is built by
+  `coverFor`, so what is made ahead is the scene picking it shows. The
+  edge reads the depth's slope capped at 1: past it is where the depth was
+  not worked out, and on a small canvas it drew a line.
 - **The photo never leaves the browser.** It is kept in IndexedDB
   (`photo-store.ts`), framed by `photoFrame` and adjusted by `photoAdjust`
   in the design. `photo-gl.ts` and `photo.ts`'s tables are the same

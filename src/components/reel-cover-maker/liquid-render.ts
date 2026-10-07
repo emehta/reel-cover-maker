@@ -101,24 +101,32 @@ export function smoothMax(a: number, b: number, k: number): number {
   return Math.max(a, b) + h * h * k * 0.25;
 }
 
-/** Three box blurs of `radius`, across then down: close to a Gaussian, in place. */
+/**
+ * Three box blurs of `radius`, across then down: close to a Gaussian, in
+ * place. Each row or column is blurred three times between two lines of
+ * its own and written back once: going back to `values` between blurs, a
+ * column at a time, cost more than the blurring.
+ */
 export function boxBlur(values: Float32Array, w: number, h: number, radius: number): void {
   if (radius < 1) return;
-  const line = new Float32Array(Math.max(w, h));
+  let line = new Float32Array(Math.max(w, h));
+  let next = new Float32Array(Math.max(w, h));
+  const span = radius * 2 + 1;
   const pass = (count: number, length: number, stride: number, step: number) => {
+    const last = length - 1;
     for (let c = 0; c < count; c += 1) {
       const start = c * stride;
       for (let k = 0; k < length; k += 1) line[k] = values[start + k * step];
       for (let repeat = 0; repeat < 3; repeat += 1) {
         let sum = 0;
-        const span = radius * 2 + 1;
-        for (let k = -radius; k <= radius; k += 1) sum += line[Math.min(length - 1, Math.max(0, k))];
+        for (let k = -radius; k <= radius; k += 1) sum += line[Math.min(last, Math.max(0, k))];
         for (let k = 0; k < length; k += 1) {
-          values[start + k * step] = sum / span;
-          sum += line[Math.min(length - 1, k + radius + 1)] - line[Math.max(0, k - radius)];
+          next[k] = sum / span;
+          sum += line[Math.min(last, k + radius + 1)] - line[Math.max(0, k - radius)];
         }
-        for (let k = 0; k < length; k += 1) line[k] = values[start + k * step];
+        [line, next] = [next, line];
       }
+      for (let k = 0; k < length; k += 1) values[start + k * step] = line[k];
     }
   };
   pass(h, w, w, 1);
@@ -194,18 +202,31 @@ export function liquidField(paint: LiquidPaint, target: LiquidTarget): LiquidFie
       const ux = b.x - a.x;
       const uy = b.y - a.y;
       const span = ux * ux + uy * uy || 1;
+      const big = Math.max(a.r, b.r);
       for (let y = sy0; y < sy1; y += 1) {
         const row = (y - ry) * rw - rx;
         const py = y + 0.5;
+        const oy = py - a.y;
         for (let x = sx0; x < sx1; x += 1) {
-          const d = capsuleDepth(x + 0.5, py, a, b);
           const i = row + x;
+          const ox = x + 0.5 - a.x;
+          const t = Math.min(1, Math.max(0, (ox * ux + oy * uy) / span));
+          // The capsule lies inside a round one of its larger radius, so it
+          // is no deeper here than that radius less the distance to its
+          // spine: where even that is no deeper than what is here already
+          // (from the beads before it, at most of the pixels it reaches),
+          // it changes nothing, and its exact depth is not worked out.
+          const room = big - tileDepth[i] + 1e-3;
+          if (room <= 0) continue;
+          const ex = ox - ux * t;
+          const ey = oy - uy * t;
+          if (ex * ex + ey * ey >= room * room) continue;
+          const d = capsuleDepth(x + 0.5, py, a, b);
           if (d > tileDepth[i]) {
             tileDepth[i] = d;
             // The radius where this point lies along the capsule: the same
             // at a bead from either side, so the height has no seam there,
             // and a blob stands as tall as it is wide.
-            const t = Math.min(1, Math.max(0, ((x + 0.5 - a.x) * ux + (py - a.y) * uy) / span));
             tileRadius[i] = a.r + (b.r - a.r) * t;
           }
         }
@@ -367,7 +388,8 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
       const C = base.map((v) => Math.min(1, Math.max(0.0005, v * tone))) as Vec;
       // The edge by the depth's own slope, as liquid-gl.ts reads it.
       const depthAt = (xx: number, yy: number) => data[(Math.min(h - 1, Math.max(0, yy)) * w + Math.min(w - 1, Math.max(0, xx))) * 4] / 256;
-      const slope = Math.max(0.25, Math.hypot((depthAt(x + 1, y) - depthAt(x - 1, y)) / 2, (depthAt(x, y + 1) - depthAt(x, y - 1)) / 2));
+      // Capped at a pixel a pixel, as there: a steeper climb is the edge of where the depth was worked out, not of the paste.
+      const slope = Math.min(1, Math.max(0.25, Math.hypot((depthAt(x + 1, y) - depthAt(x - 1, y)) / 2, (depthAt(x, y + 1) - depthAt(x, y - 1)) / 2)));
       // A pixel and a half of smooth edge, so a curve never steps.
       const e = clamp01((d / slope + 0.75) / 1.5);
       const cover = e * e * (3 - 2 * e);
