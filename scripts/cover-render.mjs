@@ -2,14 +2,14 @@
 // with `npx next dev --webpack -p 3911`, then: node scripts/cover-render.mjs master <out.mkv>, and
 // scripts/cover-encode.sh <out.mkv> <dir>. Needs playwright-core (not a dependency of the maker) and ffmpeg.
 //
-// node render.mjs stills <outDir> <t,t,...>     PNG stills at 1600x2840
-// node render.mjs master <out.mkv> [from] [to]  every frame, Lanczos to 800x1420, lossless FFV1
+// node render.mjs stills <outDir> <t,t,...>     PNG stills at 1600x2000
+// node render.mjs master <out.mkv> [from] [to]  every frame, Lanczos to 800x1000, lossless FFV1
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 const [mode, out, a, b] = process.argv.slice(2);
 const browser = await chromium.launch({ headless: true, args: ["--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist", "--force-color-profile=srgb"] });
-const ctx = await browser.newContext({ viewport: { width: 1600, height: 2840 }, deviceScaleFactor: 1 });
+const ctx = await browser.newContext({ viewport: { width: 1600, height: 2000 }, deviceScaleFactor: 1 });
 const page = await ctx.newPage();
 const logs = [];
 page.on("console", (m) => logs.push(`${m.type()}: ${m.text()}`));
@@ -37,7 +37,7 @@ if (mode === "stills") {
   const fps = 60;
   const total = Math.round(info.duration * fps);
   const from = Number(a ?? 0), to = Number(b ?? total);
-  const ff = spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", "60", "-c:v", "png", "-i", "-", "-vf", "scale=800:1420:flags=lanczos+accurate_rnd+full_chroma_int", "-c:v", "ffv1", "-level", "3", "-pix_fmt", "bgr0", out], { stdio: ["pipe", "inherit", "inherit"] });
+  const ff = spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", "60", "-c:v", "png", "-i", "-", "-vf", "scale=800:1000:flags=lanczos+accurate_rnd+full_chroma_int", "-c:v", "ffv1", "-level", "3", "-pix_fmt", "bgr0", out], { stdio: ["pipe", "inherit", "inherit"] });
   const start = Date.now();
   for (let f = from; f < to; f += 1) {
     await page.evaluate((t) => window.STAGE.seek(t), f / fps);

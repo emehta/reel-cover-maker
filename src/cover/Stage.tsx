@@ -6,14 +6,14 @@
  * light), never recorded and never redrawn by hand: every cover in it is
  * one the maker makes from the same title and colour.
  *
- * One take, 1600 by 2840 (twice the card's 800 by 1420): "day one" in blue
- * gel; it clears, "rate my setup" is typed and "setup" made bold, as the
- * maker marks Stickery's script word; the sticker is made; the maker's own
- * Grid crop dims what the profile grid cuts off; the camera draws back
- * until the cover is the newest post of a feed of twelve, holds, and goes
- * back in; it clears, "day one" is typed and piped along its own strokes
- * in the order they are written, its drips falling after; and the last
- * frame is the first.
+ * One take, 1600 by 2000 (twice the card's 800 by 1000, the 4:5 of every
+ * card on the page), the reel shown close as the feed shows it, its middle
+ * 4:5: "day one" in blue gel; it clears, "rate my setup" is typed and
+ * "setup" made bold, as the maker marks Stickery's script word; the sticker
+ * is made; the camera draws back until the cover is the newest post of a
+ * feed of nine, its grid window, holds, and goes back in; it clears, "day
+ * one" is typed and piped along its own strokes in the order they are
+ * written, its drips falling after; and the last frame is the first.
  *
  * `window.STAGE.seek(t)` draws the frame at t seconds; a renderer reads the
  * canvas after each.
@@ -43,25 +43,28 @@ import { clamp01, easeOut, glide, keystrokes, sine, span, typedCount } from "@/c
 
 const FPS = 60;
 const W = 1600;
-const H = 2840;
+const H = 2000;
 /** Canvas pixels per pixel of the 1080-wide cover, when it fills the card. */
 const SCALE = W / 1080;
-/** The cover is a hair taller than the card (2844 to 2840): centred, a pixel and a half of it off each end. */
-const HERO: LiquidTarget = { width: W, height: H, scale: SCALE, origin: { x: 0, y: (1920 - H / SCALE) / 2 } };
-
-/** The feed: three across, four down, 3:4 posts eight pixels apart, which is the card exactly. */
-const TILE_W = 528;
-const TILE_H = 704;
-const GAP = 8;
 /** The profile grid's window on a reel cover, in its pixels. */
 const WINDOW_Y = 240;
 const WINDOW_H = 1440;
-const TILE: LiquidTarget = { width: W, height: Math.ceil((WINDOW_H * W) / 1080), scale: SCALE, origin: { x: 0, y: WINDOW_Y } };
-const TILE_SRC_H = (WINDOW_H * W) / 1080;
+/**
+ * All the way in, the card shows the reel as the feed does, its middle 4:5,
+ * with the grid's 3:4 window 67 pixels past the card's top: a whole number,
+ * so the newest post drawn there is the card pixel for pixel.
+ */
+const IN_TOP = -67;
+const HERO: LiquidTarget = { width: W, height: H, scale: SCALE, origin: { x: 0, y: WINDOW_Y - IN_TOP / SCALE } };
+const TILE: LiquidTarget = { width: W, height: Math.ceil(WINDOW_H * SCALE), scale: SCALE, origin: { x: 0, y: WINDOW_Y } };
+const TILE_SRC_H = WINDOW_H * SCALE;
+/** The feed: three by three 3:4 posts eight pixels apart, as tall as the card and centred across it, so none is cut. */
+const GAP = 8;
+const TILE_H = (H - 2 * GAP) / 3;
+const TILE_W = (TILE_H * 3) / 4;
+const FEED_X = (W - 3 * TILE_W - 2 * GAP) / 2;
 /** How far in the camera is when one post fills the card. */
 const ZOOM = W / TILE_W;
-/** Where the grid's window starts down the card, with the cover filling it. */
-const WINDOW_TOP = (WINDOW_Y - HERO.origin.y) * SCALE;
 
 const GUTTER = "#FFFFFF";
 const TYPED_INK = "#1B1A18";
@@ -90,12 +93,9 @@ const FEED: Spec[] = [
   { title: "desk tour", style: "pasty-flat", hue: 150, shade: 0.64, ground: "dark" },
   { title: "get *ready*", style: "stickery", hue: 302, shade: 0.5, ground: "light", lettering: "leckerli" },
   { title: "golden hour", style: "pasty-flat", hue: 95, shade: 0.84, ground: "dark" },
-  { title: "studio tour", style: "pasty", hue: 40, shade: 0.55, ground: "light", pastyLettering: "goo-even" },
+  { title: "studio tour", style: "pasty", hue: 210, shade: 0.48, ground: "light", pastyLettering: "goo-even" },
   { title: "night *out*", style: "stickery", hue: 26, shade: 0.58, ground: "dark", lettering: "damion" },
   { title: "slow sundays", style: "editorial", hue: 150, shade: 0.42, ground: "light" },
-  { title: "wild flower", style: "pasty", hue: 62, shade: 0.7, ground: "dark", pastyLettering: "drip" },
-  { title: "taste test", style: "pasty-flat", hue: 352, shade: 0.52, ground: "light" },
-  { title: "the plan", style: "pasty", hue: 302, shade: 0.66, ground: "dark", pastyLettering: "goo-even" },
 ];
 
 function inputOf(spec: Spec): CoverInput {
@@ -131,19 +131,15 @@ const T = (() => {
   const fadeB = { from: bold.to + 0.3, to: bold.to + 0.6 };
   const make = fadeB.to - 0.2;
   const made = make + 1.3;
-  const mask = { from: made + 0.55, to: made + 1.0 };
-  // What the grid cuts off folds into the window, leaving the post, and only then does the camera leave.
-  const crop = { from: mask.to + 0.45, to: mask.to + 0.9 };
-  const away = { from: crop.to - 0.1, to: crop.to + 2.1 };
+  const away = { from: made + 1.0, to: made + 3.2 };
   const back = { from: away.to + 2.3, to: away.to + 4.2 };
-  const uncrop = { from: back.to, to: back.to + 0.45 };
-  const clearB = { from: uncrop.to + 0.5, to: uncrop.to + 1.05 };
+  const clearB = { from: back.to + 0.5, to: back.to + 1.05 };
   const caretA = clearB.to - 0.12;
   const typeA = keystrokes("day one", clearB.to + 0.3, 7);
   const typedA = typeA[typeA.length - 1] + 0.1;
   const fadeA = { from: typedA + 0.3, to: typedA + 0.6 };
   const pipe = fadeA.to - 0.05;
-  return { clearA, caretB, typeB, select, bold, fadeB, make, made, mask, crop, away, back, uncrop, clearB, caretA, typeA, fadeA, pipe };
+  return { clearA, caretB, typeB, select, bold, fadeB, make, made, away, back, clearB, caretA, typeA, fadeA, pipe };
 })();
 
 /* ---- Drawing helpers. ---- */
@@ -376,7 +372,7 @@ async function build(main: HTMLCanvasElement): Promise<Built> {
   const [workCanvas, workCtx] = canvas(W, H);
 
   // The rest of the feed, each post its grid window.
-  const tiles = FEED.map((spec, i) => (i === 0 ? null : coverCanvas(sceneOf(spec), spec.ground, TILE)));
+  const tiles = FEED.map((spec, i) => coverCanvas(i === 0 ? setup : sceneOf(spec), spec.ground, TILE));
   const [feedCanvas, feedCtx] = canvas(W, H);
 
   const family = interTight.style.fontFamily;
@@ -482,19 +478,20 @@ async function build(main: HTMLCanvasElement): Promise<Built> {
     });
   }
 
-  /** The feed at a zoom, the newest post its grid window of the sticker; `bands` how much of the reel past the window shows, `dim` the Grid crop. */
-  function feed(target: CanvasRenderingContext2D, zoom: number, bands: number, dim: number) {
-    const ty = (WINDOW_TOP * (zoom - 1)) / (ZOOM - 1);
+  /** The feed at a zoom, the camera drawing back about a point near its top left, so every post travels in a straight line. */
+  function feed(target: CanvasRenderingContext2D, zoom: number) {
+    if (Math.abs(zoom - ZOOM) < 1e-6) {
+      // All the way in, the sticker is the card pixel for pixel, never resampled.
+      target.drawImage(setupCanvas, 0, 0);
+      return;
+    }
+    const f = (zoom - 1) / (ZOOM - 1);
+    const tx = -ZOOM * FEED_X * f;
+    const ty = IN_TOP * f;
     feedCtx.fillStyle = GUTTER;
     feedCtx.fillRect(0, 0, W, H);
-    // Above the feed, while the camera is close, the cover's own cream, never the white of the gaps.
-    if (ty > 0) {
-      feedCtx.fillStyle = GROUNDS.light;
-      feedCtx.fillRect(0, 0, W, ty);
-    }
     tiles.forEach((tile, i) => {
-      if (!tile) return;
-      const x = zoom * (i % 3) * (TILE_W + GAP);
+      const x = zoom * (FEED_X + (i % 3) * (TILE_W + GAP)) + tx;
       const y = zoom * Math.floor(i / 3) * (TILE_H + GAP) + ty;
       const w = zoom * TILE_W;
       const h = zoom * TILE_H;
@@ -502,39 +499,6 @@ async function build(main: HTMLCanvasElement): Promise<Built> {
       feedCtx.drawImage(tile, 0, 0, W, TILE_SRC_H, x, y, w, h);
     });
     target.drawImage(feedCanvas, 0, 0);
-    // The newest post is the sticker's grid window; the reel above and below it, the bands, fold into it
-    // before the camera leaves and unfold once it is back, `bands` of each showing, nearest the window.
-    // Each part is its own source rectangle, so no edge of one is left half drawn on the feed.
-    const k = zoom / ZOOM;
-    const winH = TILE_H * ZOOM;
-    const below = WINDOW_TOP + winH;
-    const tile = { x: 0, y: ty, w: zoom * TILE_W, h: zoom * TILE_H };
-    const topH = WINDOW_TOP * bands;
-    const bottomH = (H - below) * bands;
-    const top = { x: 0, y: ty - topH * k, w: tile.w, h: topH * k };
-    const bottom = { x: 0, y: tile.y + tile.h, w: tile.w, h: bottomH * k };
-    if (Math.abs(zoom - ZOOM) < 1e-6 && bands >= 1) {
-      // All the way in, the sticker is the card pixel for pixel, never resampled.
-      target.drawImage(setupCanvas, 0, 0);
-    } else {
-      target.drawImage(setupCanvas, 0, WINDOW_TOP, W, winH, tile.x, tile.y, tile.w, tile.h);
-      if (bands > 0) {
-        target.drawImage(setupCanvas, 0, WINDOW_TOP - topH, W, topH, top.x, top.y, top.w, top.h);
-        target.drawImage(setupCanvas, 0, below, W, bottomH, bottom.x, bottom.y, bottom.w, bottom.h);
-      }
-    }
-    if (dim > 0) {
-      // The maker's Grid crop: what the profile grid cuts off dimmed, its window's edge dashed.
-      target.save();
-      target.fillStyle = `rgba(0, 0, 0, ${0.58 * dim})`;
-      target.fillRect(top.x, top.y, top.w, top.h);
-      target.fillRect(bottom.x, bottom.y, bottom.w, bottom.h);
-      target.strokeStyle = `rgba(255, 255, 255, ${0.9 * dim * sine(bands)})`;
-      target.lineWidth = 4;
-      target.setLineDash([14, 10]);
-      target.strokeRect(tile.x + 2, tile.y + 2, tile.w - 4, tile.h - 4);
-      target.restore();
-    }
   }
 
   const duration = Math.ceil((plan.done + 0.75) * FPS) / FPS;
@@ -560,18 +524,15 @@ async function build(main: HTMLCanvasElement): Promise<Built> {
       const count = typedCount(T.typeB, t);
       const selecting = span(t, T.select.from, T.select.to);
       typed(ctx!, "rate my setup", count, typedB(t), selecting > 0 ? 0 : caretAt(t, T.caretB), selecting, span(t, T.bold.from, T.bold.to));
-    } else if (t < T.mask.from) {
+    } else if (t < T.away.from) {
       cream();
       if (t < T.made) making(ctx!, t);
       else ctx!.drawImage(setupCanvas, 0, 0);
       typed(ctx!, "rate my setup", 13, typedB(t), 0, 1, 1);
-    } else if (t < T.uncrop.to) {
+    } else if (t < T.back.to) {
       const away = glide(span(t, T.away.from, T.away.to));
       const back = glide(span(t, T.back.from, T.back.to));
-      const zoom = Math.exp(Math.log(ZOOM) * (1 - away + back));
-      const dim = t < T.back.from ? sine(span(t, T.mask.from, T.mask.to)) : 0;
-      const bands = t < T.back.from ? 1 - sine(span(t, T.crop.from, T.crop.to)) : sine(span(t, T.uncrop.from, T.uncrop.to));
-      feed(ctx!, zoom, bands, dim);
+      feed(ctx!, Math.exp(Math.log(ZOOM) * (1 - away + back)));
     } else if (t < T.clearB.to) {
       cream();
       ctx!.globalAlpha = 1 - sine(span(t, T.clearB.from, T.clearB.to));
