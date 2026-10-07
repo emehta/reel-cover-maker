@@ -34,6 +34,13 @@ export interface LiquidPaint {
   /** How far apart two strokes may be and still bridge, in pixels of the picture. */
   pool: number;
   seed: number;
+  /**
+   * A typical stroke's radius, in pixels of the picture, where it must not
+   * follow the chains handed in: a cover drawn a stroke at a time (the
+   * project card's stage) pins it to the finished paste's, so the letters
+   * already made keep their light. Unset, the chains' own median.
+   */
+  radius?: number;
 }
 
 export interface LiquidTarget {
@@ -142,7 +149,7 @@ export function liquidField(paint: LiquidPaint, target: LiquidTarget): LiquidFie
     .map((c) => c.map((b) => ({ x: (b.x - origin.x) * scale, y: (b.y - origin.y) * scale, r: b.r * scale })));
   if (!chains.length) return null;
   const radii = chains.flatMap((c) => c.map((b) => b.r)).sort((p, q) => p - q);
-  const typical = Math.max(0.5, radii[Math.floor(radii.length / 2)]);
+  const typical = Math.max(0.5, paint.radius !== undefined ? paint.radius * scale : radii[Math.floor(radii.length / 2)]);
 
   // Room round the paste for the light and shadow it throws on the ground,
   // and, for the capsules, as far out as the bridging and the shadow look.

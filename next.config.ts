@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
   basePath,
   // This repo's CLAUDE.md is written by hand; `next dev` would otherwise write its own.
   agentRules: false,
+  devIndicators: false,
 };
 
 export default nextConfig;

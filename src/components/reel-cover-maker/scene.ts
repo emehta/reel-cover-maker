@@ -1360,7 +1360,10 @@ function stickery(
               boxes.push({ x: previous.right, y: top, w: Math.max(0, p.start.x - previous.right), h: xh * 0.9 });
             }
             previous = { right: p.start.x + p.start.w, baseline: dy };
-            texts.push({ kind: "text", text: p.w.text, face: plainFace, size, x: p.x, y: dy, color: ink });
+            const text: Op = { kind: "text", text: p.w.text, face: plainFace, size, x: p.x, y: dy, color: ink };
+            // The project card's stage shows each word settling: how far it came, carried through every move after.
+            if ((globalThis as { __reelicStage?: boolean }).__reelicStage) Object.assign(text, { settled: dy - p.from });
+            texts.push(text);
             const strips = p.strips.map((b) => ({ ...b, y: b.y + dy }));
             boxes.push(...strips);
             extent.push({ ...p.start, y: p.start.y + dy });
