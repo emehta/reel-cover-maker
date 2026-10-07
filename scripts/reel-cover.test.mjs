@@ -30,6 +30,7 @@ const LR = await import("@/components/reel-cover-maker/liquid-render");
 const LL = await import("@/components/reel-cover-maker/liquid-layout");
 const SP = await import("@/components/reel-cover-maker/stepped");
 const PH = await import("@/components/reel-cover-maker/photo");
+const PHONE = await import("@/components/reel-cover-maker/phone");
 const PL = await import("@/components/reel-cover-maker/place");
 const H = await import("@/components/reel-cover-maker/history");
 const N = await import("@/components/reel-cover-maker/noise");
@@ -2360,6 +2361,21 @@ check("undo goes back a thing done: a run of the same change is one step, a paus
 });
 
 console.log("page");
+
+check("the phone view's post is the grid's at an iPhone's width: three across with their gaps, each 3:4, as every size's grid window is", () => {
+  const tile = PHONE.gridTile();
+  assert.ok(near(tile.w * PHONE.GRID_COLUMNS + PHONE.GRID_GAP * (PHONE.GRID_COLUMNS - 1), PHONE.PHONE_WIDTH, 1e-9));
+  assert.ok(near(tile.h / tile.w, 4 / 3, 1e-12));
+  // 393 points across: a post about 130 by 173.
+  assert.equal(Math.round(tile.w), 130);
+  assert.equal(Math.round(tile.h), 173);
+  // Three pixels to a point, so sharp on any phone; the canvas is the grid window's shape.
+  assert.equal(PHONE.tilePixels(), Math.round(tile.w * 3));
+  for (const format of F.FORMATS) {
+    const window = format.grid ?? { x: 0, y: 0, w: format.width, h: format.height };
+    assert.ok(near(window.h / window.w, 4 / 3, 0.002), `${format.id}: the grid shows ${window.w} by ${window.h}`);
+  }
+});
 
 check("the pre-paint script is one valid script", () => {
   assert.doesNotThrow(() => new Function(prepaintScript));

@@ -6,8 +6,8 @@
  * Black and white, warm and quiet, so the cover is the only colour on the
  * page (and the picked colour shows in the mark and the hex chip alone):
  * a neutral surround is what the eye judges colour against. Two panels of
- * controls as cards either side of the cover, which sits on a dotted
- * board, as an artboard does.
+ * controls as cards either side of the cover, which sits on a plain
+ * board of its own. Corners are small: a card's 8 pixels, a control's 5 or 6.
  *
  * Three heights, and only three: a field (44), a button (36), and a small
  * button on a label's row (28).
@@ -16,7 +16,6 @@
 .root {
   --rcm-bg: #ecebe7;
   --rcm-board: #e5e3de;
-  --rcm-dot: rgba(28, 26, 22, 0.13);
   --rcm-card: #fbfaf8;
   --rcm-card-line: rgba(28, 26, 22, 0.07);
   --rcm-card-shadow: 0 1px 2px rgba(28, 26, 22, 0.04), 0 6px 20px rgba(28, 26, 22, 0.04);
@@ -42,10 +41,10 @@
   --rcm-h-field: 44px;
   --rcm-h-button: 36px;
   --rcm-h-mini: 28px;
-  --rcm-r-card: 18px;
-  --rcm-r-field: 11px;
-  --rcm-r-button: 9px;
-  --rcm-r-mini: 7px;
+  --rcm-r-card: 8px;
+  --rcm-r-field: 6px;
+  --rcm-r-button: 5px;
+  --rcm-r-mini: 4px;
 
   box-sizing: border-box;
   width: 100%;
@@ -69,7 +68,6 @@
   .root {
     --rcm-bg: #0e0e0f;
     --rcm-board: #131314;
-    --rcm-dot: rgba(242, 241, 238, 0.11);
     --rcm-card: #18181a;
     --rcm-card-line: rgba(242, 241, 238, 0.07);
     --rcm-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
@@ -247,10 +245,7 @@
   padding: 14px;
   overflow: hidden;
   border-radius: var(--rcm-r-card);
-  background-color: var(--rcm-board);
-  background-image: radial-gradient(circle at center, var(--rcm-dot) 1px, transparent 1.25px);
-  background-size: 18px 18px;
-  background-position: center;
+  background: var(--rcm-board);
   box-shadow: inset 0 0 0 1px var(--rcm-card-line);
 }
 
@@ -269,13 +264,17 @@
   width: min(100cqw, calc(100cqh * var(--rcm-ratio-n)));
 }
 
+.frame[hidden] {
+  display: none;
+}
+
 .canvas {
   display: block;
   width: 100%;
   height: 100%;
   /* While a new size is being drawn, the last picture shows whole, not stretched. */
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: 2px;
   box-shadow: var(--rcm-shadow);
 }
 
@@ -283,7 +282,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: 2px;
   pointer-events: none;
 }
 
@@ -307,7 +306,7 @@
 
 .surface:focus-visible {
   box-shadow: 0 0 0 2px var(--rcm-board), 0 0 0 4px var(--rcm-focus);
-  border-radius: 4px;
+  border-radius: 2px;
 }
 
 /* The box round the selected text, drawn in the picture's own pixels, its lines a fixed width on screen. */
@@ -375,7 +374,7 @@
   position: absolute;
   transform: translate(14px, -50%);
   padding: 3px 7px;
-  border-radius: 6px;
+  border-radius: 4px;
   background: rgba(17, 17, 17, 0.86);
   color: #ffffff;
   font-size: 12px;
@@ -392,7 +391,7 @@
   display: grid;
   place-items: center;
   border: 2px dashed var(--rcm-focus);
-  border-radius: 4px;
+  border-radius: 2px;
   background: color-mix(in srgb, var(--rcm-board) 72%, transparent);
   color: var(--rcm-text);
   font-size: 15px;
@@ -401,9 +400,217 @@
 }
 
 /*
+ * The phone view: the cover as the newest post of a profile grid, on a
+ * phone, in the phone's own points (phone.ts). One point is a pixel here
+ * wherever the preview is wide enough, so the post is seen at the size a
+ * phone shows it; only a narrower preview makes it smaller (`--u`). The
+ * profile is scrolled to its grid, its name and tabs held at the top, and
+ * the phone runs on past the preview's foot, fading.
+ */
+.phone {
+  --u: min(1px, calc(100cqw / (var(--rcm-phone-w) + 16)));
+  --ig-bg: #ffffff;
+  --ig-text: #0c0c0d;
+  --ig-muted: #8e8e93;
+  --ig-line: rgba(0, 0, 0, 0.12);
+  --ig-tone-0: #e3e0da;
+  --ig-tone-1: #d7d3cc;
+  --ig-tone-2: #ebe8e3;
+  --ig-tone-3: #cfcbc3;
+
+  position: relative;
+  align-self: stretch;
+  width: calc((var(--rcm-phone-w) + 16) * var(--u));
+  height: 100cqh;
+  padding: calc(8 * var(--u)) calc(8 * var(--u)) 0;
+  border-radius: calc(55 * var(--u)) calc(55 * var(--u)) 0 0;
+  background: #121213;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.18), 0 24px 60px rgba(0, 0, 0, 0.2);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .phone {
+    --ig-bg: #000000;
+    --ig-text: #f5f5f5;
+    --ig-muted: #a8a8a8;
+    --ig-line: rgba(255, 255, 255, 0.16);
+    --ig-tone-0: #262628;
+    --ig-tone-1: #1c1c1e;
+    --ig-tone-2: #2f2f32;
+    --ig-tone-3: #222224;
+    background: #2a2a2d;
+  }
+}
+
+.phoneScreen {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: calc(47 * var(--u)) calc(47 * var(--u)) 0 0;
+  background: var(--ig-bg);
+  color: var(--ig-text);
+}
+
+.phoneScreen svg {
+  display: block;
+  flex: none;
+}
+
+.phoneStatus {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: calc(54 * var(--u));
+  padding: calc(4 * var(--u)) calc(30 * var(--u)) 0 calc(44 * var(--u));
+}
+
+.phoneTime {
+  font-size: calc(17 * var(--u));
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.phoneIsland {
+  position: absolute;
+  top: calc(11 * var(--u));
+  left: 50%;
+  width: calc(125 * var(--u));
+  height: calc(37 * var(--u));
+  border-radius: calc(19 * var(--u));
+  background: #000000;
+  transform: translateX(-50%);
+}
+
+.phoneSignals {
+  display: flex;
+  align-items: center;
+  gap: calc(5 * var(--u));
+}
+
+.phoneSignals svg {
+  width: calc(18 * var(--u));
+  height: calc(18 * var(--u));
+}
+
+.phoneSignals svg:last-child {
+  width: calc(26 * var(--u));
+  height: calc(26 * var(--u));
+}
+
+.phoneNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: calc(44 * var(--u));
+  padding: 0 calc(16 * var(--u));
+}
+
+.phoneName {
+  display: flex;
+  align-items: center;
+  gap: calc(5 * var(--u));
+  font-size: calc(20 * var(--u));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.phoneName svg {
+  width: calc(14 * var(--u));
+  height: calc(14 * var(--u));
+}
+
+.phoneIcons {
+  display: flex;
+  align-items: center;
+  gap: calc(22 * var(--u));
+}
+
+.phoneIcons svg {
+  width: calc(27 * var(--u));
+  height: calc(27 * var(--u));
+}
+
+.phoneTabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  height: calc(44 * var(--u));
+  border-bottom: 1px solid var(--ig-line);
+}
+
+.phoneTabs span {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: var(--ig-muted);
+}
+
+.phoneTabs span[data-on] {
+  color: var(--ig-text);
+}
+
+.phoneTabs span[data-on]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 1px;
+  background: var(--ig-text);
+}
+
+.phoneTabs svg {
+  width: calc(24 * var(--u));
+  height: calc(24 * var(--u));
+}
+
+.phoneGrid {
+  display: grid;
+  grid-template-columns: repeat(var(--rcm-phone-columns), minmax(0, 1fr));
+  gap: calc(var(--rcm-phone-gap) * var(--u));
+}
+
+.phoneTile {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background: var(--ig-tone-0);
+}
+
+.phoneTile[data-tone="1"] {
+  background: var(--ig-tone-1);
+}
+
+.phoneTile[data-tone="2"] {
+  background: var(--ig-tone-2);
+}
+
+.phoneTile[data-tone="3"] {
+  background: var(--ig-tone-3);
+}
+
+.phoneTile .thumbCanvas {
+  position: absolute;
+  inset: 0;
+}
+
+.phoneReel {
+  position: absolute;
+  top: calc(7 * var(--u));
+  right: calc(7 * var(--u));
+  width: calc(18 * var(--u));
+  height: calc(18 * var(--u));
+  color: #ffffff;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.55)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.35));
+}
+
+/*
  * Over the cover: undo and redo, its background light or dark, a shuffle
- * of the letters and the text put back, in one bar of one height. A
- * button that cannot act now is dimmed, never taken away.
+ * of the letters, the text put back, and the phone view, in one bar of one
+ * height. A button that cannot act now is dimmed, never taken away.
  */
 .toolbar {
   flex: none;
@@ -412,7 +619,7 @@
   gap: 2px;
   height: var(--rcm-h-field);
   padding: 4px;
-  border-radius: 13px;
+  border-radius: 8px;
   background: var(--rcm-card);
   box-shadow: 0 0 0 1px var(--rcm-card-line), 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 18px rgba(0, 0, 0, 0.06);
 }
@@ -446,6 +653,13 @@
 .tool:disabled {
   color: var(--rcm-faint);
   cursor: default;
+}
+
+/* On: the phone view showing. */
+.tool[aria-pressed="true"],
+.tool[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--rcm-strong);
+  color: var(--rcm-card);
 }
 
 .toolRule {
@@ -500,7 +714,7 @@
   left: 50%;
   z-index: 30;
   padding: 5px 8px;
-  border-radius: 7px;
+  border-radius: 4px;
   background: var(--rcm-tip-bg);
   color: var(--rcm-tip-text);
   font-size: 12px;
@@ -625,7 +839,7 @@
   width: 18px;
   height: 18px;
   border: 1.5px solid var(--rcm-line-strong);
-  border-radius: 5px;
+  border-radius: 3px;
   background: var(--rcm-surface);
   color: transparent;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
@@ -806,7 +1020,7 @@
   align-items: center;
   height: 22px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: 4px;
   background: color-mix(in srgb, var(--rcm-danger) 12%, transparent);
   color: var(--rcm-danger);
   font-size: 11px;
@@ -826,7 +1040,7 @@
   margin: 0 -6px 0 0;
   padding: 0 7px 0 4px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--rcm-r-mini);
   background: transparent;
   color: var(--rcm-text);
   font: inherit;
@@ -899,7 +1113,7 @@
   min-width: 24px;
   height: 22px;
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: 3px;
   background: var(--rcm-inset);
   box-shadow: inset 0 -1px 0 var(--rcm-line);
   color: var(--rcm-text);
@@ -966,7 +1180,7 @@
   width: 100%;
   aspect-ratio: var(--rcm-ratio);
   overflow: hidden;
-  border-radius: 7px;
+  border-radius: 3px;
   background: var(--rcm-inset);
   box-shadow: 0 0 0 1px var(--rcm-line), 0 1px 3px rgba(0, 0, 0, 0.06);
   transition: box-shadow 0.15s ease, transform 0.15s ease;
@@ -1025,7 +1239,7 @@
   height: 28px;
   margin: 0;
   padding: 0;
-  border-radius: 14px;
+  border-radius: 6px;
   background: var(--rcm-track, var(--rcm-inset));
   box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.25);
   cursor: pointer;
@@ -1035,13 +1249,13 @@
 
 .slider::-webkit-slider-runnable-track {
   height: 28px;
-  border-radius: 14px;
+  border-radius: 6px;
   background: transparent;
 }
 
 .slider::-moz-range-track {
   height: 28px;
-  border-radius: 14px;
+  border-radius: 6px;
   background: transparent;
 }
 
@@ -1088,7 +1302,7 @@
   justify-content: center;
   height: var(--rcm-h-button);
   padding: 0 6px;
-  border-radius: 8px;
+  border-radius: 3px;
   color: var(--rcm-muted);
   font-size: 13.5px;
   font-weight: 600;
@@ -1183,7 +1397,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   list-style: none;
-  border-radius: 13px;
+  border-radius: 7px;
   background: var(--rcm-surface);
   box-shadow: var(--rcm-pop);
   outline: none;
@@ -1201,7 +1415,7 @@
   gap: 10px;
   min-height: var(--rcm-h-field);
   padding: 6px 10px 6px 12px;
-  border-radius: 8px;
+  border-radius: 4px;
   color: var(--rcm-text);
   font-size: 15px;
   line-height: 1.25;
@@ -1228,7 +1442,7 @@
   flex: none;
   height: 150px;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--rcm-r-field);
   background: var(--rcm-inset);
   box-shadow: inset 0 0 0 1px var(--rcm-line);
   transition: box-shadow 0.15s ease, background-color 0.15s ease;
@@ -1523,7 +1737,7 @@
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 16px;
+  border-radius: var(--rcm-r-card);
   background: #0d0d0d;
   color: #f2f1ee;
 }
@@ -1571,7 +1785,7 @@
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--rcm-r-card);
   background: rgba(255, 255, 255, 0.14);
   color: #f2f1ee;
   cursor: pointer;
@@ -1657,7 +1871,7 @@
   min-height: 0;
   max-height: 62dvh;
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: 2px;
   -webkit-touch-callout: default;
   -webkit-user-select: auto;
   user-select: auto;
@@ -1755,8 +1969,8 @@
   }
 }
 
-/* A small phone: the background's two words would crowd the bar, so its sun and moon say it. */
-@media (max-width: 389.98px) {
+/* A phone: the background's two words would crowd the bar, so its sun and moon say it. */
+@media (max-width: 479.98px) {
   .toolSegment {
     padding: 0 10px;
   }
@@ -1768,6 +1982,21 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+/* The narrowest phones: the bar's buttons a little narrower, never shorter. */
+@media (max-width: 359.98px) {
+  .tool {
+    width: 32px;
+  }
+
+  .toolSegment {
+    padding: 0 8px;
+  }
+
+  .toolRule {
+    margin: 0 2px;
   }
 }
 

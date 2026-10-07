@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, Copy, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, Copy, DeviceMobile, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
@@ -15,9 +15,11 @@ import { GRAIN_TILE, grainPixels } from "@/components/reel-cover-maker/grain";
 import { emptyHistory, record, redo as redoStep, seal, undo as undoStep, type History } from "@/components/reel-cover-maker/history";
 import { APP_NAME } from "@/components/reel-cover-maker/meta";
 import { paint, type PaintOptions } from "@/components/reel-cover-maker/paint";
+import { tilePixels } from "@/components/reel-cover-maker/phone";
 import { DEFAULT_ADJUST, DEFAULT_FRAME, keptSize, sourceRect } from "@/components/reel-cover-maker/photo";
 import { adjustedPhoto } from "@/components/reel-cover-maker/photo-gl";
 import { forgetPhoto, loadPhoto, savePhoto } from "@/components/reel-cover-maker/photo-store";
+import { PhoneView } from "@/components/reel-cover-maker/PhoneView";
 import { PhotoControls } from "@/components/reel-cover-maker/PhotoControls";
 import { HOME, invert, isHome, keepOnCover, multiply, placeMatrix, type Matrix, type Place, type Point } from "@/components/reel-cover-maker/place";
 import { paletteFor, standsOut, type Ground } from "@/components/reel-cover-maker/palettes";
@@ -306,18 +308,28 @@ function layersFor(scene: Scene | null, target: LiquidTarget | null) {
   };
 }
 
+/** The whole cover, `width` canvas pixels wide: a style's swatch, in the cover's own shape, so nothing of it is cut off at its sides. */
+function wholeCover(format: Format, width: number): LiquidTarget {
+  const scale = width / format.width;
+  return { width, height: Math.round(format.height * scale), scale, origin: { x: 0, y: 0 } };
+}
+
+/** The window of the cover the profile grid shows (all of a 3:4 post), `width` canvas pixels wide: the phone view's tile. */
+function gridWindow(format: Format, width: number): LiquidTarget {
+  const window = format.grid ?? { x: 0, y: 0, w: format.width, h: format.height };
+  const scale = width / window.w;
+  return { width, height: Math.round(window.h * scale), scale, origin: { x: window.x, y: window.y } };
+}
+
 /**
- * A style's swatch: the whole cover in that style, in the cover's own
- * shape, so nothing of it is cut off at its sides (the profile grid's crop
- * is the Grid crop check's to show, on the cover itself).
+ * A small canvas of a scene, for `target`: a style's thumbnail, or the
+ * phone view's tile. Its size is set only where it is painted, so the
+ * last picture stays up, whole, until the next is ready.
  */
-function Thumb({ scene, format, slot, photoFor }: { scene: Scene | null; format: Format; slot: string; photoFor: (scene: Scene) => PaintOptions["photo"] }) {
+function SceneCanvas({ scene, target, slot, photoFor }: { scene: Scene | null; target: LiquidTarget; slot: string; photoFor: (scene: Scene) => PaintOptions["photo"] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   // Drawn again when a liquid layer it waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
-  const scale = THUMB_WIDTH / format.width;
-  const height = Math.round(format.height * scale);
-  const target: LiquidTarget = { width: THUMB_WIDTH, height, scale, origin: { x: 0, y: 0 } };
   const { ops, ready } = layersFor(scene, target);
   useEffect(() => {
     const canvas = ref.current;
@@ -325,14 +337,14 @@ function Thumb({ scene, format, slot, photoFor }: { scene: Scene | null; format:
     // Asked every time: what this canvas shows is kept, what it waits on is drawn.
     drawLayers(ops, target, slot, "thumb");
     if (!ready) return;
-    if (canvas.width !== THUMB_WIDTH) canvas.width = THUMB_WIDTH;
+    if (canvas.width !== target.width) canvas.width = target.width;
     if (canvas.height !== target.height) canvas.height = target.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    paint(ctx, scene, { scale, origin: target.origin, font: fontCss, grain: null, liquid: (op, part) => liquidLayer(op, target, part) ?? null, photo: photoFor(scene) });
+    paint(ctx, scene, { scale: target.scale, origin: target.origin, font: fontCss, grain: null, liquid: (op, part) => liquidLayer(op, target, part) ?? null, photo: photoFor(scene) });
   });
-  return <canvas ref={ref} className={styles.thumbCanvas} width={THUMB_WIDTH} height={height} aria-hidden="true" />;
+  return <canvas ref={ref} className={styles.thumbCanvas} aria-hidden="true" />;
 }
 
 /** The grid's window on the preview, everything outside it dimmed. */
@@ -375,6 +387,8 @@ export default function ReelCoverMaker() {
   const [selected, setSelected] = useState(false);
   /** Moves when a gesture is called off, so the picture as it was is painted again. */
   const [repaint, setRepaint] = useState(0);
+  /** The cover shown as a phone shows it in the profile grid, in place of the cover to edit. */
+  const [phoneView, setPhoneView] = useState(false);
   /** The colour last copied, said to be copied while it is still the colour and for a moment after. */
   const [copied, setCopied] = useState<string | null>(null);
   const copiedTimer = useRef(0);
@@ -747,6 +761,17 @@ export default function ReelCoverMaker() {
     if (held && dialog && !dialog.open) dialog.showModal();
   }, [held]);
 
+  // Escape leaves the phone view, unless it is closing something else (a list, the camera).
+  useEffect(() => {
+    if (!phoneView) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector("dialog[open]")) return;
+      setPhoneView(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phoneView]);
+
   const save = async () => {
     const canvas = canvasRef.current;
     // Never the last picture: only once this one is on the canvas.
@@ -1062,9 +1087,24 @@ export default function ReelCoverMaker() {
             <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={() => update({ place: HOME })} disabled={isHome(place)} aria-label="Reset text" data-tip="Reset text">
               <ArrowCounterClockwise size={18} weight="bold" aria-hidden="true" />
             </button>
+            <span className={styles.toolRule} aria-hidden="true" />
+            <button
+              type="button"
+              className={`${styles.tool} ${styles.tip}`}
+              onClick={() => {
+                setSelected(false);
+                setPhoneView((on) => !on);
+              }}
+              aria-pressed={phoneView}
+              aria-label="Phone view"
+              data-tip={phoneView ? "Back to the cover  Esc" : "Phone view"}
+            >
+              <DeviceMobile size={18} weight="bold" aria-hidden="true" />
+            </button>
           </div>
           <div className={styles.stage} ref={stageRef}>
-            <div className={styles.frame}>
+            {/* The cover to edit stays drawn while the phone view shows, so Download is never kept waiting. */}
+            <div className={styles.frame} hidden={phoneView}>
               <canvas
                 ref={canvasRef}
                 className={styles.canvas}
@@ -1098,6 +1138,18 @@ export default function ReelCoverMaker() {
                 </div>
               )}
             </div>
+            {phoneView && (
+              <PhoneView
+                reel={format.id === "reel"}
+                tile={<SceneCanvas scene={scene} target={gridWindow(format, tilePixels())} slot="phone" photoFor={photoFor} />}
+              >
+                {dropping && (
+                  <div className={styles.dropHint} aria-hidden="true">
+                    Drop to use as the photo
+                  </div>
+                )}
+              </PhoneView>
+            )}
           </div>
 
           <div className={styles.styles} role="radiogroup" aria-label="Style">
@@ -1111,7 +1163,7 @@ export default function ReelCoverMaker() {
                   onChange={() => update({ style: style.id })}
                 />
                 <span className={styles.thumb}>
-                  <Thumb scene={thumbs?.[i] ?? null} format={format} slot={`thumb-${style.id}`} photoFor={photoFor} />
+                  <SceneCanvas scene={thumbs?.[i] ?? null} target={wholeCover(format, THUMB_WIDTH)} slot={`thumb-${style.id}`} photoFor={photoFor} />
                 </span>
                 <span className={styles.styleName}>{style.name}</span>
               </label>

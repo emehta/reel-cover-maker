@@ -110,13 +110,14 @@ npm run build   # the static site, in out/
   left a card of Text, the lettering row (`.letteringRow`: Stickery's two
   lists, Pasty's one, or the fixed style's typeface, always one row),
   Colour (its hex chip copies the code) and Size, with the keys at its
-  foot; in the middle the cover on a dotted board at a height set by the
+  foot; in the middle the cover on a plain board (no dots: the owner's
+  ask, 7 Oct) at a height set by the
   window alone (`.stage`), never by the size or style, and the styles in
   one row under it; on the right a card of the photo (`PhotoControls`): a
   slot of one height, empty or full, and zoom and adjustments shown,
   disabled, before there is a photo, so adding one moves nothing. Over the
   cover, one bar (`.toolbar`): undo, redo, Light and Dark, Shuffle, Reset
-  text, icons only (the owner's ask, 7 Oct) with their names on hover
+  text and the phone view, icons only (the owner's ask, 7 Oct) with their names on hover
   (`.tip`); a tool that cannot act is disabled, never removed. A warning
   is a pill on its label row ("Low contrast"), never a line under a
   control. From 900 to 1199 pixels the photo goes under the left column
@@ -129,6 +130,17 @@ npm run build   # the static site, in out/
   on a label's row). A label row is exactly a mini button tall, with no
   negative margin: one with a margin let the photo's buttons be cut off by
   their card's top.
+- **Small corners** (the owner's ask, 7 Oct: "too rounded"): a card 8
+  pixels (`--rcm-r-card`), a field 6, a button 5, a small button 4, a
+  thumbnail 3. Only a dot, a slider's knob and the camera's shutter are
+  round; the phone view's phone keeps a phone's own corners.
+- **The phone view shows the post at a phone's real size** (`PhoneView`,
+  `phone.ts`, the owner's ask, 7 Oct): a profile grid on a 393 point wide
+  iPhone, one point a CSS pixel (`--u`, smaller only where the preview is
+  narrower than the phone), the cover the newest post through the grid's
+  3:4 window, drawn from the scene like every canvas (`SceneCanvas`,
+  `gridWindow`). The cover to edit stays mounted and painted underneath
+  (hidden), so Download never waits on it.
 - **The style thumbnails are the whole cover**, in its own shape, six to a
   row as wide as fits (three by two under 900): never the profile grid's
   crop, which cut a reel cover's sides off (the owner's ask, 7 Oct), and
