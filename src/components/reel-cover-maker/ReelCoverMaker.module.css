@@ -142,27 +142,70 @@
 .main {
   flex: 1;
   display: grid;
-  grid-template-columns: 372px minmax(0, 1fr);
+  grid-template-columns: 360px minmax(0, 1fr);
   gap: 40px;
   min-height: 0;
   padding: 4px max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
     max(24px, env(safe-area-inset-left));
 }
 
+/*
+ * The cover, then the styles under it, as one group of a fixed height:
+ * the stage's height is set by the window, never by the size or the style
+ * chosen, so the row of styles under it never moves.
+ */
 .preview {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  justify-content: safe center;
+  gap: 14px;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.preview::-webkit-scrollbar {
+  display: none;
 }
 
 .stage {
-  flex: 1;
-  min-height: 0;
+  flex: none;
+  height: clamp(300px, calc(100dvh - 400px), 560px);
   container-type: size;
   display: grid;
   place-items: center;
+}
+
+/* Under the cover: the styles, their own choices and Shuffle on the row above them. */
+.styleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.styleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+}
+
+.styleChoices {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.styleChoices .shuffle {
+  flex: none;
+  height: 34px;
 }
 
 .frame {
@@ -314,10 +357,27 @@
   grid-column: 2;
 }
 
+/* Undo and redo, by the background's buttons as Reset text is on their other side. */
+.history {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+  display: flex;
+  gap: 4px;
+}
+
+.history .iconButton {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: transparent;
+}
+
 .resetText {
   grid-column: 3;
   grid-row: 1;
   justify-self: start;
+  height: 34px;
   white-space: nowrap;
 }
 
@@ -454,33 +514,141 @@
   text-transform: uppercase;
 }
 
+/*
+ * The Text field: a textarea that does the typing, its letters clear, and
+ * the same letters drawn over it with their bold (TextField.tsx). Both are
+ * set alike to the pixel, so the drawn letters sit exactly over the typed.
+ */
+.textBox {
+  position: relative;
+}
+
+.input,
+.mirror {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  /* 16px or more, or iOS zooms the page when the field is focused. */
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 4;
+}
+
 .input {
   display: block;
   width: 100%;
   min-height: 92px;
   max-height: 200px;
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--rcm-line);
-  border-radius: 10px;
+  border-color: var(--rcm-line);
   background: var(--rcm-surface);
-  color: var(--rcm-text);
-  font: inherit;
-  /* 16px or more, or iOS zooms the page when the field is focused. */
-  font-size: 16px;
-  line-height: 1.45;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--rcm-text);
   resize: none;
   field-sizing: content;
+  scrollbar-width: none;
+}
+
+.input::-webkit-scrollbar {
+  display: none;
 }
 
 .input::placeholder {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.input::selection {
+  background: color-mix(in srgb, var(--rcm-focus) 30%, transparent);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--rcm-text);
+  pointer-events: none;
+  user-select: none;
+}
+
+.mirror[data-empty] {
   color: var(--rcm-muted);
-  opacity: 1;
+}
+
+/* Bold, as a stroke round the letters: a bolder face would be wider, and every letter after it out of line with the caret. */
+.strong {
+  -webkit-text-stroke: 0.75px currentColor;
+}
+
+/* The B over the field: Stickery's funky words. */
+.boldButton {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--rcm-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--rcm-text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.boldButton:hover {
+  border-color: var(--rcm-muted);
+}
+
+.boldButton[aria-pressed="true"] {
+  border-color: var(--rcm-strong);
+  background: var(--rcm-strong);
+  color: var(--rcm-bg);
+}
+
+.boldButton:focus-visible {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: 2px;
+}
+
+/* The colour's label row: a word on its contrast, then the colour. */
+.colourSide {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.warnPill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rcm-danger) 12%, transparent);
+  color: var(--rcm-danger);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: help;
 }
 
 .input:focus {
   border-color: var(--rcm-focus);
   outline: 1px solid var(--rcm-focus);
+}
+
+.input:focus + .mirror {
+  /* The textarea's border is the one that shows; the mirror only matches its width. */
+  border-color: transparent;
 }
 
 .note {
@@ -489,11 +657,6 @@
   font-size: 13px;
 }
 
-.hint {
-  margin: 0;
-  color: var(--rcm-muted);
-  font-size: 13px;
-}
 
 /* A radio is the control; what is drawn is its label. */
 .radio {
@@ -680,12 +843,6 @@
   padding: 0 14px;
 }
 
-/* Stickery's two choices side by side: the lettering, and the plain words' face. */
-.pickRow {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
 
 .dropdown {
   display: flex;
@@ -718,6 +875,49 @@
 
 .dropdownButton:hover {
   border-color: var(--rcm-muted);
+}
+
+/* In a row of controls: the height of a button, its label inside it. */
+.dropdownCompact {
+  flex-direction: row;
+  gap: 0;
+  min-width: 0;
+}
+
+.dropdownCompact .dropdownButton {
+  justify-content: flex-start;
+  width: auto;
+  max-width: 230px;
+  height: 34px;
+  padding: 0 9px 0 11px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.dropdownCompact .dropdownValue {
+  line-height: 1;
+}
+
+.dropdownCompact .dropdownCaret {
+  margin-left: 2px;
+}
+
+.dropdownPrefix {
+  flex: none;
+  color: var(--rcm-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.dropdownPrefixHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .dropdownButton[aria-expanded="true"] {
@@ -1264,9 +1464,16 @@
     order: -1;
   }
 
+  .preview {
+    overflow: visible;
+  }
+
   .stage {
-    flex: none;
-    height: min(54svh, 600px);
+    height: min(46svh, 500px);
+  }
+
+  .styleBlock {
+    max-width: none;
   }
 
   .panel {
@@ -1282,6 +1489,24 @@
 
   .style {
     flex-basis: 88px;
+  }
+}
+
+/* A phone: the choices' labels go, their values and Shuffle's arrows say enough. */
+@media (max-width: 519.98px) {
+  .dropdownPrefix,
+  .shuffleLabel {
+    display: none;
+  }
+
+  .styleChoices .shuffle {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .dropdownCompact .dropdownButton {
+    max-width: 150px;
   }
 }
 

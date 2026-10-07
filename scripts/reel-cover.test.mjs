@@ -31,6 +31,7 @@ const LL = await import("@/components/reel-cover-maker/liquid-layout");
 const SP = await import("@/components/reel-cover-maker/stepped");
 const PH = await import("@/components/reel-cover-maker/photo");
 const PL = await import("@/components/reel-cover-maker/place");
+const H = await import("@/components/reel-cover-maker/history");
 const N = await import("@/components/reel-cover-maker/noise");
 const { createFontGate } = await import("@/components/reel-cover-maker/font-gate");
 const { prepaintScript } = await import("@/components/reel-cover-maker/theme");
@@ -175,7 +176,8 @@ const COLOURS = {
   purple: { hue: 305, shade: 0.45 },
 };
 /** A cover for a title in a style and size, in near-black unless told otherwise. */
-const cover = (title, style, format = "reel", colour = {}, m = measurer) => S.buildScene({ title, style, format, ...INK, ...colour }, m);
+// Pasty's tests were written on Drip, its first lettering: they name it, as Goo's name Goo.
+const cover = (title, style, format = "reel", colour = {}, m = measurer) => S.buildScene({ title, style, format, pastyLettering: "drip", ...INK, ...colour }, m);
 
 /* Titles to set: words of every length, emphasis, line breaks, accents, emoji. */
 
@@ -360,6 +362,100 @@ check("graphemes keep an accent with its letter and a skin tone with its emoji",
   assert.deepEqual(T.graphemes("👍🏽!"), ["👍🏽", "!"]);
 });
 
+check("bold is kept as stars: read and written back exactly, a typed star or backslash kept as itself", () => {
+  const m = (text, bold) => ({ text, marks: [...text].map((_, i) => bold.includes(i)) });
+  // What the field held before bold, read as it always was.
+  assert.deepEqual(T.readMarked("How I *actually* save"), m("How I actually save", [6, 7, 8, 9, 10, 11, 12, 13]));
+  assert.deepEqual(T.readMarked("one *star"), m("one *star", []));
+  assert.deepEqual(T.readMarked("5\\* rating, a \\\\ slash"), m("5* rating, a \\ slash", []));
+  // Any text and any bold go to markup and back unchanged, and the cover reads the same bold.
+  let state = 7;
+  const rand = () => ((state = (Math.imul(state, 1103515245) + 12345) >>> 0) / 2 ** 32);
+  const alphabet = ["a", "b", " ", "*", "\\", "\n", "é", "w"];
+  for (let n = 0; n < 600; n += 1) {
+    const length = Math.floor(rand() * 14);
+    const text = Array.from({ length }, () => alphabet[Math.floor(rand() * alphabet.length)]).join("");
+    const marks = Array.from({ length }, () => rand() < 0.4);
+    const markup = T.writeMarked(text, marks);
+    assert.deepEqual(T.readMarked(markup), { text, marks }, JSON.stringify({ text, marks, markup }));
+    // The cover's words carry the same bold, letter for letter.
+    const drawn = T.parseTitle(markup).flat(2).flatMap((seg) => [...seg.text].map((c) => [c, seg.emphasis]));
+    const kept = [...text].map((c, i) => [c, marks[i]]).filter(([c]) => c !== " " && c !== "\n");
+    assert.deepEqual(drawn, kept, JSON.stringify({ text, marks, markup }));
+  }
+  assert.equal(T.plainTitle("5\\* *rating*"), "5* rating");
+});
+
+check("typing carries bold on as a word processor does, and Cmd+B with nothing selected sets what is typed next", () => {
+  const start = T.readMarked("do *want* it");
+  const bold = (marked) => [...marked.text].filter((_, i) => marked.marks[i]).join("");
+  // Typed inside the bold word, or straight after it: bold too.
+  assert.equal(bold(T.editMarked(start, "do waxnt it", 6)), "waxnt");
+  assert.equal(bold(T.editMarked(start, "do wants it", 8)), "wants");
+  // A space typed after the bold word, and the word after it: plain; inside a bold run of words, bold.
+  const spaced = T.editMarked(T.editMarked(T.readMarked("do *want*"), "do want ", 8), "do want i", 9);
+  assert.equal(bold(spaced), "want");
+  assert.equal(bold(T.editMarked(T.readMarked("*do what*"), "do x what", 4)), "do x what", "inside a bold run");
+  // After the space, or before the word: plain.
+  assert.equal(bold(T.editMarked(start, "do want sit", 9)), "want");
+  assert.equal(bold(T.editMarked(start, "do Iwant it", 4)), "want");
+  // Typed over a bold selection: bold, as what it replaced.
+  assert.equal(bold(T.editMarked(start, "do need it", 7)), "need");
+  // The same letter typed twice is told apart by the caret.
+  const aa = T.readMarked("*a*a");
+  assert.deepEqual(T.editMarked(aa, "aaa", 1).marks, [true, true, false]);
+  assert.deepEqual(T.editMarked(aa, "aaa", 3).marks, [true, false, false]);
+  // Deleted: the rest keep theirs.
+  assert.equal(bold(T.editMarked(start, "do wnt it", 4)), "wnt");
+  // Pasted in the middle of plain words: plain; Cmd+B before typing: bold.
+  assert.equal(bold(T.editMarked(start, "do want it now and then", 23)), "want");
+  assert.equal(bold(T.editMarked(start, "do want it now", 14, true)), "want now");
+  assert.equal(bold(T.editMarked(T.readMarked("*want*"), "want it", 7, false)), "want");
+});
+
+check("Cmd+B bolds a selection, or takes it off one already bold; spaces never decide", () => {
+  const marked = T.readMarked("do *what* you want");
+  const bold = (m) => [...m.text].filter((_, i) => m.marks[i]).join("");
+  assert.equal(bold(T.toggleBold(marked, 3, 7)), "");
+  assert.equal(bold(T.toggleBold(marked, 0, 7)), "do what");
+  // "what " with its space: every letter bold, so it comes off.
+  assert.equal(bold(T.toggleBold(marked, 3, 8)), "");
+  assert.equal(bold(T.toggleBold(marked, 7, 3)), "", "a selection made backwards");
+  assert.equal(T.toggleBold(marked, 5, 5), marked, "a caret changes nothing");
+  assert.equal(T.isBold(marked, 3, 8), true);
+  assert.equal(T.isBold(marked, 2, 8), true, "the spaces round it never decide");
+  assert.equal(T.isBold(marked, 1, 8), false);
+  assert.equal(T.isBold(marked, 7, 7), true, "a caret reads the letter before it");
+  assert.equal(T.isBold(marked, 0, 0), false);
+});
+
+check("words typed between stars turn bold as the second star goes in, the stars gone; any other star stays", () => {
+  const typed = T.editMarked(T.readMarked("do what you *want"), "do what you *want*", 18);
+  const done = T.convertStars(typed);
+  assert.ok(done);
+  assert.equal(T.writeMarked(done.marked.text, done.marked.marks), "do what you *want*");
+  assert.equal(done.marked.text, "do what you want");
+  assert.equal(done.moved(18), 16, "the caret comes back two stars");
+  assert.equal(done.moved(3), 3);
+  for (const text of ["5 * 3 * 2", "a *b", "* no*", "*a\nb*", "**"]) assert.equal(T.convertStars({ text, marks: [...text].map(() => false) }), null, text);
+  const two = T.convertStars({ text: "*a* and *b c*", marks: new Array(13).fill(false) });
+  assert.equal(T.writeMarked(two.marked.text, two.marked.marks), "*a* and *b c*");
+  assert.equal(two.marked.text, "a and b c");
+  // Bold already there is kept.
+  const kept = T.convertStars({ text: "x *y*", marks: [true, false, false, false, false] });
+  assert.deepEqual(kept.marked.marks, [true, false, true]);
+});
+
+check("a title is held to its length by its words, never by its stars, and never cut through a letter", () => {
+  const long = T.writeMarked("a".repeat(200), new Array(200).fill(true));
+  const clipped = T.clipMarked(long, T.MAX_TITLE_LENGTH);
+  assert.equal(T.readMarked(clipped).text.length, T.MAX_TITLE_LENGTH);
+  assert.ok(T.readMarked(clipped).marks.every(Boolean));
+  assert.equal(T.clipMarked("*hi*", 140), "*hi*");
+  const emoji = "a".repeat(139) + "😀";
+  assert.equal(T.readMarked(T.clipMarked(emoji, 140)).text, "a".repeat(139));
+});
+
 console.log("layout");
 
 check("a short title is set as large as its style allows", () => {
@@ -444,6 +540,17 @@ check("every style keeps every word inside the safe area, in every size, over 41
           assert.ok(inside(scene.readable, rect, 1), `${style.id} ${format.id} "${title}": ink outside the area the scene reports`);
         }
         assert.equal(scene.truncated, false, `${style.id} ${format.id} "${title}" was cut short`);
+      }
+    }
+    // Pasty's default lettering is Goo Teardrop, then Goo Even: held to the same, over a hundred titles each.
+    for (const style of ["pasty", "pasty-flat"]) {
+      for (const pastyLettering of ["goo", "goo-even"]) {
+        for (const title of titlesFor(style).slice(0, 100)) {
+          const scene = cover(title, style, format.id, { pastyLettering });
+          scenes += 1;
+          for (const { op, rect } of readableInk(scene)) assert.ok(inside(format.safe, rect), `${style} ${pastyLettering} ${format.id} "${title}": ${op.kind} outside the safe area`);
+          assert.equal(scene.truncated, false, `${style} ${pastyLettering} ${format.id} "${title}" was cut short`);
+        }
       }
     }
   }
@@ -628,6 +735,12 @@ check("a design round-trips through storage", () => {
     { ...design, lettering: D.DEFAULT_DESIGN.lettering, plainFace: D.DEFAULT_DESIGN.plainFace, pastyLettering: D.DEFAULT_DESIGN.pastyLettering },
   );
   assert.equal(D.readDesign(JSON.stringify({ ...design, style: "spread" })).style, D.DEFAULT_DESIGN.style);
+  // Pasty's default was Drip until version 2: a design still on it from then takes Goo Teardrop; one chosen since keeps Drip.
+  assert.equal(D.DEFAULT_DESIGN.pastyLettering, "goo");
+  assert.equal(D.readDesign(JSON.stringify({ pastyLettering: "drip" })).pastyLettering, "goo");
+  assert.equal(D.readDesign(JSON.stringify({ pastyLettering: "goo-even" })).pastyLettering, "goo-even");
+  assert.equal(D.readDesign(D.writeDesign({ ...design, pastyLettering: "drip" })).pastyLettering, "drip");
+  assert.deepEqual(S.PASTY_LETTERINGS.map((l) => l.name), ["Goo Teardrop", "Goo Even", "Drip"]);
 });
 
 check("whatever storage holds, the maker opens with something it understands", () => {
@@ -1059,7 +1172,7 @@ const alphaAt = (img, x, y) => img.data[((y - img.y) * img.w + (x - img.x)) * 4 
 const rgbAt = (img, x, y) => [0, 1, 2].map((k) => img.data[((y - img.y) * img.w + (x - img.x)) * 4 + k]);
 
 check("a drop of paste covers its disc, and nothing far from it", () => {
-  for (const finish of ["gloss", "flat", "matte"]) {
+  for (const finish of ["gloss", "flat"]) {
     const img = one(finish);
     assert.equal(alphaAt(img, 200, 200), 255, finish);
     assert.equal(alphaAt(img, img.x, img.y), 0, `${finish} corner`);
@@ -1069,7 +1182,7 @@ check("a drop of paste covers its disc, and nothing far from it", () => {
 
 check("on a ground, paste is opaque, and the layer's edge is exactly the ground, so it never shows", () => {
   const ground = P.rgb(GROUND);
-  for (const finish of ["gloss", "matte"]) {
+  for (const finish of ["gloss", "flat"]) {
     const img = one(finish, undefined, GROUND);
     for (let x = img.x; x < img.x + img.w; x += 1) {
       assert.deepEqual(rgbAt(img, x, img.y), ground, `${finish} top edge`);
@@ -1081,7 +1194,7 @@ check("on a ground, paste is opaque, and the layer's edge is exactly the ground,
 
 check("paste on a ground shades it down and to the right, away from the light, never up and to the left", () => {
   const lum = (c) => c[0] + c[1] + c[2];
-  for (const finish of ["gloss", "matte"]) {
+  for (const finish of ["gloss"]) {
     const img = one(finish, undefined, GROUND);
     const away = rgbAt(img, Math.round(200 + 44 * 0.57), Math.round(200 + 44 * 0.82));
     const toward = rgbAt(img, Math.round(200 - 44 * 0.57), Math.round(200 - 44 * 0.82));
@@ -1091,7 +1204,7 @@ check("paste on a ground shades it down and to the right, away from the light, n
   assert.deepEqual(rgbAt(flat, 200 + 25, 200 + 36), P.rgb(GROUND), "flat paste casts no shadow");
 });
 
-check("gel's shadow is a stain of its colour, never grey; matte paste's is grey", () => {
+check("gel's shadow is a stain of its colour, never grey", () => {
   const stain = (finish) => {
     const [r, g, b] = rgbAt(one(finish, undefined, GROUND), Math.round(200 + 43 * 0.57), Math.round(200 + 43 * 0.82));
     return r - (g + b) / 2;
@@ -1099,7 +1212,36 @@ check("gel's shadow is a stain of its colour, never grey; matte paste's is grey"
   const [gr, gg, gb] = P.rgb(GROUND);
   const bare = gr - (gg + gb) / 2;
   assert.ok(stain("gloss") > bare + 3, `gel shadow ${stain("gloss")} against ground ${bare}`);
-  assert.ok(Math.abs(stain("matte") - bare) < 3, `matte shadow ${stain("matte")}`);
+});
+
+check("flat paste is one colour exactly: no light, no shadow, no texture, no dither, every letter alike", () => {
+  const chains = [Array.from({ length: 9 }, (_, i) => ({ x: 160 + i * 15, y: 200 + (i % 3) * 6, r: 26 + (i % 4) * 3 })), [{ x: 230, y: 150, r: 30 }, { x: 260, y: 120, r: 18 }]];
+  const field = LR.liquidField(paintOf("flat", chains), TARGET);
+  const paste = P.rgb("#9E1B1B");
+  for (const ground of [GROUND, null]) {
+    const img = LR.shadeField(field, { colours: ["#9E1B1B"], ground });
+    let inside = 0;
+    for (let i = 0; i < field.w * field.h; i += 1) {
+      const d = field.data[i * 4] / 256 - 128;
+      const rgb = [0, 1, 2].map((k) => img.data[i * 4 + k]);
+      if (d > 1.5) {
+        inside += 1;
+        assert.deepEqual(rgb, paste, `inside the paste: ${rgb}`);
+        assert.equal(img.data[i * 4 + 3], 255);
+      } else if (d < -1.5) {
+        if (ground) assert.deepEqual(rgb, P.rgb(ground), `beside the paste: ${rgb}`);
+        else assert.equal(img.data[i * 4 + 3], 0);
+      }
+    }
+    assert.ok(inside > 3000, `${inside} pixels of paste`);
+  }
+  // Pasty Flat's letters are all the one tone, and cast no shadow on a photo.
+  for (const lettering of ["goo", "goo-even", "drip"]) {
+    const op = liquidOf(cover("Art is different", "pasty-flat", "reel", { pastyLettering: lettering, photo: true }));
+    assert.equal(op.finish, "flat");
+    assert.ok(op.tone.every((t) => t === 1), `${lettering}: tones ${[...new Set(op.tone)]}`);
+    assert.equal(op.shadow, false, `${lettering}: a shadow on the photo`);
+  }
 });
 
 check("gel is lit: a highlight far brighter than its body, a body darker than its colour", () => {
@@ -1762,12 +1904,12 @@ check("a long line wraps inside its sticker rather than becoming a strip", () =>
 check("Pasty and Pasty Flat letter in Drip, or in Goo as a teardrop or evened out, in their own gel or paste", () => {
   const glyphsOf = (op) => new Set(op.glyphOf).size;
   for (const style of ["pasty", "pasty-flat"]) {
-    const drip = liquidOf(cover("what you want", style, "post-4x5", COLOURS.red));
+    const drip = liquidOf(cover("what you want", style, "post-4x5", { ...COLOURS.red, pastyLettering: "drip" }));
     for (const lettering of ["goo", "goo-even"]) {
       const op = liquidOf(cover("what you want", style, "post-4x5", { ...COLOURS.red, pastyLettering: lettering }));
       assert.ok(op, `${style} ${lettering}: no paste`);
       assert.notEqual(op.key, drip.key, `${style} ${lettering} is drawn as Drip`);
-      assert.equal(op.finish, style === "pasty" ? "gloss" : "matte", `${style} ${lettering}: ${op.finish}`);
+      assert.equal(op.finish, style === "pasty" ? "gloss" : "flat", `${style} ${lettering}: ${op.finish}`);
       assert.equal(op.ground, P.GROUNDS.light);
       assert.equal(glyphsOf(op), "whatyouwant".length, `${style} ${lettering}: a letter lost`);
       // Goo's letters run into each other and carry no spatter; the evened one swells no further than its cap.
@@ -1787,7 +1929,7 @@ check("the liquid styles lie on the cover's ground and are lit on it", () => {
     for (const style of ["pasty", "pasty-flat"]) {
       const op = liquidOf(cover("Art is different", style, "reel", { ...COLOURS.green, ground }));
       assert.equal(op.ground, P.GROUNDS[ground], style);
-      assert.equal(op.finish, style === "pasty" ? "gloss" : "matte", style);
+      assert.equal(op.finish, style === "pasty" ? "gloss" : "flat", style);
     }
   }
 });
@@ -1895,7 +2037,7 @@ check("on a photo the paste has no ground: its shadow is a layer of its own, whi
   assert.ok(!cover("Hello", "pasty", "post-4x5").ops.some((o) => o.kind === "photo"));
   // The field is the same paste either way; only how it is lit changes.
   assert.equal(op.key, plain.key);
-  for (const finish of ["gloss", "matte"]) {
+  for (const finish of ["gloss"]) {
     const field = LR.liquidField(paintOf(finish, [Array.from({ length: 9 }, (_, i) => ({ x: 200 + i * 15, y: 200, r: 30 }))]), TARGET);
     const shadow = LR.shadeField(field, { colours: ["#9E1B1B"], ground: null, shadow: true });
     const at = (x, y) => {
@@ -2127,6 +2269,39 @@ console.log("placing");
     });
   });
 }
+
+check("undo goes back a thing done: a run of the same change is one step, a pause or another change a new one", () => {
+  let h = H.emptyHistory();
+  // A slider dragged: forty moves, a step.
+  for (let i = 0; i < 40; i += 1) h = H.record(h, { hue: i }, ["hue"], i * 16);
+  assert.equal(h.past.length, 1);
+  assert.deepEqual(h.past[0], { hue: 0 });
+  // Another field, or the same after a pause: new steps.
+  h = H.record(h, { hue: 40 }, ["shade"], 700);
+  h = H.record(h, { hue: 40, shade: 1 }, ["shade"], 700 + H.STEP_PAUSE + 1);
+  assert.equal(h.past.length, 3);
+  // A step never runs past its longest, however steady the typing.
+  let t = H.emptyHistory();
+  for (let i = 0; i < 60; i += 1) t = H.record(t, i, ["text"], i * 200);
+  assert.equal(t.past.length, Math.ceil((60 * 200) / H.STEP_LONGEST));
+  // Undo and redo walk back and forth; a new change drops what was undone.
+  const u = H.undo(h, "now");
+  assert.deepEqual(u.state, { hue: 40, shade: 1 });
+  const r = H.redo(u.history, u.state);
+  assert.equal(r.state, "now");
+  assert.equal(H.redo(r.history, r.state), null);
+  const again = H.undo(r.history, "now");
+  assert.equal(H.record(again.history, again.state, ["seed"], 99999).future.length, 0);
+  assert.equal(H.undo(H.emptyHistory(), 1), null);
+  // An undo ends the step growing, so the next change is a step of its own.
+  assert.equal(u.history.open, null);
+  assert.equal(H.seal(h).open, null);
+  // Never more than the most kept.
+  let many = H.emptyHistory();
+  for (let i = 0; i < 300; i += 1) many = H.record(many, i, [`k${i}`], i);
+  assert.equal(many.past.length, H.MOST_STEPS);
+  assert.equal(many.past[0], 200);
+});
 
 console.log("page");
 

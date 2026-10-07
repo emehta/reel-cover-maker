@@ -335,12 +335,15 @@ const PASTY: LiquidStyle = {
   merge: 0.2,
 };
 
-/** Pasty's lettering in thick, matte paste, spread with a knife. */
-const PASTY_MATTE: LiquidStyle = {
+/**
+ * Pasty's lettering in flat paste: one colour, edge to edge, with no light,
+ * shadow or texture at all (the owner's ask, 7 Oct: "extremely just flat").
+ * Thicker, as paste laid flat reads heavier than gel.
+ */
+const PASTY_FLAT: LiquidStyle = {
   ...PASTY,
-  // Thicker: a knife lays paste down heavier than a nozzle squeezes it.
   recipe: (letters) => ({ ...PASTY.recipe(letters), weight: PASTY.recipe(letters).weight * 1.4, droplets: 0.15 }),
-  finish: "matte",
+  finish: "flat",
   pool: 0.35,
 };
 
@@ -798,7 +801,8 @@ function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: strin
     set.chains.length,
     colours,
     [...set.colourOf, ...(withDroplets ? set.droplets.map(() => 0) : [])],
-    [...set.tone, ...(withDroplets ? set.droplets.map(() => 1) : [])],
+    // Flat paste is one colour throughout: no letter lighter or darker than the next.
+    style.finish === "flat" ? chains.map(() => 1) : [...set.tone, ...(withDroplets ? set.droplets.map(() => 1) : [])],
     style.finish,
     ground,
     typical * style.pool,
@@ -811,13 +815,14 @@ function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: strin
 /** Pasty's and Pasty Flat's letterings: their own Drip, or Stickery's Goo in their gel or paste. */
 export type PastyLetteringId = "drip" | PasteLetteringId;
 
+/** In the owner's order (7 Oct): Goo Teardrop first, and the default, then Goo Even, then Drip. */
 export const PASTY_LETTERINGS: readonly { id: PastyLetteringId; name: string }[] = [
-  { id: "drip", name: "Drip" },
   { id: "goo", name: "Goo Teardrop" },
   { id: "goo-even", name: "Goo Even" },
+  { id: "drip", name: "Drip" },
 ];
 
-export const DEFAULT_PASTY_LETTERING: PastyLetteringId = "drip";
+export const DEFAULT_PASTY_LETTERING: PastyLetteringId = "goo";
 
 export function isPastyLetteringId(value: unknown): value is PastyLetteringId {
   return PASTY_LETTERINGS.some((l) => l.id === value);
@@ -826,19 +831,19 @@ export function isPastyLetteringId(value: unknown): value is PastyLetteringId {
 /**
  * Goo, as a teardrop or evened out, set as Pasty sets its words (centred,
  * lines packed to fill the cover) in Pasty's glossy gel or Pasty Flat's
- * matte paste, laid on thicker as a knife lays it. Its own hand otherwise:
- * its kerning, its joins, its teardrops, no spatter.
+ * flat paste, laid on thicker. Its own hand otherwise: its kerning, its
+ * joins, its teardrops, no spatter.
  */
-function pastyGoo(goo: LiquidStyle, matte: boolean): LiquidStyle {
+function pastyGoo(goo: LiquidStyle, flat: boolean): LiquidStyle {
   return {
     ...goo,
     spec: { ...goo.spec, maxSize: PASTY.spec.maxSize, minSize: PASTY.spec.minSize, maxLines: PASTY.spec.maxLines, align: undefined, salt: "pasty-goo" },
     recipe: (letters) => {
       const r = goo.recipe(letters);
-      return matte ? { ...r, weight: r.weight * 1.3 } : r;
+      return flat ? { ...r, weight: r.weight * 1.3 } : r;
     },
-    finish: matte ? "matte" : "gloss",
-    pool: matte ? 0.35 : goo.pool,
+    finish: flat ? "flat" : "gloss",
+    pool: flat ? 0.35 : goo.pool,
   };
 }
 
@@ -847,14 +852,15 @@ function shuffled(style: LiquidStyle, seed: number): LiquidStyle {
   return seed ? { ...style, spec: { ...style.spec, salt: `${style.spec.salt}#${seed}` } } : style;
 }
 
-/** Paste squeezed into letters: wet, glossy gel, or thick matte paste spread with a knife. */
-function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, matte: boolean, seed: number, lettering: PastyLetteringId, photo: boolean) {
-  const base = lettering === "drip" ? (matte ? PASTY_MATTE : PASTY) : pastyGoo(PASTE_LETTERINGS[lettering], matte);
+/** Paste squeezed into letters: wet, glossy gel, or flat paste of one colour. */
+function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palette, measurer: Measurer, flat: boolean, seed: number, lettering: PastyLetteringId, photo: boolean) {
+  const base = lettering === "drip" ? (flat ? PASTY_FLAT : PASTY) : pastyGoo(PASTE_LETTERINGS[lettering], flat);
   const style = shuffled(base, seed);
   const set = setLiquid(paragraphs, safe, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
   return {
     // On a photo the paste has no ground of its own: its shadow falls on the photo instead.
-    ops: [liquidOp(set, style, [palette.ink, palette.accent], photo ? null : palette.bg, true, photo), ...set.missing] as Op[],
+    // Flat paste casts no shadow, on a photo or anywhere.
+    ops: [liquidOp(set, style, [palette.ink, palette.accent], photo ? null : palette.bg, true, photo && !flat), ...set.missing] as Op[],
     readable: set.readable,
   };
 }

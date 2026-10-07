@@ -16,7 +16,12 @@ interface Props<T extends string> {
   value: T;
   options: readonly DropdownOption<T>[];
   onChange: (value: T) => void;
+  /** Small, in a row of other controls: its label inside the button, before the choice, and the choice's type at the button's size. */
+  compact?: boolean;
 }
+
+/** A CSS font at another size: an option's own type, in the button. */
+const atSize = (font: string, px: number) => font.replace(/\d+(\.\d+)?px/, `${px}px`);
 
 /** How far the list stands off its button, and off the window's edges, in pixels. */
 const GAP = 6;
@@ -55,7 +60,7 @@ function place(button: HTMLElement | null, list: HTMLElement | null): boolean {
  * against the window, not the panel, so a panel that scrolls never clips
  * it, and moves with its button when anything scrolls.
  */
-export function Dropdown<T extends string>({ label, value, options, onChange }: Props<T>) {
+export function Dropdown<T extends string>({ label, value, options, onChange, compact = false }: Props<T>) {
   const id = useId();
   const labelId = `${id}-label`;
   const buttonId = `${id}-button`;
@@ -172,8 +177,8 @@ export function Dropdown<T extends string>({ label, value, options, onChange }: 
   };
 
   return (
-    <div className={styles.dropdown}>
-      <span className={styles.label} id={labelId}>
+    <div className={compact ? `${styles.dropdown} ${styles.dropdownCompact}` : styles.dropdown}>
+      <span className={compact ? styles.dropdownPrefixHidden : styles.label} id={labelId}>
         {label}
       </span>
       <button
@@ -181,6 +186,7 @@ export function Dropdown<T extends string>({ label, value, options, onChange }: 
         id={buttonId}
         type="button"
         className={styles.dropdownButton}
+        title={compact ? label : undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
@@ -188,7 +194,12 @@ export function Dropdown<T extends string>({ label, value, options, onChange }: 
         onClick={() => (open ? close(false) : show(selected))}
         onKeyDown={onButtonKey}
       >
-        <span className={styles.dropdownValue} style={current?.font ? { font: current.font } : undefined}>
+        {compact && (
+          <span className={styles.dropdownPrefix} aria-hidden="true">
+            {label}
+          </span>
+        )}
+        <span className={styles.dropdownValue} style={current?.font ? { font: compact ? atSize(current.font, 15) : current.font } : undefined}>
           {current?.label}
         </span>
         <CaretDown size={14} weight="bold" aria-hidden="true" className={styles.dropdownCaret} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowCounterClockwise, Check, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DownloadSimple, Moon, Shuffle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { hueTrack, shadeTrack, sliderColour } from "@/components/reel-cover-maker/colour";
@@ -12,6 +12,7 @@ import { PLAIN_FACES } from "@/components/reel-cover-maker/faces";
 import { facesFor, fontCss, fontsSnapshot, interTight, measurerFor, requestFonts, subscribeFonts } from "@/components/reel-cover-maker/fonts";
 import { FORMATS, formatById, type Format } from "@/components/reel-cover-maker/formats";
 import { GRAIN_TILE, grainPixels } from "@/components/reel-cover-maker/grain";
+import { emptyHistory, record, redo as redoStep, seal, undo as undoStep, type History } from "@/components/reel-cover-maker/history";
 import { APP_NAME } from "@/components/reel-cover-maker/meta";
 import { paint, type PaintOptions } from "@/components/reel-cover-maker/paint";
 import { DEFAULT_ADJUST, DEFAULT_FRAME, keptSize, sourceRect } from "@/components/reel-cover-maker/photo";
@@ -35,6 +36,7 @@ import {
   type CoverInput,
   type Scene,
 } from "@/components/reel-cover-maker/scene";
+import { TextField } from "@/components/reel-cover-maker/TextField";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
@@ -288,6 +290,11 @@ function GridMask({ format }: { format: Format }) {
 
 export default function ReelCoverMaker() {
   const [design, setDesign] = useState<Design>(loadDesign);
+  /** The design as last set, for a change made from a callback that began before it (a photo still loading). */
+  const designRef = useRef(design);
+  const historyRef = useRef<History<Design>>(emptyHistory());
+  /** How many steps there are to undo and to redo, for the buttons. */
+  const [steps, setSteps] = useState({ back: 0, forward: 0 });
   const [showGrid, setShowGrid] = useState(false);
   const [held, setHeld] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -310,6 +317,8 @@ export default function ReelCoverMaker() {
   /** What is on the canvas. */
   const painted = useRef<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
+  const undoRef = useRef<() => void>(() => {});
+  const redoRef = useRef<() => void>(() => {});
   const takePhotoRef = useRef<(file: Blob) => void>(() => {});
   const photoForRef = useRef<(scene: Scene) => PaintOptions["photo"]>(() => null);
   /** The letters as they were drawn when a gesture began, carried with it until they are drawn again where it left them. */
@@ -372,13 +381,35 @@ export default function ReelCoverMaker() {
     place,
   ]);
 
-  const update = (change: Partial<Design>) => {
-    setDesign((current) => {
-      const next = { ...current, ...change };
-      saveDesign(next);
-      return next;
-    });
+  const show = (next: Design) => {
+    designRef.current = next;
+    saveDesign(next);
+    setDesign(next);
+    setSteps({ back: historyRef.current.past.length, forward: historyRef.current.future.length });
     setError(null);
+  };
+
+  /** A change to the design: a step to undo, unless it is one undo cannot mean (a new photo framed whole). */
+  const update = (change: Partial<Design>, step = true) => {
+    const current = designRef.current;
+    historyRef.current = step ? record(historyRef.current, current, Object.keys(change), performance.now()) : seal(historyRef.current);
+    show({ ...current, ...change });
+  };
+
+  const undo = () => {
+    const back = undoStep(historyRef.current, designRef.current);
+    if (!back) return;
+    historyRef.current = back.history;
+    setSelected(false);
+    show(back.state);
+  };
+
+  const redo = () => {
+    const forward = redoStep(historyRef.current, designRef.current);
+    if (!forward) return;
+    historyRef.current = forward.history;
+    setSelected(false);
+    show(forward.state);
   };
 
   /** The photo as a canvas paints it, framed for the scene's size and adjusted; null with no photo. */
@@ -397,7 +428,7 @@ export default function ReelCoverMaker() {
       return;
     }
     setPhoto(made);
-    update({ photoFrame: DEFAULT_FRAME, photoAdjust: DEFAULT_ADJUST });
+    update({ photoFrame: DEFAULT_FRAME, photoAdjust: DEFAULT_ADJUST }, false);
     made.image.toBlob((blob) => {
       if (blob) void savePhoto(blob);
     }, "image/jpeg", 0.92);
@@ -406,7 +437,7 @@ export default function ReelCoverMaker() {
   const removePhoto = () => {
     setPhoto(null);
     void forgetPhoto();
-    update({ photoFrame: DEFAULT_FRAME, photoAdjust: DEFAULT_ADJUST });
+    update({ photoFrame: DEFAULT_FRAME, photoAdjust: DEFAULT_ADJUST }, false);
   };
 
   /** The computer's camera, opened here; false on a phone (or with no camera to ask for), where the file field's own camera serves. */
@@ -664,21 +695,32 @@ export default function ReelCoverMaker() {
 
   useEffect(() => {
     saveRef.current = () => void save();
+    undoRef.current = undo;
+    redoRef.current = redo;
   });
 
-  // Cmd or Ctrl and S saves the cover rather than the page.
+  // Cmd or Ctrl and S saves the cover rather than the page; Z undoes (with Shift, redoes, as Ctrl and Y does), in the Text field too.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const s = event.code === "KeyS" || event.key.toLowerCase() === "s";
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && s) {
+      if (event.defaultPrevented || event.altKey || !(event.metaKey || event.ctrlKey)) return;
+      const key = event.key.toLowerCase();
+      if ((event.code === "KeyS" || key === "s") && !event.shiftKey) {
         event.preventDefault();
         saveRef.current();
+      } else if (event.code === "KeyZ" || key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoRef.current();
+        else undoRef.current();
+      } else if ((event.code === "KeyY" || key === "y") && event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        redoRef.current();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const lowContrast = design.style !== "stickery" && !photo && !standsOut(paletteFor(design));
   const frameStyle = { "--rcm-ratio": `${format.width} / ${format.height}`, "--rcm-ratio-n": format.width / format.height } as CSSProperties;
   const saveLabel = method === "share" ? "Save image" : "Download";
 
@@ -708,24 +750,19 @@ export default function ReelCoverMaker() {
 
       <div className={styles.main}>
         <div className={styles.panel}>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="rcm-title">
-              Text
-            </label>
-            <textarea
-              ref={inputRef}
-              id="rcm-title"
-              className={styles.input}
-              value={design.text}
-              onChange={(event) => update({ text: event.target.value })}
-              placeholder={PLACEHOLDER_TITLE}
-              maxLength={MAX_TITLE_LENGTH}
-              rows={3}
-              spellCheck
-            />
+          <TextField
+            id="rcm-title"
+            value={design.text}
+            onChange={(text) => update({ text })}
+            onUndo={() => undoRef.current()}
+            onRedo={() => redoRef.current()}
+            inputRef={inputRef}
+            placeholder={PLACEHOLDER_TITLE}
+            maxLength={MAX_TITLE_LENGTH}
+          >
             {scene?.truncated && <p className={styles.note}>Too long for the cover: the end is cut.</p>}
             {layers.failed && <p className={styles.note}>This style could not be drawn here. Try another.</p>}
-          </div>
+          </TextField>
 
           <PhotoControls
             thumb={photo?.thumb ?? null}
@@ -740,73 +777,18 @@ export default function ReelCoverMaker() {
 
           <div className={styles.field}>
             <div className={styles.labelRow}>
-              <span className={styles.label} id="rcm-style-label">
-                Style
-              </span>
-              <button type="button" className={styles.toggle} onClick={shuffle} title="Draw the letters another way">
-                <Shuffle size={16} weight="bold" aria-hidden="true" />
-                Shuffle
-              </button>
-            </div>
-            <div ref={stylesRef} className={styles.styles} role="radiogroup" aria-labelledby="rcm-style-label">
-              {STYLES.map((style, i) => (
-                <label key={style.id} className={styles.style} data-chosen={design.style === style.id || undefined}>
-                  <input
-                    type="radio"
-                    name="rcm-style"
-                    className={styles.radio}
-                    checked={design.style === style.id}
-                    onChange={() => update({ style: style.id })}
-                  />
-                  <span className={styles.thumb}>
-                    <Thumb scene={thumbs?.[i] ?? null} format={format} slot={`thumb-${style.id}`} photoFor={photoFor} />
-                  </span>
-                  <span className={styles.styleName}>{style.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {design.style === "stickery" && (
-            <div className={styles.pickRow}>
-              <Dropdown
-                label="Lettering"
-                value={design.lettering}
-                options={LETTERINGS.filter((l) => l.chosen || l.id === design.lettering).map((l) => ({
-                  value: l.id,
-                  label: l.name,
-                  font: l.face ? fontCss(l.face, 19) : undefined,
-                }))}
-                onChange={(lettering) => update({ lettering })}
-              />
-              <Dropdown
-                label="Plain words"
-                value={design.plainFace}
-                options={PLAIN_FACES.filter((f) => f.offered || f.id === design.plainFace).map((f) => ({
-                  value: f.id,
-                  label: f.name,
-                  font: fontCss(f.id, 16),
-                }))}
-                onChange={(plainFace) => update({ plainFace })}
-              />
-            </div>
-          )}
-
-          {(design.style === "pasty" || design.style === "pasty-flat") && (
-            <Dropdown
-              label="Lettering"
-              value={design.pastyLettering}
-              options={PASTY_LETTERINGS.map((l) => ({ value: l.id, label: l.name }))}
-              onChange={(pastyLettering) => update({ pastyLettering })}
-            />
-          )}
-
-          <div className={styles.field}>
-            <div className={styles.labelRow}>
               <span className={styles.label} id="rcm-colour-label">
                 Colour
               </span>
-              <span className={styles.chip} style={{ background: sliderColour(design.hue, design.shade) }} aria-hidden="true" />
+              <span className={styles.colourSide}>
+                {/* Said beside the colour, not under it, so nothing below moves when it is said. */}
+                {lowContrast && (
+                  <span className={styles.warnPill} title="The letters are close to the background in lightness, and may blur once Instagram compresses the cover">
+                    Low contrast
+                  </span>
+                )}
+                <span className={styles.chip} style={{ background: sliderColour(design.hue, design.shade) }} aria-hidden="true" />
+              </span>
             </div>
             <div className={styles.sliders} role="group" aria-labelledby="rcm-colour-label">
               <input
@@ -832,9 +814,6 @@ export default function ReelCoverMaker() {
                 aria-label="Shade"
               />
             </div>
-            {design.style !== "stickery" && !photo && !standsOut(paletteFor(design)) && (
-              <p className={styles.hint}>Close to the background in lightness: the letters may blur once posted.</p>
-            )}
           </div>
 
           <div className={styles.field}>
@@ -894,6 +873,14 @@ export default function ReelCoverMaker() {
           }}
         >
           <div className={styles.previewTop}>
+            <div className={styles.history}>
+              <button type="button" className={styles.iconButton} onClick={undo} disabled={steps.back === 0} aria-label="Undo" title="Undo">
+                <ArrowUUpLeft size={17} weight="bold" />
+              </button>
+              <button type="button" className={styles.iconButton} onClick={redo} disabled={steps.forward === 0} aria-label="Redo" title="Redo">
+                <ArrowUUpRight size={17} weight="bold" />
+              </button>
+            </div>
             {!isHome(place) && (
               <button type="button" className={`${styles.toggle} ${styles.resetText}`} onClick={() => update({ place: HOME })} title="Put the text back where the style sets it" aria-label="Reset text">
                 <ArrowCounterClockwise size={15} weight="bold" aria-hidden="true" />
@@ -950,6 +937,73 @@ export default function ReelCoverMaker() {
                   Drop to use as the photo
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className={styles.styleBlock}>
+            <div className={styles.styleBar}>
+              <span className={styles.label} id="rcm-style-label">
+                Style
+              </span>
+              {/* The chosen style's own choices, beside Shuffle: one row, whatever the style, so nothing moves when another is picked. */}
+              <div className={styles.styleChoices}>
+                {design.style === "stickery" && (
+                  <>
+                    <Dropdown
+                      compact
+                      label="Lettering"
+                      value={design.lettering}
+                      options={LETTERINGS.filter((l) => l.chosen || l.id === design.lettering).map((l) => ({
+                        value: l.id,
+                        label: l.name,
+                        font: l.face ? fontCss(l.face, 19) : undefined,
+                      }))}
+                      onChange={(lettering) => update({ lettering })}
+                    />
+                    <Dropdown
+                      compact
+                      label="Plain words"
+                      value={design.plainFace}
+                      options={PLAIN_FACES.filter((f) => f.offered || f.id === design.plainFace).map((f) => ({
+                        value: f.id,
+                        label: f.name,
+                        font: fontCss(f.id, 16),
+                      }))}
+                      onChange={(plainFace) => update({ plainFace })}
+                    />
+                  </>
+                )}
+                {(design.style === "pasty" || design.style === "pasty-flat") && (
+                  <Dropdown
+                    compact
+                    label="Lettering"
+                    value={design.pastyLettering}
+                    options={PASTY_LETTERINGS.map((l) => ({ value: l.id, label: l.name }))}
+                    onChange={(pastyLettering) => update({ pastyLettering })}
+                  />
+                )}
+                <button type="button" className={`${styles.toggle} ${styles.shuffle}`} onClick={shuffle} title="Draw the letters another way" aria-label="Shuffle">
+                  <Shuffle size={16} weight="bold" aria-hidden="true" />
+                  <span className={styles.shuffleLabel}>Shuffle</span>
+                </button>
+              </div>
+            </div>
+            <div ref={stylesRef} className={styles.styles} role="radiogroup" aria-labelledby="rcm-style-label">
+              {STYLES.map((style, i) => (
+                <label key={style.id} className={styles.style} data-chosen={design.style === style.id || undefined}>
+                  <input
+                    type="radio"
+                    name="rcm-style"
+                    className={styles.radio}
+                    checked={design.style === style.id}
+                    onChange={() => update({ style: style.id })}
+                  />
+                  <span className={styles.thumb}>
+                    <Thumb scene={thumbs?.[i] ?? null} format={format} slot={`thumb-${style.id}`} photoFor={photoFor} />
+                  </span>
+                  <span className={styles.styleName}>{style.name}</span>
+                </label>
+              ))}
             </div>
           </div>
         </section>

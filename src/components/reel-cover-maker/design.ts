@@ -29,7 +29,7 @@ import {
   type PastyLetteringId,
   type StyleId,
 } from "@/components/reel-cover-maker/scene";
-import { MAX_TITLE_LENGTH } from "@/components/reel-cover-maker/title";
+import { clipMarked, MAX_TITLE_LENGTH } from "@/components/reel-cover-maker/title";
 
 export interface Design {
   text: string;
@@ -50,6 +50,14 @@ export interface Design {
 }
 
 export const STORAGE_KEY = "reel-cover-maker:v1";
+
+/**
+ * Which version of the maker wrote a design, so a default changed since
+ * can be given to a design that only had the old one: before version 2,
+ * Pasty's lettering defaulted to Drip, and a design still on Drip from
+ * then takes Goo Teardrop, the default since (the owner's ask, 7 Oct).
+ */
+export const DESIGN_VERSION = 2;
 
 export const DEFAULT_DESIGN: Design = {
   text: "",
@@ -80,11 +88,14 @@ export function readDesign(raw: string | null): Design {
     // Not JSON: start afresh.
   }
   return {
-    text: typeof stored.text === "string" ? stored.text.slice(0, MAX_TITLE_LENGTH) : DEFAULT_DESIGN.text,
+    text: typeof stored.text === "string" ? clipMarked(stored.text, MAX_TITLE_LENGTH) : DEFAULT_DESIGN.text,
     style: isStyleId(stored.style) ? stored.style : DEFAULT_DESIGN.style,
     lettering: isLetteringId(stored.lettering) ? stored.lettering : DEFAULT_DESIGN.lettering,
     plainFace: isPlainFaceId(stored.plainFace) ? stored.plainFace : DEFAULT_DESIGN.plainFace,
-    pastyLettering: isPastyLetteringId(stored.pastyLettering) ? stored.pastyLettering : DEFAULT_DESIGN.pastyLettering,
+    pastyLettering:
+      isPastyLetteringId(stored.pastyLettering) && !(stored.pastyLettering === "drip" && !(Number(stored.version) >= 2))
+        ? stored.pastyLettering
+        : DEFAULT_DESIGN.pastyLettering,
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
     ground: isGround(stored.ground) ? stored.ground : DEFAULT_DESIGN.ground,
@@ -97,7 +108,7 @@ export function readDesign(raw: string | null): Design {
 }
 
 export function writeDesign(design: Design): string {
-  return JSON.stringify(design);
+  return JSON.stringify({ ...design, version: DESIGN_VERSION });
 }
 
 /** The stored design, or the default where storage is blocked (a private window, a sandboxed frame). */

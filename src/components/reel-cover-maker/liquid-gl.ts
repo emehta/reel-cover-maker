@@ -121,12 +121,8 @@ void main() {
   if (uFinish != 1 && cover < 1.0) {
     cut = shadowAt(p, 0.0);
     contact = exp(-max(0.0, -d) / (uRadius * 0.26));
-    if (uFinish == 0) {
-      vec3 tint = mix(vec3(1.0), clamp(C * 1.6, 0.0, 1.0), 0.75);
-      shade = mix(vec3(1.0), tint * 0.82, cut * 0.7) * (1.0 - 0.22 * contact);
-    } else {
-      shade = vec3(1.0 - 0.45 * cut - 0.22 * contact);
-    }
+    vec3 tint = mix(vec3(1.0), clamp(C * 1.6, 0.0, 1.0), 0.75);
+    shade = mix(vec3(1.0), tint * 0.82, cut * 0.7) * (1.0 - 0.22 * contact);
   }
   if (uShadow == 1) {
     outColor = vec4(encode(shade), 1.0);
@@ -146,35 +142,20 @@ void main() {
       float nh = max(dot(N, H), 0.0);
       float nv = max(N.z, 0.0);
       float thick = clamp(h / (uRadius * 0.9), 0.0, 1.6);
-      if (uFinish == 0) {
-        // Gel: a body that absorbs more the deeper light goes into it, so
-        // a blob is darker and richer than a thin stroke; lit softly from
-        // above, and glowing a little where light scatters in its core.
-        vec3 table = uHasGround == 1 ? uGround : vec3(0.8);
-        float wrap = clamp((nl + 0.4) / 1.4, 0.0, 1.0);
-        vec3 deep = pow(C, vec3(0.75 + 0.9 * thick));
-        vec3 body = deep * (0.16 + 0.84 * wrap);
-        body += C * C * 0.22 * smoothstep(0.35, 1.2, thick) * wrap;
-        // A wet surface: what it reflects, by Schlick's Fresnel, weighs more
-        // the more glancing it is; the paste's own colour weighs the rest.
-        float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
-        vec3 reflected = studio(reflect(-V, N), table);
-        float spec = ggx(nh, 0.04) * 0.06;
-        paste = body * (1.0 - fresnel) + reflected * fresnel + vec3(spec);
-      } else {
-        // Matte paste: soft light that wraps a little round its shoulders,
-        // darker down in a groove, its own ridges' shadows across it, and
-        // the low satin sheen of an oily paste.
-        int k = max(2, int(uRadius * 0.12));
-        float around = (heightAt(p + ivec2(k, 0)) + heightAt(p - ivec2(k, 0)) + heightAt(p + ivec2(0, k)) + heightAt(p - ivec2(0, k))) * 0.25;
-        float cavity = clamp(1.0 - (around - h) / max(0.5, uRadius * 0.09), 0.6, 1.06);
-        float self = shadowAt(p, h);
-        float wrap = clamp((nl + 0.25) / 1.25, 0.0, 1.0);
-        vec3 lit = C * (0.26 + 0.86 * wrap * (1.0 - 0.75 * self)) * cavity;
-        float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
-        float sheen = ggx(nh, 0.32) * 0.09 * (1.0 - self);
-        paste = lit * (1.0 - fresnel * 0.5) + vec3(sheen) + vec3(0.06) * fresnel;
-      }
+      // Gel: a body that absorbs more the deeper light goes into it, so
+      // a blob is darker and richer than a thin stroke; lit softly from
+      // above, and glowing a little where light scatters in its core.
+      vec3 table = uHasGround == 1 ? uGround : vec3(0.8);
+      float wrap = clamp((nl + 0.4) / 1.4, 0.0, 1.0);
+      vec3 deep = pow(C, vec3(0.75 + 0.9 * thick));
+      vec3 body = deep * (0.16 + 0.84 * wrap);
+      body += C * C * 0.22 * smoothstep(0.35, 1.2, thick) * wrap;
+      // A wet surface: what it reflects, by Schlick's Fresnel, weighs more
+      // the more glancing it is; the paste's own colour weighs the rest.
+      float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
+      vec3 reflected = studio(reflect(-V, N), table);
+      float spec = ggx(nh, 0.04) * 0.06;
+      paste = body * (1.0 - fresnel) + reflected * fresnel + vec3(spec);
     }
   }
 
@@ -183,7 +164,8 @@ void main() {
     return;
   }
   vec3 ground = uGround * shade;
-  bool touched = cover > 0.0 || cut > 0.002 || contact > 0.002;
+  // Flat paste has no soft shadow to band, so no dither: one colour, exactly.
+  bool touched = uFinish != 1 && (cover > 0.0 || cut > 0.002 || contact > 0.002);
   // The edge blended as it is seen, in the display's own values, as type
   // is: blended in linear light, a pale paste on a dark ground came out
   // nearly whole in a pixel only partly covered, and its curves stepped.
@@ -263,7 +245,7 @@ const linear = (hex: string) =>
     return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
   });
 
-const FINISH = { gloss: 0, flat: 1, matte: 2 } as const;
+const FINISH = { gloss: 0, flat: 1 } as const;
 
 /** Where in the shared canvas a lit layer is: its top left corner, the field's size. */
 export interface GpuLayer {

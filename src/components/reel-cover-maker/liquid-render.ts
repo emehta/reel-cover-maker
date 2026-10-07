@@ -8,10 +8,8 @@
  * drawn. From that distance comes how high the paste stands at each pixel:
  *
  * - "gloss": a rounded tube of gel, as sauce from a bottle sits on a plate;
- * - "matte": thick paste spread with a knife, flat on top with a rounded
- *   shoulder, swept in broad swaths along each stroke with a ridge where
- *   the blade lifted, lumpy, its edge ragged;
- * - "flat": the shape alone.
+ * - "flat": the shape alone, one colour edge to edge, with no light,
+ *   shadow or texture (Pasty Flat).
  *
  * The field (distance, height, colour, tone) is what the worker makes, once
  * per title; light is laid on it afterwards (liquid-gl.ts on the GPU, or
@@ -23,10 +21,9 @@
  */
 
 import type { Bead, Chain } from "@/components/reel-cover-maker/liquid";
-import { fbm2, noise2 } from "@/components/reel-cover-maker/noise";
 import { rgb } from "@/components/reel-cover-maker/palettes";
 
-export type Finish = "gloss" | "flat" | "matte";
+export type Finish = "gloss" | "flat";
 
 export interface LiquidPaint {
   chains: Chain[];
@@ -231,26 +228,12 @@ export function liquidField(paint: LiquidPaint, target: LiquidTarget): LiquidFie
     }
   });
 
-  const matte = paint.finish === "matte";
-  // A matte paste's edge is ragged where the knife left it: lumps and
-  // nicks the size of the paste's own crumbs, never a fuzz finer than that.
-  if (matte) {
-    for (let i = 0; i < n; i += 1) {
-      if (depth[i] <= -typical * 2) continue;
-      const x = (i % rw) + rx;
-      const y = ((i / rw) | 0) + ry;
-      depth[i] +=
-        typical * 0.13 * fbm2(paint.seed ^ 0x2f, x / (typical * 0.8), y / (typical * 0.8)) +
-        typical * 0.012 * noise2(paint.seed ^ 0x51, x / (typical * 0.22), y / (typical * 0.22));
-    }
-  }
-
   // A gel's radius smoothed across the paste before it is stood up: which
   // capsule is deepest flips from one to the next where a stroke swells
   // into a ball, and the radius read off each would put a crease across
   // the neck. Weighted by the paste alone, so the ground's nothing never
   // thins an edge.
-  if (!matte) {
+  {
     const weight = new Float32Array(n);
     const sum = new Float32Array(n);
     for (let i = 0; i < n; i += 1) {
@@ -270,33 +253,12 @@ export function liquidField(paint: LiquidPaint, target: LiquidTarget): LiquidFie
     const d = depth[i];
     if (d <= 0) continue;
     const r = Math.max(0.5, radius[i]);
-    if (matte) {
-      // Flat on top, a rounded shoulder; across it the knife's broad
-      // swaths, a thin ridge here and there where the blade lifted, and
-      // the paste's own soft lumps. All from where the point is, never
-      // from which stroke it is on, so the surface runs on unbroken
-      // across a curve and where strokes meet.
-      const x = (i % rw) + rx;
-      const y = ((i / rw) | 0) + ry;
-      const t = typical;
-      const wx = x / (t * 2.4) + 0.7 * noise2(paint.seed ^ 0x1d, x / (t * 3.4), y / (t * 3.4));
-      const wy = y / (t * 2.4) + 0.7 * noise2(paint.seed ^ 0x2e, x / (t * 3.4), y / (t * 3.4));
-      // A knife spreads paste to one thickness, whatever stroke it is on,
-      // so where two strokes meet there is no step between them.
-      const shoulder = Math.min(1, d / (t * 0.7));
-      const top = t * 0.72 * Math.sqrt(shoulder * (2 - shoulder));
-      const swath = noise2(paint.seed, wx, wy);
-      const ridge = (1 - Math.abs(noise2(paint.seed ^ 0x33, wx * 0.8, wy * 0.8))) ** 12;
-      const lumps = fbm2(paint.seed ^ 0x77, x / (t * 0.95), y / (t * 0.95));
-      height[i] = top + shoulder * (t * 0.13 * swath + t * 0.05 * ridge + t * 0.035 * lumps);
-    } else {
-      // A tube of gel: round, a little squashed, as sauce sits.
-      const f = Math.min(d, r);
-      height[i] = 0.88 * Math.sqrt(Math.max(0, 2 * r * f - f * f));
-    }
+    // A tube of gel: round, a little squashed, as sauce sits. (Flat paste is not lit, so stands no height.)
+    const f = Math.min(d, r);
+    height[i] = paint.finish === "flat" ? 0 : 0.88 * Math.sqrt(Math.max(0, 2 * r * f - f * f));
   }
   // A light blur takes out the creases where strokes cross.
-  boxBlur(height, rw, rh, Math.max(1, Math.round(typical * (matte ? 0.05 : 0.12))));
+  boxBlur(height, rw, rh, Math.max(1, Math.round(typical * 0.12)));
 
   const data = new Uint16Array(n * 4);
   for (let i = 0; i < n; i += 1) {
@@ -414,14 +376,10 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
         if (finish === "flat" || cover >= 1) return [1, 1, 1];
         const cut = shadowAt(x, y, 0);
         const contact = Math.exp(-Math.max(0, -d) / (radius * 0.26));
-        if (finish === "gloss") {
-          return C.map((c) => {
-            const tint = 1 + (Math.min(1, c * 1.6) - 1) * 0.75;
-            return (1 + (tint * 0.82 - 1) * cut * 0.7) * (1 - 0.22 * contact);
-          }) as Vec;
-        }
-        const f = 1 - 0.45 * cut - 0.22 * contact;
-        return [f, f, f];
+        return C.map((c) => {
+          const tint = 1 + (Math.min(1, c * 1.6) - 1) * 0.75;
+          return (1 + (tint * 0.82 - 1) * cut * 0.7) * (1 - 0.22 * contact);
+        }) as Vec;
       };
       if (shading.shadow) {
         const f = shade();
@@ -445,22 +403,12 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
           const nv = Math.max(0, N[2]);
           const thick = Math.min(1.6, Math.max(0, height / (radius * 0.9)));
           const fresnel = 0.04 + 0.96 * (1 - nv) ** 5;
-          if (finish === "gloss") {
-            const wrap = clamp01((nl + 0.4) / 1.4);
-            const glow = 0.22 * step(0.35, 1.2, thick) * wrap;
-            const r: Vec = [2 * N[2] * N[0], 2 * N[2] * N[1], 2 * N[2] * N[2] - 1];
-            const env = studio(r, table);
-            const spec = ggx(nh, 0.04) * 0.06;
-            paste = C.map((c, k) => (c ** (0.75 + 0.9 * thick) * (0.16 + 0.84 * wrap) + c * c * glow) * (1 - fresnel) + env[k] * fresnel + spec) as Vec;
-          } else {
-            const k = Math.max(2, Math.floor(radius * 0.12));
-            const around = (heightAt(x + k, y) + heightAt(x - k, y) + heightAt(x, y + k) + heightAt(x, y - k)) * 0.25;
-            const cavity = Math.min(1.06, Math.max(0.6, 1 - (around - height) / Math.max(0.5, radius * 0.09)));
-            const self = shadowAt(x, y, height);
-            const wrap = clamp01((nl + 0.25) / 1.25);
-            const sheen = ggx(nh, 0.32) * 0.09 * (1 - self);
-            paste = C.map((c) => c * (0.26 + 0.86 * wrap * (1 - 0.75 * self)) * cavity * (1 - fresnel * 0.5) + sheen + 0.06 * fresnel) as Vec;
-          }
+          const wrap = clamp01((nl + 0.4) / 1.4);
+          const glow = 0.22 * step(0.35, 1.2, thick) * wrap;
+          const r: Vec = [2 * N[2] * N[0], 2 * N[2] * N[1], 2 * N[2] * N[2] - 1];
+          const env = studio(r, table);
+          const spec = ggx(nh, 0.04) * 0.06;
+          paste = C.map((c, k) => (c ** (0.75 + 0.9 * thick) * (0.16 + 0.84 * wrap) + c * c * glow) * (1 - fresnel) + env[k] * fresnel + spec) as Vec;
         }
       }
       const o = i * 4;
@@ -475,7 +423,8 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
       // The ground, in the paste's shadow.
       const f = shade();
       const ground = groundColour.map((g, k) => g * f[k]) as Vec;
-      const touched = cover > 0 || f.some((v) => v < 0.9995);
+      // Flat paste has no soft shadow to band, so no dither: one colour, exactly.
+      const touched = finish !== "flat" && (cover > 0 || f.some((v) => v < 0.9995));
       noise = (Math.imul(noise ^ (noise >>> 15), 0x2c1b3c6d) + 0x9e3779b9) | 0;
       const dither = touched ? (((noise >>> 8) & 255) / 255 - 0.5) * 0.9 : 0;
       // Blended in the display's own values, as liquid-gl.ts blends it.

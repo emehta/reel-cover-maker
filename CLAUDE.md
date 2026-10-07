@@ -80,18 +80,41 @@ npm run build   # the static site, in out/
   lettering's own grid (`steps`); `stepped.ts` steps every long run and
   each piece's outer sides. The tests hold all of it over every lettering,
   face and shuffle.
-- **Stars are Stickery's alone.** `buildScene` reads every other style's
-  title with its stars as plain words (the owner's ask, 7 Oct): no accent
-  colour, italic or highlight anywhere else.
+- **Bold is Stickery's alone.** Bold is kept as stars in `design.text`
+  (`readMarked`/`writeMarked` in title.ts, a typed star or backslash
+  escaped); `buildScene` reads every other style's title with its bold as
+  plain words (the owner's ask, 7 Oct): no accent colour, italic or
+  highlight anywhere else.
+- **The Text field draws its own letters.** `TextField.tsx` is a textarea
+  whose letters are clear, under a mirror of the same text in plain and
+  bold runs; bold is a text stroke, never a bolder weight, which would be
+  wider and put the caret out of line. Keep the two set alike to the pixel
+  (`.input, .mirror`). Cmd+B and the B button toggle bold (the button
+  holds back mousedown, never pointerdown, which loses WebKit's tap);
+  typing carries bold on by `editMarked` and never across a space; typed
+  `*word*` pairs become bold by `convertStars`.
+- **One undo for the whole cover** (`history.ts`): every `update` is a
+  step unless told otherwise (a photo taken, which undo cannot bring back,
+  seals instead), runs of the same fields within 800 ms are one step, and
+  Cmd+Z in the Text field is this undo too (the browser's own would bring
+  back text without its bold).
 - **Spread is gone, with all of its own** (the collage, square knife ends,
-  Hershey Sans and its package), at the owner's ask of 7 Oct. Pasty Flat
-  keeps the matte paste.
-- **The controls**: the styles one row scrolled sideways (a vertical wheel
-  scrolls it too), Text then Photo at the top, Stickery's Lettering and
-  Plain words (and Pasty's Lettering) as `Dropdown`s side by side (placed against the window so the scrolling panel never clips
-  them, moving with their button on scroll), and the background's Light and
-  Dark as buttons over the preview, Reset text beside them once the text
-  is moved, and Grid crop as a checkbox beside the size.
+  Hershey Sans and its package), at the owner's ask of 7 Oct, and so is the
+  matte knife paste: Pasty Flat is the `flat` finish, one colour with no
+  light, shadow, texture, tone or dither (the owner's ask, 7 Oct).
+- **Pasty's letterings are Goo Teardrop (the default), Goo Even, then
+  Drip.** A design saved before `DESIGN_VERSION` 2 still on Drip, the old
+  default, takes Goo Teardrop. The tests' `cover` helper names Drip, since
+  Pasty's Drip tests were written on it.
+- **The controls, and nothing moves** (the owner's ask, 7 Oct): Text,
+  Photo, Colour and Size on the left; on the right the cover at a height
+  set by the window alone (`.stage`), never by the size or style, then the
+  styles in one row under it (a vertical wheel scrolls it), with the chosen
+  style's own choices as compact `Dropdown`s beside Shuffle on the row
+  above them, so picking a style changes nothing's place. Over the cover:
+  undo and redo, Light and Dark, and Reset text once the text is moved. A
+  warning is a pill on its label row ("Low contrast"), never a line under
+  a control.
 - **The photo never leaves the browser.** It is kept in IndexedDB
   (`photo-store.ts`), framed by `photoFrame` and adjusted by `photoAdjust`
   in the design. `photo-gl.ts` and `photo.ts`'s tables are the same

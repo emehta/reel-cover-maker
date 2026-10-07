@@ -8,8 +8,11 @@ Use it at **[emehta.github.io/reel-cover-maker](https://emehta.github.io/reel-co
 
 ## Using it
 
-The controls are on the left, the cover on the right (on a phone, the cover
-on top, so it stays in sight while you type).
+The text, photo, colour and size are on the left; on the right, the cover,
+and under it the styles, the chosen style's own choices and Shuffle (on a
+phone, the cover and the styles on top, so they stay in sight while you
+type). The cover keeps one height whatever the size or style, so nothing
+under it ever moves when you pick another.
 
 - **Type the text.** It is set as large as the cover allows. A line break
   you type is kept.
@@ -30,10 +33,15 @@ on top, so it stays in sight while you type).
   - The photo stays in this browser (IndexedDB), never uploaded anywhere,
     and is still there next time. Pasty's gel and paste cast their shadow
     onto it.
-- **Put a word between stars** to make it Stickery's funky word:
-  `How I *actually* save`. Every other style sets a starred word as it sets
-  the rest.
-- **Pick a style** from the row of thumbnails, scrolled sideways: Stickery,
+- **Make a word bold** to make it Stickery's funky word: select it and
+  press **Cmd+B** (Ctrl+B on Windows), or the **B** over the field, as in
+  any editor. The field shows it bold. Press again to make it plain; with
+  nothing selected, Cmd+B makes what you type next bold or plain. Bold
+  carries on as you type the end of a word, and stops at a space. Words
+  typed between stars turn bold too, the moment the second star is typed
+  (`*actually*` becomes **actually**). Every other style sets a bold word as
+  it sets the rest.
+- **Pick a style** from the row of thumbnails under the cover: Stickery,
   Pasty, Pasty Flat, Editorial, Echo and Mono. Each thumbnail is your title
   in that style, cropped to the 3:4 window the profile grid shows, so you
   choose by how it will look on your grid.
@@ -41,7 +49,7 @@ on top, so it stays in sight while you type).
     edges, in turn the colour and one a hundred degrees round the colour
     wheel from it (pink, then blue, as Main Sticker 2's), with a border that
     shows on either background. No side runs straight from corner to corner.
-    Starred words are funky, the rest plain; with no stars, each sticker's
+    Bold words are funky, the rest plain; with no bold, each sticker's
     longest word is the funky one. The funky word is set first, turned to an
     angle of its own, and the plain words are fitted round it as one unit:
     those before it dropped onto it word by word, those after it lifted up
@@ -70,11 +78,12 @@ on top, so it stays in sight while you type).
     blobs, stems whose feet run on as drips. Letters keep a thin gap, now
     and then touching so their gel bridges, and tuck under each other's
     arms; lines nest into each other.
-  - **Pasty Flat**: the same lettering in thick, matte paste spread with a
-    knife.
-  - Pasty and Pasty Flat letter in Drip, or, picked from their Lettering
-    list, in Goo Teardrop or Goo Even, Stickery's drawn hands, in their own
-    gel or paste.
+  - **Pasty Flat**: the same lettering, flat: one colour edge to edge, with
+    no light, shadow or texture at all.
+  - Pasty and Pasty Flat letter in Goo Teardrop (the default) or Goo Even,
+    Stickery's drawn hands, or in Drip, picked from their Lettering list.
+  - A style's own choices (Stickery's Lettering and Plain words, Pasty's
+    Lettering) sit on the row over the styles, beside Shuffle.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
 - **Shuffle** draws the letters another way: every random choice a style
@@ -86,7 +95,12 @@ on top, so it stays in sight while you type).
   sticker). Dragging a slider only lights the paste again, so it keeps up
   with your finger.
 - **Pick the background**, light or dark, with the two buttons over the
-  cover.
+  cover. Beside the colour, **Low contrast** says when the letters are near
+  the background in lightness.
+- **Undo and redo** anything (the text and its bold, a style, a colour, a
+  shuffle, a move of the text, the photo's framing) with the arrows over
+  the cover, or Cmd+Z and Cmd+Shift+Z (Ctrl+Z and Ctrl+Y on Windows), in
+  the Text field too. A slider dragged or a word typed is one step.
 - **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5. Tick
   **Grid crop**, beside it, to dim what the profile grid cuts off.
 - **Place the text** on the cover, as in an illustration program. Point at
@@ -230,9 +244,9 @@ drawn from scratch for every title:
    where strokes meet the paste pools into a fillet, as liquid does.
 7. **Height.** How deep a pixel sits inside its stroke, against the radius
    at that point of it, is how high the paste stands: a round tube of gel
-   whose blobs stand taller (Pasty), or paste of one thickness with a
-   rounded shoulder, broad knife swaths, a ridge here and there, soft lumps
-   and a ragged edge (Pasty Flat). A gel's radius is smoothed across the
+   whose blobs stand taller (Pasty); flat paste stands no height and is
+   never lit, one colour edge to edge (Pasty Flat). A gel's radius is
+   smoothed across the
    paste first, so where a stroke swells into a ball the surface swells
    with it, with no crease across the neck.
 8. **Light, on the GPU.** The field (depth, height, colour, tone) is lit in
@@ -241,8 +255,8 @@ drawn from scratch for every title:
    it catches the light at its shoulders as gel does, over a body that
    absorbs more the thicker it is. Its shadow is traced across the paste's
    real height toward the light and is a soft stain of its colour, as light
-   through gel is. Matte paste has soft light, its own ridges' shadows, a
-   satin sheen and a grey shadow. A letter's edge is a pixel and a half of
+   through gel is. Flat paste is its colour alone, with no shadow and no
+   dither, so every pixel of it is the one colour. A letter's edge is a pixel and a half of
    smooth ramp, blended in the display's own values as type is, so a pale
    paste on the dark ground never steps. Without WebGL 2 the same light is
    worked out on the page (`shadeField`).
@@ -277,7 +291,9 @@ Only the plain face chosen is loaded.
 | File | What it does |
 | --- | --- |
 | `formats.ts` | The three sizes, Instagram's crop windows, and the safe area they agree on |
-| `title.ts` | What was typed, as lines and words, with stars read as emphasis (Stickery's funky words) |
+| `title.ts` | What was typed, as lines and words, with bold (kept as stars) as Stickery's funky words; what typing, Cmd+B and typed stars do to the bold |
+| `TextField.tsx` | The Text field: a textarea for the typing, the same letters drawn over it with their bold |
+| `history.ts` | Undo and redo, a run of the same change one step |
 | `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows |
 | `liquid-layout.ts` | The liquid letters' hands, seeds, cases and spacing, and lines packed to fill their block |
 | `liquid.ts` | A letter's paste: the hand's bow and sway, beads, pressure, blobs, drips and droplets |
@@ -337,8 +353,12 @@ should; that drips stay above their floor; that a tapered capsule's distance
 matches the slow way of working it out; that two strokes pool when close and
 stay apart when not; that paste shades the ground away from the light, gel's
 shadow in its colour, and the layer's edge is exactly the ground; that only
-Stickery reads the stars; that a t's swash grows out of its bar as paste
-does and Goo Even never swells past its weight; that the shuffle moves
+Stickery reads the bold; that bold goes to stars and back exactly,
+carries on as typed and stops at a space, and typed stars turn into it;
+that undo takes back a thing done, a slider dragged as one step; that
+Pasty Flat is one colour, pixel for pixel; that a t's swash grows out of
+its bar as paste does and Goo Even never swells past its weight; that the
+shuffle moves
 things and the same seed does not; that a sticker is straight steps on its
 grid round every letter, with a border that shows on either ground; the
 sliders' colours at every hue and shade; the font gate with loads that
