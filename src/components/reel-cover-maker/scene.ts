@@ -63,15 +63,22 @@ export interface LiquidOp {
   /**
    * The ground the paste lies on, which the layer draws under it with the
    * shadows the paste casts; null for paste alone, over whatever is drawn
-   * before it (Stickery's stickers).
+   * before it (Stickery's stickers, a photo) or over nothing.
    */
   ground: string | null;
+  /**
+   * With no ground drawn, on a cover with no photo (whose file is clear
+   * but for its letters): the ground the paste is lit as lying on, and
+   * whose shadow it casts, as a stain of its own rather than a darkening
+   * of what is under it. Null over a photo, or Stickery's stickers.
+   */
+  under: string | null;
   /** How far apart two strokes may be and still pool together, in pixels of the picture. */
   pool: number;
   /**
-   * With no ground of its own, the paste still casts its shadow on what is
-   * under it (a photo): a second layer, multiplied onto the picture before
-   * the paste is laid over it.
+   * With no ground of its own, the paste still casts its shadow: a second
+   * layer, laid before the paste. Over a photo, multiplied onto it; over
+   * nothing (`under`), a clear stain, as dark as it would make the ground.
    */
   shadow: boolean;
   seed: number;
@@ -788,12 +795,13 @@ function pasteOp(
   glyphOf: number[] = [],
   lineOf: number[] = [],
   shadow = false,
+  under: string | null = null,
 ): LiquidOp {
   const key = pasteKey(chains, colourOf, tone, finish, pool);
-  return { kind: "liquid", chains, letters, glyphOf, lineOf, colours, colourOf, tone, finish, ground, pool, shadow, seed: hashString(key), key };
+  return { kind: "liquid", chains, letters, glyphOf, lineOf, colours, colourOf, tone, finish, ground, under, pool, shadow, seed: hashString(key), key };
 }
 
-function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: string | null, withDroplets: boolean, shadow = false): LiquidOp {
+function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: string | null, withDroplets: boolean, shadow = false, under: string | null = null): LiquidOp {
   const chains = withDroplets ? [...set.chains, ...set.droplets] : set.chains;
   const typical = set.chains.length ? set.chains.reduce((sum, c) => sum + c[0].r, 0) / set.chains.length : 10;
   return pasteOp(
@@ -809,6 +817,7 @@ function liquidOp(set: Set, style: LiquidStyle, colours: string[], ground: strin
     set.glyphOf,
     set.lineOf,
     shadow,
+    under,
   );
 }
 
@@ -858,9 +867,11 @@ function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palet
   const style = shuffled(base, seed);
   const set = setLiquid(paragraphs, safe, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer);
   return {
-    // On a photo the paste has no ground of its own: its shadow falls on the photo instead.
-    // Flat paste casts no shadow, on a photo or anywhere.
-    ops: [liquidOp(set, style, [palette.ink, palette.accent], photo ? null : palette.bg, true, photo && !flat), ...set.missing] as Op[],
+    // The paste draws no ground of its own: on a photo its shadow falls on
+    // the photo; with none, the cover is clear but for the paste and its
+    // shadow, a stain as it would fall on the ground chosen, which the
+    // paste is still lit as lying on. Flat paste casts no shadow at all.
+    ops: [liquidOp(set, style, [palette.ink, palette.accent], null, true, !flat, photo ? null : palette.bg), ...set.missing] as Op[],
     readable: set.readable,
   };
 }
@@ -1557,10 +1568,14 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
     }
   })();
 
+  // With no photo the cover is a clear picture of its letters alone (the
+  // owner's ask, 7 Oct), to lay over whatever they choose: no ground, and
+  // no paper grain, which is a ground's. The light or dark chosen is still
+  // what the letters are coloured, outlined and lit for.
   return {
     width,
     height,
-    ops: [{ kind: "fill", color: palette.bg }, ...(input.photo ? [{ kind: "photo" } as Op] : []), ...made.ops],
+    ops: input.photo ? [{ kind: "fill", color: palette.bg }, { kind: "photo" } as Op, ...made.ops] : made.ops.filter((op) => op.kind !== "grain"),
     readable: made.readable,
     truncated: made.block?.truncated ?? false,
   };

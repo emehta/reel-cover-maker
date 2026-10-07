@@ -116,7 +116,8 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
         ctx.drawImage(layer.image, layer.sx, layer.sy, layer.w, layer.h, layer.x, layer.y, layer.dw ?? layer.w, layer.dh ?? layer.h);
         ctx.restore();
       };
-      if (op.shadow) place("shadow", "multiply");
+      // A shadow over a photo darkens it; over nothing, it is a clear stain, laid as it is.
+      if (op.shadow) place("shadow", op.under ? "source-over" : "multiply");
       place("paste", "source-over");
       return;
     }

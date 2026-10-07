@@ -628,9 +628,9 @@ export default function ReelCoverMaker() {
         draw(layerCtx);
         return layer;
       };
-      // The letters on nothing; and the shadow paste casts on a photo apart, white where none falls, to multiply as it was drawn.
-      const layer = layerOf((layerCtx) => paint(layerCtx, { ...scene, ops: scene.ops.filter((op) => !isBackdrop(op)) }, { ...options, liquid: (op, part) => (part === "shadow" ? null : options.liquid?.(op, part) ?? null) }));
-      const casting = liquidOps(scene).filter((op) => op.shadow);
+      // The letters on nothing, with a clear cover's shadow stain, which moves with them; and the shadow paste casts on a photo apart, white where none falls, to multiply as it was drawn.
+      const layer = layerOf((layerCtx) => paint(layerCtx, { ...scene, ops: scene.ops.filter((op) => !isBackdrop(op)) }, { ...options, liquid: (op, part) => (part === "shadow" && !op.under ? null : options.liquid?.(op, part) ?? null) }));
+      const casting = liquidOps(scene).filter((op) => op.shadow && !op.under);
       const shadow = casting.length
         ? layerOf((layerCtx) => {
             layerCtx.fillStyle = "#ffffff";
@@ -641,6 +641,8 @@ export default function ReelCoverMaker() {
       if (!layer) return;
       liveRef.current = { layer, shadow, from: placeMatrix(base.readable, place) };
     }
+    // Cleared first: a cover with no photo is clear but for its letters, so nothing else paints over what was there.
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     paint(ctx, { ...scene, ops: scene.ops.filter(isBackdrop) }, options);
     const d = multiply(placeMatrix(base.readable, next), invert(liveRef.current.from));
     ctx.save();
@@ -726,6 +728,7 @@ export default function ReelCoverMaker() {
       if (canvas.height !== scene.height) canvas.height = scene.height;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op, part) => grown(liquidLayer(op, draftTarget, part), draftTarget.scale), photo: photoForRef.current(scene) });
       painted.current = drafted;
       return;
@@ -735,6 +738,8 @@ export default function ReelCoverMaker() {
       if (canvas.height !== scene.height) canvas.height = scene.height;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      // Cleared first: with no photo the picture is clear but for its letters (the owner's ask, 7 Oct), and the file is the same.
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op, part) => liquidLayer(op, mainTarget, part) ?? null, photo: photoForRef.current(scene) });
       painted.current = key;
       liveRef.current = null;
@@ -1104,7 +1109,7 @@ export default function ReelCoverMaker() {
           </div>
           <div className={styles.stage} ref={stageRef}>
             {/* The cover to edit stays drawn while the phone view shows, so Download is never kept waiting. */}
-            <div className={styles.frame} hidden={phoneView}>
+            <div className={styles.frame} hidden={phoneView} data-ground={design.ground} data-clear={!photo || undefined}>
               <canvas
                 ref={canvasRef}
                 className={styles.canvas}
@@ -1141,6 +1146,7 @@ export default function ReelCoverMaker() {
             {phoneView && (
               <PhoneView
                 reel={format.id === "reel"}
+                ground={design.ground}
                 tile={<SceneCanvas scene={scene} target={gridWindow(format, tilePixels())} slot="phone" photoFor={photoFor} />}
               >
                 {dropping && (
@@ -1152,7 +1158,7 @@ export default function ReelCoverMaker() {
             )}
           </div>
 
-          <div className={styles.styles} role="radiogroup" aria-label="Style">
+          <div className={styles.styles} role="radiogroup" aria-label="Style" data-ground={design.ground} data-clear={!photo || undefined}>
             {STYLES.map((style, i) => (
               <label key={style.id} className={styles.style} data-chosen={design.style === style.id || undefined}>
                 <input

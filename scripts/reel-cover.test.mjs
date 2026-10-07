@@ -632,13 +632,18 @@ check("Mono's cursor stays in when a word is broken", () => {
   }
 });
 
-check("the first op fills the whole cover with the chosen ground", () => {
+check("with no photo a cover is clear but for its letters, a PNG with no ground or grain; on a photo, the ground and the photo come first", () => {
   for (const ground of ["light", "dark"]) {
     for (const style of S.STYLES) {
       const scene = cover("x", style.id, "post-4x5", { ...COLOURS.blue, ground });
-      assert.deepEqual(scene.ops[0], { kind: "fill", color: P.GROUNDS[ground] });
+      assert.ok(!scene.ops.some((op) => op.kind === "fill" || op.kind === "grain" || op.kind === "photo"), `${style.id} ${ground}: ${scene.ops.map((op) => op.kind)}`);
+      assert.ok(scene.ops.length > 0, `${style.id}: nothing drawn`);
+      const onPhoto = cover("x", style.id, "post-4x5", { ...COLOURS.blue, ground, photo: true });
+      assert.deepEqual(onPhoto.ops.slice(0, 2), [{ kind: "fill", color: P.GROUNDS[ground] }, { kind: "photo" }]);
     }
   }
+  // Editorial's paper grain is a ground's: on a photo it stays, over the photo.
+  assert.ok(cover("x", "editorial", "post-4x5", { photo: true }).ops.some((op) => op.kind === "grain"));
 });
 
 console.log("colour");
@@ -1001,7 +1006,8 @@ check("a liquid layer is copied from its part of the lit canvas to its place, wi
 });
 
 check("grain is drawn only when there is a tile to draw", () => {
-  const scene = cover("grain", "editorial", "reel", COLOURS.green);
+  // Editorial's paper grain, over a photo: a clear cover has none.
+  const scene = cover("grain", "editorial", "reel", { ...COLOURS.green, photo: true });
   const without = recorder();
   paint(without, scene, { scale: 1, font, grain: null });
   const withTile = recorder();
@@ -1557,7 +1563,8 @@ check("Stickery: a sticker per typed line, the colours in turn, funky words in e
       const scene = cover("things *aren't*\n*what* they seem\nand *more*", "stickery", "reel", { ...colour, lettering });
       const shapes = scene.ops.filter((op) => op.kind === "shape");
       assert.deepEqual(shapes.map((s) => s.color), [palette.sticker[0], palette.sticker[1], palette.sticker[0]]);
-      for (const shape of shapes) assert.ok(P.contrast(shape.stroke, scene.ops[0].color) >= 4.5, `a border lost on the ${colour.ground ?? "light"} ground`);
+      // The border shows on the ground chosen, which a clear cover is laid on.
+      for (const shape of shapes) assert.ok(P.contrast(shape.stroke, palette.bg) >= 4.5, `a border lost on the ${colour.ground ?? "light"} ground`);
       // Each sticker is one piece of paper, and carries some funky word.
       for (const shape of shapes) assert.equal(shape.polygons.length, 1, `${lettering}: a sticker in two pieces`);
       const { plain, funky } = stickerParts(scene);
@@ -1923,7 +1930,7 @@ check("a layer is known by its paste: moved paste is another layer, the same pas
   const recoloured = liquidOf(cover("kite", "pasty", "reel", { hue: 200, shade: 0.7, ground: "dark" }));
   assert.equal(recoloured.key, a.key);
   assert.notDeepEqual(recoloured.colours, a.colours);
-  assert.equal(recoloured.ground, P.GROUNDS.dark);
+  assert.equal(recoloured.under, P.GROUNDS.dark);
   assert.notEqual(liquidOf(cover("kite", "pasty", "reel", { seed: 9 })).key, a.key, "the shuffle drew the same paste");
   // Stickery's words move with the plain words beside them, whose widths depend on the face.
   const wide = { ...measurer, width: (face, text) => measurer.width(face, text) * (face.startsWith("plain-") ? 1.15 : 1) };
@@ -1967,7 +1974,8 @@ check("Pasty and Pasty Flat letter in Drip, or in Goo as a teardrop or evened ou
       assert.ok(op, `${style} ${lettering}: no paste`);
       assert.notEqual(op.key, drip.key, `${style} ${lettering} is drawn as Drip`);
       assert.equal(op.finish, style === "pasty" ? "gloss" : "flat", `${style} ${lettering}: ${op.finish}`);
-      assert.equal(op.ground, P.GROUNDS.light);
+      assert.equal(op.ground, null);
+      assert.equal(op.under, P.GROUNDS.light);
       assert.equal(glyphsOf(op), "whatyouwant".length, `${style} ${lettering}: a letter lost`);
       // Goo's letters run into each other and carry no spatter; the evened one swells no further than its cap.
       assert.equal(op.chains.length, op.letters, `${style} ${lettering}: droplets`);
@@ -1981,14 +1989,57 @@ check("Pasty and Pasty Flat letter in Drip, or in Goo as a teardrop or evened ou
   }
 });
 
-check("the liquid styles lie on the cover's ground and are lit on it", () => {
+check("with no photo the liquid styles draw no ground, but are lit for the one chosen, and gel casts its shadow as a stain", () => {
   for (const ground of ["light", "dark"]) {
     for (const style of ["pasty", "pasty-flat"]) {
       const op = liquidOf(cover("Art is different", style, "reel", { ...COLOURS.green, ground }));
-      assert.equal(op.ground, P.GROUNDS[ground], style);
+      assert.equal(op.ground, null, style);
+      assert.equal(op.under, P.GROUNDS[ground], style);
+      assert.equal(op.shadow, style === "pasty", `${style}: shadow ${op.shadow}`);
       assert.equal(op.finish, style === "pasty" ? "gloss" : "flat", style);
     }
   }
+});
+
+check("a clear cover's paste and its shadow's stain, laid on the ground chosen, are the paste drawn on that ground", () => {
+  const chains = [Array.from({ length: 9 }, (_, i) => ({ x: 150 + i * 14, y: 190 + (i % 3) * 7, r: 24 + (i % 4) * 3 })), [{ x: 230, y: 140, r: 28 }, { x: 262, y: 116, r: 16 }]];
+  for (const ground of [P.GROUNDS.light, P.GROUNDS.dark]) {
+    const field = LR.liquidField(paintOf("gloss", chains, { colourOf: [0, 1], tone: [1, 1] }), TARGET);
+    const colours = ["#C81E5A", "#7A1035"];
+    const drawn = LR.shadeField(field, { colours, ground });
+    const stain = LR.shadeField(field, { colours, ground: null, under: ground, shadow: true });
+    const paste = LR.shadeField(field, { colours, ground: null, under: ground });
+    const g = P.rgb(ground);
+    let worst = 0;
+    let stained = 0;
+    for (let i = 0; i < field.w * field.h; i += 1) {
+      const o = i * 4;
+      const sa = stain.data[o + 3] / 255;
+      const pa = paste.data[o + 3] / 255;
+      if (sa > 0) stained += 1;
+      for (let k = 0; k < 3; k += 1) {
+        const under = g[k] * (1 - sa) + stain.data[o + k] * sa;
+        const laid = under * (1 - pa) + paste.data[o + k] * pa;
+        worst = Math.max(worst, Math.abs(laid - drawn.data[o + k]));
+      }
+    }
+    // A level each way for the two dithers and the rounding.
+    assert.ok(worst <= 2.5, `${ground}: ${worst.toFixed(2)} levels off`);
+    assert.ok(stained > 2000, `${ground}: ${stained} pixels of shadow`);
+    // Far from the paste the stain is nothing at all: the file is clear there.
+    assert.equal(stain.data[3], 0);
+  }
+  // A shadow that darkens every channel alike is no colour, only darkness: exact on any ground.
+  const under = [0.2, 0.9, 0.5];
+  const grey = LR.stain(under.map((v) => v * 0.7), under);
+  grey.rgb.forEach((v) => assert.ok(near(v, 0, 1e-12)));
+  assert.ok(near(grey.alpha, 0.3, 1e-12));
+  // A tinted one: laid on its own ground, the ground exactly as the shadow leaves it.
+  const ground = [0.95, 0.93, 0.9];
+  const shadowed = [0.81, 0.55, 0.7];
+  const tinted = LR.stain(shadowed, ground);
+  shadowed.forEach((v, k) => assert.ok(near(tinted.rgb[k] + ground[k] * (1 - tinted.alpha), v, 1e-12)));
+  assert.ok(tinted.rgb.every((v) => v >= 0 && v <= tinted.alpha + 1e-12));
 });
 
 console.log("photo");
@@ -2089,8 +2140,10 @@ check("on a photo the paste has no ground: its shadow is a layer of its own, whi
   const op = liquidOf(scene);
   assert.equal(op.ground, null);
   assert.equal(op.shadow, true);
+  // Over a photo the shadow is multiplied, not a stain of its own.
+  assert.equal(op.under, null);
   const plain = liquidOf(cover("Hello", "pasty", "post-4x5"));
-  assert.equal(plain.shadow, false);
+  assert.equal(plain.under, P.GROUNDS.light);
   assert.ok(!cover("Hello", "pasty", "post-4x5").ops.some((o) => o.kind === "photo"));
   // The field is the same paste either way; only how it is lit changes.
   assert.equal(op.key, plain.key);
@@ -2362,15 +2415,26 @@ check("undo goes back a thing done: a run of the same change is one step, a paus
 
 console.log("page");
 
-check("the phone view's post is the grid's at an iPhone's width: three across with their gaps, each 3:4, as every size's grid window is", () => {
+check("the phone view is an iPhone to scale: its post the grid's at 393 points, the cover in the middle of the grid, the grid between the bars", () => {
   const tile = PHONE.gridTile();
   assert.ok(near(tile.w * PHONE.GRID_COLUMNS + PHONE.GRID_GAP * (PHONE.GRID_COLUMNS - 1), PHONE.PHONE_WIDTH, 1e-9));
   assert.ok(near(tile.h / tile.w, 4 / 3, 1e-12));
-  // 393 points across: a post about 130 by 173.
-  assert.equal(Math.round(tile.w), 130);
-  assert.equal(Math.round(tile.h), 173);
-  // Three pixels to a point, so sharp on any phone; the canvas is the grid window's shape.
-  assert.equal(PHONE.tilePixels(), Math.round(tile.w * 3));
+  // 393 points across, a point apart: a post 130.3 by 173.8; at three pixels to a point, 391 pixels, three across and two gaps of three filling the screen's 1179.
+  assert.ok(near(tile.w, 391 / 3, 1e-9));
+  assert.equal(PHONE.tilePixels() * 3 + 2 * 3 * PHONE.GRID_GAP, PHONE.PHONE_WIDTH * 3);
+  // The grid from under the tabs to the tab bar, inside the safe area.
+  const area = PHONE.gridArea();
+  assert.equal(area.top, PHONE.SAFE_TOP + PHONE.NAV_BAR + PHONE.TABS_BAR);
+  assert.equal(area.bottom, PHONE.PHONE_HEIGHT - PHONE.SAFE_BOTTOM - PHONE.TAB_BAR);
+  // The rows drawn, centred on it, run past both ends of it, so no gap shows.
+  assert.ok(PHONE.GRID_ROWS * tile.h + (PHONE.GRID_ROWS - 1) * PHONE.GRID_GAP > area.bottom - area.top + 2 * PHONE.GRID_GAP);
+  // The cover's post: the middle column, its middle the grid's, wholly in sight.
+  const at = PHONE.coverTile();
+  assert.ok(near(at.x + at.w / 2, PHONE.PHONE_WIDTH / 2, 1e-9));
+  assert.ok(near(at.y + at.h / 2, (area.top + area.bottom) / 2, 1e-9));
+  assert.ok(at.y > area.top && at.y + at.h < area.bottom);
+  // The phone itself: the screen and its glass.
+  assert.deepEqual(PHONE.phoneSize(), { w: PHONE.PHONE_WIDTH + 2 * PHONE.BEZEL, h: PHONE.PHONE_HEIGHT + 2 * PHONE.BEZEL });
   for (const format of F.FORMATS) {
     const window = format.grid ?? { x: 0, y: 0, w: format.width, h: format.height };
     assert.ok(near(window.h / window.w, 4 / 3, 0.002), `${format.id}: the grid shows ${window.w} by ${window.h}`);

@@ -134,13 +134,28 @@ npm run build   # the static site, in out/
   pixels (`--rcm-r-card`), a field 6, a button 5, a small button 4, a
   thumbnail 3. Only a dot, a slider's knob and the camera's shutter are
   round; the phone view's phone keeps a phone's own corners.
-- **The phone view shows the post at a phone's real size** (`PhoneView`,
-  `phone.ts`, the owner's ask, 7 Oct): a profile grid on a 393 point wide
-  iPhone, one point a CSS pixel (`--u`, smaller only where the preview is
-  narrower than the phone), the cover the newest post through the grid's
-  3:4 window, drawn from the scene like every canvas (`SceneCanvas`,
-  `gridWindow`). The cover to edit stays mounted and painted underneath
-  (hidden), so Download never waits on it.
+- **The phone view is a whole iPhone to scale** (`PhoneView`, `phone.ts`,
+  the owner's asks, 7 Oct: the whole phone in sight, "absolutely
+  accurate", the cover in the centre): a 393 by 852 point screen, status
+  bar 54, safe area 59 and 34, Instagram's name bar and tabs (44 each) and
+  tab bar (49), the grid between them scrolled so the cover's post is the
+  middle column of the middle row, its centre the grid's (`coverTile`).
+  `--u` is a point, as large as the preview fits the whole phone and never
+  above a CSS pixel. Every number comes from `phone.ts` as a custom
+  property, and the tests hold them. The tile is drawn from the scene like
+  every canvas (`SceneCanvas`, `gridWindow`), on the ground picked. The
+  cover to edit stays mounted and painted underneath (hidden), so Download
+  never waits on it. Never say it is a phone's real size: on a laptop it
+  is smaller.
+- **With no photo the cover is clear** (the owner's ask, 7 Oct): no fill,
+  no grain; the PNG is the letters alone. The ground picked still colours,
+  outlines and lights them (`LiquidOp.under`), and the page shows the
+  cover on a check of its tone (`data-clear`), never in the file. Every
+  paint of the preview clears the canvas first. Pasty's shadow over
+  nothing is a stain (`stain` in liquid-render.ts, `uShadow` with
+  `uHasUnder` in the shader), not a multiply: laid on the ground picked it
+  is the old drawn shadow to within 3 levels in 255 (tested, and measured
+  against the previous build's PNGs).
 - **The style thumbnails are the whole cover**, in its own shape, six to a
   row as wide as fits (three by two under 900): never the profile grid's
   crop, which cut a reel cover's sides off (the owner's ask, 7 Oct), and

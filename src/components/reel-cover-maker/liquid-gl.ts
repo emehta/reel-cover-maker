@@ -42,6 +42,8 @@ uniform usampler2D uField;
 uniform vec3 uColours[4];
 uniform vec3 uGround;
 uniform int uHasGround;
+uniform vec3 uUnder;
+uniform int uHasUnder;
 uniform int uShadow;
 uniform int uFinish;
 uniform float uRadius;
@@ -128,6 +130,23 @@ void main() {
     shade = mix(vec3(1.0), tint * 0.82, cut * 0.7) * (1.0 - 0.22 * contact);
   }
   if (uShadow == 1) {
+    if (uHasUnder == 1) {
+      // A clear stain, as stain() in liquid-render.ts has it, from the
+      // ground as the shadow leaves it; dithered as the ground's shadow is.
+      vec3 G = encode(uUnder);
+      vec3 R = encode(uUnder * shade);
+      vec3 kept = mix(vec3(1.0), min(R / max(G, vec3(1e-6)), vec3(1.0)), step(vec3(1e-6), G));
+      float lo = min(kept.r, min(kept.g, kept.b));
+      float a = 1.0 - lo;
+      if (a <= 0.002) {
+        outColor = vec4(0.0);
+        return;
+      }
+      vec3 stained = max(R - G * lo, vec3(0.0));
+      a = clamp(a + (hash(vec2(p) + uSeed) - 0.5) * (0.9 / 255.0), 0.0, 1.0);
+      outColor = vec4(min(stained, vec3(a)), a);
+      return;
+    }
     outColor = vec4(encode(shade), 1.0);
     return;
   }
@@ -148,7 +167,7 @@ void main() {
       // Gel: a body that absorbs more the deeper light goes into it, so
       // a blob is darker and richer than a thin stroke; lit softly from
       // above, and glowing a little where light scatters in its core.
-      vec3 table = uHasGround == 1 ? uGround : vec3(0.8);
+      vec3 table = uHasGround == 1 ? uGround : uHasUnder == 1 ? uUnder : vec3(0.8);
       float wrap = clamp((nl + 0.4) / 1.4, 0.0, 1.0);
       vec3 deep = pow(C, vec3(0.75 + 0.9 * thick));
       vec3 body = deep * (0.16 + 0.84 * wrap);
@@ -230,7 +249,7 @@ function setUp(): Gpu | null {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    const names = ["uField", "uColours", "uGround", "uHasGround", "uShadow", "uFinish", "uRadius", "uSize", "uSeed"];
+    const names = ["uField", "uColours", "uGround", "uHasGround", "uUnder", "uHasUnder", "uShadow", "uFinish", "uRadius", "uSize", "uSeed"];
     const uniforms = Object.fromEntries(names.map((n) => [n, gl.getUniformLocation(program, n)]));
     canvas.addEventListener("webglcontextlost", (event) => {
       event.preventDefault();
@@ -287,6 +306,9 @@ export function shadeOnGpu(field: LiquidField, shading: Shading, seed: number): 
   gl.uniform3fv(uniforms.uColours, new Float32Array(colours));
   gl.uniform3fv(uniforms.uGround, new Float32Array(shading.ground ? linear(shading.ground) : [0, 0, 0]));
   gl.uniform1i(uniforms.uHasGround, shading.ground ? 1 : 0);
+  const under = !shading.ground && shading.under ? shading.under : null;
+  gl.uniform3fv(uniforms.uUnder, new Float32Array(under ? linear(under) : [0, 0, 0]));
+  gl.uniform1i(uniforms.uHasUnder, under ? 1 : 0);
   gl.uniform1i(uniforms.uShadow, shading.shadow ? 1 : 0);
   gl.uniform1i(uniforms.uFinish, FINISH[field.finish]);
   gl.uniform1f(uniforms.uRadius, Math.max(0.5, field.radius));

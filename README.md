@@ -109,8 +109,18 @@ on a label's row.
   with your finger. The colour's hex code shows beside its label; click it
   to copy it.
 - **Pick the background**, light or dark, with the two buttons over the
-  cover. Beside the colour, **Low contrast** says when the letters are near
-  the background in lightness.
+  cover: what the letters are coloured, outlined and lit for. Beside the
+  colour, **Low contrast** says when the letters are near the background in
+  lightness.
+- **With no photo, the cover is a clear PNG**: the letters alone, with
+  whatever is theirs (Stickery's stickers and their borders, Pasty's gel
+  and the soft shadow it casts, Pasty Flat's paste, Editorial's, Echo's and
+  Mono's type), and nothing behind them, to lay over a video or anything
+  else. The page shows it on a check in the background's tone, as a picture
+  with no background is shown; the check is never in the file. Pasty's
+  shadow is a clear stain, worked out so that laid on the background picked
+  it is exactly the shadow drawn on it before, and on any other it darkens
+  it as much. With a photo, the photo is the background, as before.
 - **Undo and redo** anything (the text and its bold, a style, a colour, a
   shuffle, a move of the text, the photo's framing) with the arrows over
   the cover, or Cmd+Z and Cmd+Shift+Z (Ctrl+Z and Ctrl+Y on Windows), in
@@ -118,13 +128,20 @@ on a label's row.
 - **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5. Tick
   **Grid crop**, beside it, to dim what the profile grid cuts off.
 - **See it on a phone** with the phone button at the end of the bar: the
-  cover as the newest post of a profile grid, as an iPhone 15 or 16 shows
-  it, 393 points wide, so the post is its real size there (about 130 by
-  173 points, the grid's 3:4 window of it, marked as a reel if it is one).
-  It is drawn at exactly that size wherever the window has the room, and
-  made smaller only on a screen too narrow for a phone's width. The style,
-  colour, background, shuffle and photo all still change it as it shows;
-  press the button again, or Escape, to edit the cover.
+  whole phone, to scale, with the cover in the middle of a profile grid.
+  The screen is an iPhone 15 or 16's, 393 by 852 points, with its status
+  bar (54), the profile's name bar and tabs from its safe area's top (59),
+  the tab bar over the home indicator (34), and the grid between them
+  scrolled so the cover's post is in the middle column, centred top to
+  bottom: 130.3 by 173.8 points, the grid's 3:4 window of the cover, a
+  point from its neighbours, marked as a reel if it is one. Everything is
+  in proportion to that screen; the phone is drawn as large as the preview
+  has room for, so on a laptop it is smaller than a phone in your hand.
+  The status bar's and tab bar's icons stand in for Instagram's own, and
+  the posts round the cover are blank tiles. A clear cover sits on the
+  background picked. The style, colour, background, shuffle and photo all
+  still change it as it shows; press the button again, or Escape, to edit
+  the cover.
 - **Place the text** on the cover, as in an illustration program. Point at
   the letters and a faint box shows they can be taken; press them and they
   are selected, in a box with a handle at each corner and side and a round
@@ -186,7 +203,8 @@ nothing a cover says is cut off wherever it appears.
 - **1080 wide, exactly.** Instagram serves pictures 1080 wide. A wider file
   is only shrunk again, by Instagram's resampler rather than yours.
 - **PNG.** Lossless, so Instagram's own JPEG encoding is the only one the
-  cover goes through. sRGB, which is what a canvas draws in.
+  cover goes through. sRGB, which is what a canvas draws in. Clear but for
+  the letters when there is no photo.
 - **Grain in 2 × 2 cells.** Instagram's encoder smears single-pixel noise
   into blotches; grain two pixels across survives it and still reads as fine
   on a phone.
@@ -219,7 +237,13 @@ for line with `photo.ts`'s tables, which the page uses without WebGL 2.
 
 On a photo, the paste has no ground of its own, so its shadow is a layer of
 its own: white where none falls, the ground's colour times its shade where
-it does, multiplied onto the picture before the paste is laid over it.
+it does, multiplied onto the picture before the paste is laid over it. On a
+clear cover there is nothing to multiply, so the shadow is a stain with an
+alpha of its own (`stain` in `liquid-render.ts`): as opaque as it darkens
+the most darkened channel, coloured with the rest of its tint, worked out
+from the background picked as the shadow leaves it in linear light. Laid
+on that background it is the shadow as it was drawn there, to within the
+dither; a grey shadow is exact on any background.
 
 ### Placing the text
 
@@ -325,7 +349,7 @@ Only the plain face chosen is loaded.
 | `title.ts` | What was typed, as lines and words, with bold (kept as stars) as Stickery's funky words; what typing, Cmd+B and typed stars do to the bold |
 | `TextField.tsx` | The Text field: a textarea for the typing, the same letters drawn over it with their bold |
 | `platform.ts` | Whether this is a Mac or an iPhone, for Cmd or Ctrl |
-| `PhoneView.tsx`, `phone.ts` | The phone view: a profile grid on an iPhone, its post at the phone's own size |
+| `PhoneView.tsx`, `phone.ts` | The phone view: a whole iPhone to scale, the cover in the middle of a profile grid |
 | `history.ts` | Undo and redo, a run of the same change one step |
 | `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows |
 | `liquid-layout.ts` | The liquid letters' hands, seeds, cases and spacing, and lines packed to fill their block |
@@ -390,7 +414,7 @@ shadow in its colour, and the layer's edge is exactly the ground, and
 paste made small draws nothing where its depth was not worked out; that only
 Stickery reads the bold; that bold goes to stars and back exactly,
 carries on as typed and stops at a space, and typed stars turn into it;
-that the phone view's post is the grid's 3:4 window at an iPhone's width; that undo takes back a thing done, a slider dragged as one step; that
+that the phone view is an iPhone to scale with the cover centred in its grid; that a clear cover has no ground or grain, and its paste and stain laid on the background picked are the paste drawn there; that undo takes back a thing done, a slider dragged as one step; that
 Pasty Flat is one colour, pixel for pixel; that a t's swash grows out of
 its bar as paste does and Goo Even never swells past its weight; that the
 shuffle moves

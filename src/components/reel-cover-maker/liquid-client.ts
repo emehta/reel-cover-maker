@@ -139,11 +139,11 @@ export function liquidLayer(op: LiquidOp, target: LiquidTarget, part: "paste" | 
   if (!drawn.has(key)) return undefined;
   const field = drawn.get(key);
   if (!field) return null;
-  const shading = { colours: op.colours, ground: op.ground, shadow: part === "shadow" };
+  const shading = { colours: op.colours, ground: op.ground, under: op.under, shadow: part === "shadow" };
   const gpu = shadeOnGpu(field, shading, op.seed);
   if (gpu) return { image: gpu.canvas, sx: gpu.sx, sy: gpu.sy, w: field.w, h: field.h, x: field.x, y: field.y };
   // No WebGL 2: lit here, and kept, since that is slow.
-  const litKey = `${key}|${op.colours.join(",")}|${op.ground ?? "-"}|${part}`;
+  const litKey = `${key}|${op.colours.join(",")}|${op.ground ?? "-"}|${op.under ?? "-"}|${part}`;
   let canvas = lit.get(litKey);
   if (!canvas) {
     const image = shadeField(field, shading);

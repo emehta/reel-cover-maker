@@ -297,11 +297,33 @@ export interface Shading {
   /** The ground the paste sits on, drawn into the picture with its shadows; null for paste alone on a transparent ground. */
   ground: string | null;
   /**
-   * With no ground: the shadow the paste casts, instead of the paste, as
-   * what to multiply the picture under it by (white where it falls on
-   * nothing), so it darkens a photo as it darkened the ground.
+   * With no ground drawn: the ground the paste is lit as lying on all the
+   * same (a clear cover's chosen one), for what its gel reflects and how
+   * its shadow is coloured. Null or absent: a neutral table, as on a photo.
+   */
+  under?: string | null;
+  /**
+   * With no ground: the shadow the paste casts, instead of the paste. With
+   * no `under`, what to multiply the picture under it by (white where it
+   * falls on nothing), so it darkens a photo as it darkened the ground.
+   * With `under`, a clear stain to lay over whatever the cover is put on:
+   * as dark as the darkening, so on `under` itself it is exactly the
+   * shadow drawn on the ground, and grey shadow anywhere is exact.
    */
   shadow?: boolean;
+}
+
+/**
+ * A shadow as a clear stain, from the ground it is seen on and that ground
+ * as the shadow leaves it (each channel 0 to 1, in the display's values):
+ * its alpha the most it darkens a channel, its colour (premultiplied) the
+ * rest of the tint, so laid over `under` it is `shadowed` exactly, and
+ * over any other ground darkens it as much.
+ */
+export function stain(shadowed: [number, number, number], under: [number, number, number]): { rgb: [number, number, number]; alpha: number } {
+  const kept = [0, 1, 2].map((k) => (under[k] > 1e-6 ? Math.min(1, shadowed[k] / under[k]) : 1));
+  const lo = Math.min(kept[0], kept[1], kept[2]);
+  return { rgb: [0, 1, 2].map((k) => Math.max(0, shadowed[k] - under[k] * lo)) as [number, number, number], alpha: 1 - lo };
 }
 
 const toLinear = (c: number) => {
@@ -358,7 +380,9 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
   const out = new Uint8ClampedArray(w * h * 4);
   const colours = shading.colours.map((c) => rgb(c).map(toLinear) as Vec);
   const groundColour = shading.ground ? (rgb(shading.ground).map(toLinear) as Vec) : null;
-  const table: Vec = groundColour ?? [0.8, 0.8, 0.8];
+  const underLinear = !groundColour && shading.under ? (rgb(shading.under).map(toLinear) as Vec) : null;
+  const underColour = underLinear ? (underLinear.map((v) => toSrgb(v) / 255) as Vec) : null;
+  const table: Vec = groundColour ?? (shading.under ? (rgb(shading.under).map(toLinear) as Vec) : [0.8, 0.8, 0.8]);
   const heightAt = (x: number, y: number) => data[(Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))) * 4 + 1] / 256;
   const radius = Math.max(0.5, field.radius);
   const finish = field.finish;
@@ -406,6 +430,19 @@ export function shadeField(field: LiquidField, shading: Shading): LiquidImage {
       if (shading.shadow) {
         const f = shade();
         const o = i * 4;
+        if (underColour) {
+          // A clear stain, dithered as the ground's shadow is, against banding.
+          // Worked out from the ground as the shadow leaves it, in linear light as the ground's own is.
+          const s = stain(f.map((v, k) => toSrgb((underLinear as Vec)[k] * v) / 255) as Vec, underColour);
+          if (s.alpha <= 0.002) continue;
+          noise = (Math.imul(noise ^ (noise >>> 15), 0x2c1b3c6d) + 0x9e3779b9) | 0;
+          const alpha = clamp01(s.alpha + (((noise >>> 8) & 255) / 255 - 0.5) * (0.9 / 255));
+          out[o] = Math.round((Math.min(alpha, s.rgb[0]) / alpha) * 255);
+          out[o + 1] = Math.round((Math.min(alpha, s.rgb[1]) / alpha) * 255);
+          out[o + 2] = Math.round((Math.min(alpha, s.rgb[2]) / alpha) * 255);
+          out[o + 3] = Math.round(alpha * 255);
+          continue;
+        }
         out[o] = Math.round(toSrgb(f[0]));
         out[o + 1] = Math.round(toSrgb(f[1]));
         out[o + 2] = Math.round(toSrgb(f[2]));
