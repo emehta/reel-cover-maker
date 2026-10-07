@@ -351,8 +351,40 @@ export function drawLayers(ops: LiquidOp[], target: LiquidTarget, slot: string, 
       key,
       target,
       use,
-      paint: { chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, seed: op.seed },
+      paint: { chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, seed: op.seed, radius: op.radius },
     });
   });
   pump();
+}
+
+/**
+ * Every layer of `ops` for a canvas, made: resolves once each is drawn or
+ * has failed, true if none failed. For a frame of an animation, which is
+ * painted once and let go (`letGo`), never shown again from the cache.
+ */
+export function layersMade(ops: LiquidOp[], target: LiquidTarget, slot: string, use: LayerUse, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.reject(new DOMException("Called off.", "AbortError"));
+  const done = () => ops.every((op) => layerReady(op, target) || layerFailed(op, target));
+  drawLayers(ops, target, slot, use);
+  if (done()) return Promise.resolve(!ops.some((op) => layerFailed(op, target)));
+  return new Promise((resolve, reject) => {
+    const stop = () => {
+      unsubscribe();
+      letGo(slot);
+      reject(new DOMException("Called off.", "AbortError"));
+    };
+    const unsubscribe = subscribeLayers(() => {
+      if (!done()) return;
+      unsubscribe();
+      signal?.removeEventListener("abort", stop);
+      resolve(!ops.some((op) => layerFailed(op, target)));
+    });
+    signal?.addEventListener("abort", stop, { once: true });
+  });
+}
+
+/** A canvas is done with what it asked for: nothing it waits on is made, and what it was shown may be let go. */
+export function letGo(slot: string): void {
+  for (const s of [...queued.keys()]) if (s === slot || s.startsWith(`${slot}#`)) queued.delete(s);
+  wanted.delete(slot);
 }

@@ -36,6 +36,8 @@ const H = await import("@/components/reel-cover-maker/history");
 const N = await import("@/components/reel-cover-maker/noise");
 const { createFontGate } = await import("@/components/reel-cover-maker/font-gate");
 const { prepaintScript } = await import("@/components/reel-cover-maker/theme");
+const AN = await import("@/components/reel-cover-maker/animate");
+const VID = await import("@/components/reel-cover-maker/video");
 
 let passed = 0;
 const check = (name, fn) => {
@@ -708,13 +710,6 @@ check("words on a sticker or a highlight read on it at 4.5:1, whatever the colou
   }
 });
 
-check("the page warns when the letters sit too close to the ground in lightness, and only then", () => {
-  assert.equal(P.standsOut(P.paletteFor({ hue: 24, shade: 0.5, ground: "light" })), true);
-  assert.equal(P.standsOut(P.paletteFor({ hue: 24, shade: 0.97, ground: "light" })), false);
-  assert.equal(P.standsOut(P.paletteFor({ hue: 24, shade: 0.02, ground: "dark" })), false);
-  assert.equal(P.standsOut(P.paletteFor({ hue: 90, shade: 0.8, ground: "dark" })), true);
-});
-
 check("the slider tracks run through every hue at the shade, and every shade of the hue", () => {
   assert.equal(C.hueTrack(0.5).match(/#[0-9A-F]{6}/g).length, 13);
   assert.equal(C.shadeTrack(200).match(/#[0-9A-F]{6}/g).length, 11);
@@ -736,6 +731,16 @@ check("a design round-trips through storage", () => {
   assert.equal(D.DEFAULT_DESIGN.textMode, "auto");
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, textMode: "neon", textHue: 900, textShade: "light" })), { ...design, textMode: "auto", textHue: D.DEFAULT_DESIGN.textHue, textShade: D.DEFAULT_DESIGN.textShade });
   for (const textMode of ["black", "white"]) assert.equal(D.readDesign(JSON.stringify({ textMode })).textMode, textMode);
+  // Animated or not, and each style's animation: one a style does not offer is let go, the rest kept.
+  const animated = { ...design, animated: true, animations: { stickery: "pop", pasty: "together", echo: "spread" } };
+  assert.deepEqual(D.readDesign(D.writeDesign(animated)), animated);
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "written", mono: "words", editorial: 7, "pasty-flat": "swell" } })).animations, { mono: "words", "pasty-flat": "swell" });
+  assert.equal(D.readDesign(JSON.stringify({ animated: "yes" })).animated, false);
+  assert.equal(D.DEFAULT_DESIGN.animated, false);
+  // The animation a style is on: its pick, else its first.
+  assert.equal(D.animationOf({ style: "stickery", animations: { stickery: "rise" } }), "rise");
+  assert.equal(D.animationOf({ style: "echo", animations: { stickery: "rise" } }), "ripple");
+  assert.equal(D.animationOf({ style: "pasty", animations: { pasty: "pop" } }), "written");
   // A placement stored wrong is home, or held to what can be drawn.
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, place: "moved" })).place, PL.HOME);
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, place: { x: 1e9, y: Number.NaN, angle: 7, sx: 0, sy: 99 } })).place, { x: 5000, y: 0, angle: PL.wrapAngle(7), sx: PL.MIN_SCALE, sy: PL.MAX_SCALE });
@@ -946,6 +951,7 @@ function recorder() {
     lineTo: () => {},
     arcTo: () => {},
     closePath: () => {},
+    clip: () => calls.push({ kind: "clip" }),
     fill: () => calls.push({ kind: "fill", style: ctx.fillStyle }),
     stroke: () => calls.push({ kind: "stroke", style: ctx.strokeStyle, width: ctx.lineWidth }),
     drawImage: (image, ...args) => calls.push({ kind: "drawImage", image, at: args.length > 2 ? args.slice(4, 6) : args, from: args.length > 2 ? args.slice(0, 4) : null, m: [...m] }),
@@ -1615,7 +1621,7 @@ check("Stickery's text colour: every letter on every sticker takes it, paste and
   }
 });
 
-check("the text colour's choices: auto is null, black and white the soft ones auto uses, a colour of its own the sliders'; a pick that blends into a sticker it is on is said to", () => {
+check("the text colour's choices: auto is null, black and white the soft ones auto uses, a colour of its own the sliders'", () => {
   assert.deepEqual(P.TEXT_MODES.map((m) => m.id), ["auto", "black", "white", "colour"]);
   assert.equal(P.textColour("auto", 200, 0.3), null);
   assert.equal(P.textColour("black", 200, 0.3), P.SOFT_BLACK);
@@ -1626,21 +1632,8 @@ check("the text colour's choices: auto is null, black and white the soft ones au
   // Auto's black and white are the two readableOn picks first.
   assert.equal(P.readableOn("#FFFFFF"), P.SOFT_BLACK);
   assert.equal(P.readableOn("#000000"), P.SOFT_WHITE);
-  // A title of one paragraph is on the first sticker alone; more, on both.
-  const palette = P.paletteFor({ hue: 24, shade: 0.5, ground: "light" });
-  assert.deepEqual(P.stickersUsed(palette, 1), [palette.sticker[0]]);
-  assert.deepEqual(P.stickersUsed(palette, 0), [palette.sticker[0]]);
-  assert.deepEqual(P.stickersUsed(palette, 5), [...palette.sticker]);
-  assert.ok(P.readsOnStickers(null, palette.sticker), "auto always reads");
-  assert.ok(P.readsOnStickers(P.SOFT_WHITE, [palette.sticker[0]]));
-  assert.ok(!P.readsOnStickers(palette.sticker[0], [palette.sticker[0]]), "letters the sticker's own colour read");
-  // Read on one sticker and lost on the other: said, once the title reaches the second.
-  const light = P.paletteFor({ hue: 90, shade: 0.15, ground: "light" });
-  const onFirst = P.readableOn(light.sticker[0]);
-  assert.ok(P.readsOnStickers(onFirst, P.stickersUsed(light, 1)));
-  assert.equal(P.readsOnStickers(onFirst, P.stickersUsed(light, 2)), P.contrast(onFirst, light.sticker[1]) >= 3);
   // The default own colour, a pale tint of the default red, reads on that red.
-  assert.ok(P.readsOnStickers(C.sliderColour(D.DEFAULT_DESIGN.textHue, D.DEFAULT_DESIGN.textShade), [P.paletteFor(P.DEFAULT_COLOUR).sticker[0]]));
+  assert.ok(P.contrast(C.sliderColour(D.DEFAULT_DESIGN.textHue, D.DEFAULT_DESIGN.textShade), P.paletteFor(P.DEFAULT_COLOUR).sticker[0]) >= 3);
 });
 
 check("Stickery is laid out by the title and the shuffle: the same seed the same, another seed elsewhere, nothing all to one side", () => {
@@ -2470,6 +2463,247 @@ check("undo goes back a thing done: a run of the same change is one step, a paus
   for (let i = 0; i < 300; i += 1) many = H.record(many, i, [`k${i}`], i);
   assert.equal(many.past.length, H.MOST_STEPS);
   assert.equal(many.past[0], 200);
+});
+
+console.log("animation");
+
+/** What a frame shows: each text's characters (by how see-through), each sticker, and how much paste. */
+function shown(scene) {
+  const out = { chars: 0, shapes: 0, paste: 0, boxes: 0 };
+  const walk = (ops, alpha) => {
+    for (const op of ops) {
+      if (op.kind === "fade") walk(op.ops, alpha * op.alpha);
+      else if (op.kind === "turn" || op.kind === "matrix") walk(op.ops, alpha);
+      else if (op.kind === "wipe") walk(op.ops, alpha * op.at);
+      else if (op.kind === "text") out.chars += T.graphemes(op.text).length * alpha * (op.alpha ?? 1);
+      else if (op.kind === "shape") out.shapes += alpha;
+      else if (op.kind === "box") out.boxes += alpha;
+      else if (op.kind === "liquid") for (const c of op.chains) for (let i = 1; i < c.length; i += 1) out.paste += Math.hypot(c[i].x - c[i - 1].x, c[i].y - c[i - 1].y) + 0.001;
+    }
+  };
+  walk(scene.ops, 1);
+  return out;
+}
+
+const ANIMATED = [
+  ["stickery", { lettering: "yesteryear" }],
+  ["stickery", { lettering: "goo" }],
+  ["pasty", { pastyLettering: "goo" }],
+  ["pasty", { pastyLettering: "drip" }],
+  ["pasty-flat", { pastyLettering: "goo-even" }],
+  ["editorial", {}],
+  ["echo", {}],
+  ["mono", {}],
+];
+
+check("every animation of every style starts with less than the cover and ends on it exactly, within the longest a motion runs, its frames valid all the way", () => {
+  for (const title of ["How I *plan* my week", "things *aren't*\n*what* they seem\nand *more*"]) {
+    for (const [style, extra] of ANIMATED) {
+      const scene = cover(title, style, "reel", extra);
+      const whole = shown(scene);
+      assert.ok(AN.animationsFor(style).length >= 2, `${style} offers one animation`);
+      for (const { id } of AN.animationsFor(style)) {
+        const p = AN.plan(scene, style, id, measurer);
+        const name = `${style} ${JSON.stringify(extra)} ${id}`;
+        assert.ok(p.duration > 0.3 && p.duration <= AN.LONGEST + 1e-9, `${name} runs ${p.duration}s`);
+        assert.equal(p.frame(p.duration), scene, `${name} does not end on the cover`);
+        assert.equal(p.frame(p.duration + 5), scene);
+        assert.ok(near(AN.videoLength(p), p.duration + AN.HOLD, 1e-12));
+        const first = shown(p.frame(0));
+        assert.ok(first.chars + first.shapes + first.paste < whole.chars + whole.shapes + whole.paste - 1e-6, `${name} starts with the cover drawn`);
+        for (let t = 0; t <= p.duration; t += 1 / 30) {
+          const frame = p.frame(t);
+          assert.equal(frame.width, scene.width);
+          // The ground and photo stay; only the letters move.
+          assert.deepEqual(frame.ops.filter(S.isBackdrop), scene.ops.filter(S.isBackdrop));
+          for (const op of S.liquidOps(frame)) for (const c of op.chains) for (const b of c) assert.ok(Number.isFinite(b.x + b.y + b.r) && b.r > 0, `${name}: a bad bead at ${t}`);
+        }
+      }
+    }
+  }
+});
+
+check("typing and piping only ever add: characters typed, paste laid, never taken back, and every chain only ever a first part of its own", () => {
+  for (const [style, extra, id] of [["editorial", {}, "typewriter"], ["mono", {}, "typewriter"], ["stickery", { lettering: "yesteryear" }, "type-draw"], ["stickery", { lettering: "goo" }, "type-draw"], ["pasty", { pastyLettering: "goo" }, "written"], ["pasty", { pastyLettering: "drip" }, "together"]]) {
+    const scene = cover("things *aren't*\n*what* they seem", style, "reel", extra);
+    const p = AN.plan(scene, style, id, measurer);
+    let last = { chars: 0, paste: 0 };
+    for (let t = 0; t <= p.duration + 1e-9; t += 1 / 60) {
+      const now = shown(p.frame(t));
+      assert.ok(now.chars >= last.chars - 1e-9, `${style} ${id}: text went back at ${t.toFixed(3)}`);
+      assert.ok(now.paste >= last.paste - 1e-6, `${style} ${id}: paste went back at ${t.toFixed(3)}`);
+      last = now;
+    }
+    const full = liquidOf(scene);
+    if (full) {
+      const mid = liquidOf(p.frame(p.duration * 0.5));
+      assert.ok(mid && mid !== full, `${style} ${id}: no paste half way`);
+      // Lit as the finished paste is, its gloss the same throughout.
+      const radii = full.chains.flatMap((c) => c.map((b) => b.r)).sort((a, b) => a - b);
+      assert.equal(mid.radius, radii[Math.floor(radii.length / 2)]);
+      assert.equal(mid.seed, full.seed);
+      assert.notEqual(mid.key, full.key);
+      assert.equal(mid.chains.length, mid.colourOf.length);
+      assert.equal(mid.chains.length, mid.tone.length);
+    }
+  }
+});
+
+check("a chain piped part way is its first part by length, the nozzle's bead between two of its own", () => {
+  const chain = [{ x: 0, y: 0, r: 2 }, { x: 10, y: 0, r: 4 }, { x: 10, y: 10, r: 6 }];
+  assert.deepEqual(AN.chainPart(chain, 0), []);
+  assert.equal(AN.chainPart(chain, 1), chain);
+  const half = AN.chainPart(chain, 0.5);
+  assert.deepEqual(half, [chain[0], { x: 10, y: 0, r: 4 }]);
+  const quarter = AN.chainPart(chain, 0.25);
+  assert.deepEqual(quarter, [chain[0], { x: 5, y: 0, r: 3 }]);
+  assert.deepEqual(AN.chainPart([chain[0]], 0.3), [chain[0]]);
+});
+
+check("Stickery's Type and draw lays each sticker, then its words in reading order, plain ones typed and funky ones written on", () => {
+  const scene = cover("things *aren't*\n*what* they seem", "stickery", "reel", { lettering: "yesteryear" });
+  const p = AN.plan(scene, "stickery", "type-draw", measurer);
+  const firstSeen = new Map();
+  for (let t = 0; t <= p.duration; t += 1 / 120) {
+    const walk = (ops) => {
+      for (const op of ops) {
+        if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade") walk(op.ops);
+        else if (op.kind === "wipe") {
+          walk(op.ops);
+          firstSeen.set("wiped", true);
+        } else if (op.kind === "text") {
+          // A typed word shows a first part of itself; a script word is set in pieces at its apostrophes.
+          const key = scene.ops.flatMap((o) => (o.kind === "turn" ? o.ops : [o])).find((o) => o.kind === "text" && o.text.startsWith(op.text) && o.y === op.y && o.x === op.x)?.text ?? op.text;
+          if (!firstSeen.has(key)) firstSeen.set(key, t);
+        } else if (op.kind === "shape") {
+          const at = op.polygons[0][1];
+          if (!firstSeen.has(`shape ${at}`)) firstSeen.set(`shape ${at}`, t);
+        }
+      }
+    };
+    walk(p.frame(t).ops);
+  }
+  assert.ok(firstSeen.get("wiped"), "no funky word was written on");
+  const at = (word) => firstSeen.get(word);
+  for (const word of ["things", "aren", "t", "what", "they", "seem"]) assert.ok(at(word) !== undefined, `"${word}" never shows`);
+  assert.ok(at("things") < at("aren"), "the plain word above is typed before the funky word under it");
+  assert.ok(at("aren") < at("t"), "a script word is not written left to right");
+  assert.ok(at("t") < at("what"), "the second sticker waits for the first");
+  assert.ok(at("what") < at("they") && at("they") < at("seem"));
+  const papers = [...firstSeen.entries()].filter(([k]) => String(k).startsWith("shape")).map(([, t]) => t).sort((a, b) => a - b);
+  assert.equal(papers.length, 2);
+  assert.ok(papers[0] <= at("things") && papers[1] <= at("what") && papers[1] > at("things"));
+});
+
+check("an effect is where it is seen: a sticker springs about its own middle even on letters the owner has moved and turned", () => {
+  const scene = S.placeScene(cover("things *aren't*", "stickery", "reel", { lettering: "yesteryear" }), { x: 120, y: -200, angle: 0.4, sx: 1.3, sy: 0.9 });
+  const p = AN.plan(scene, "stickery", "pop", measurer);
+  const frame = p.frame(0.2);
+  // The sticker's shape, inside the placement and the frame's own map: its middle where the cover has it.
+  const placed = scene.ops.find((op) => op.kind === "matrix");
+  const sticker = placed.ops.find((op) => op.kind === "shape");
+  const box = SP.polygonBounds(sticker.polygons);
+  // Its middle as the cover shows it: the middle of the box round it there, turned and all.
+  const shownBox = SP.polygonBounds(sticker.polygons.map((poly) => poly.flatMap((v, i) => (i % 2 ? [] : Object.values(PL.apply(placed.m, { x: v, y: poly[i + 1] }))))));
+  const world = { x: shownBox.x + shownBox.w / 2, y: shownBox.y + shownBox.h / 2 };
+  const inverse = PL.invert(placed.m);
+  const local = PL.apply(inverse, world);
+  let found = null;
+  const walk = (ops, m) => {
+    for (const op of ops) {
+      if (op.kind === "matrix") walk(op.ops, PL.multiply(m, op.m));
+      else if (op.kind === "fade") walk(op.ops, m);
+      else if (op.kind === "shape" && op === sticker) found = m;
+    }
+  };
+  walk(frame.ops, [1, 0, 0, 1, 0, 0]);
+  assert.ok(found, "the sticker is not in the frame");
+  const seen = PL.apply(found, local);
+  assert.ok(near(seen.x, world.x, 1e-6) && near(seen.y, world.y, 1e-6), `the middle moved to ${seen.x},${seen.y} from ${world.x},${world.y}`);
+  // And its corner is nearer the middle than it will be: it is still springing on.
+  const corner = PL.apply(found, { x: box.x, y: box.y });
+  const final = PL.apply(placed.m, { x: box.x, y: box.y });
+  assert.ok(Math.hypot(corner.x - world.x, corner.y - world.y) < Math.hypot(final.x - world.x, final.y - world.y));
+});
+
+check("Echo's Ripple and Spread bring the words first and each ring after the one inside it; Mono's cursor ends where the cover has it", () => {
+  const scene = cover("How I *plan* my week", "echo", "reel");
+  const main = scene.ops.filter((op) => op.kind === "text" && !op.outline);
+  const mid = main.reduce((sum, op) => sum + op.y, 0) / main.length;
+  for (const id of ["ripple", "spread"]) {
+    const p = AN.plan(scene, "echo", id, measurer);
+    const seen = new Map();
+    for (let t = 0; t <= p.duration; t += 1 / 120) {
+      const walk = (ops) => {
+        for (const op of ops) {
+          if (op.kind === "fade" || op.kind === "matrix") walk(op.ops);
+          else if (op.kind === "text") {
+            const ring = op.outline ? Math.round(Math.abs(op.y - mid)) : 0;
+            if (!seen.has(ring)) seen.set(ring, t);
+          }
+        }
+      };
+      walk(p.frame(t).ops);
+    }
+    const rings = [...seen.keys()].sort((a, b) => a - b);
+    assert.ok(rings.length > 3, `${id}: only ${rings.length} rings`);
+    for (let i = 1; i < rings.length; i += 1) assert.ok(seen.get(rings[i]) >= seen.get(rings[i - 1]) - 1e-9, `${id}: ring ${rings[i]} before ${rings[i - 1]}`);
+  }
+  const mono = cover("How I *plan* my week", "mono", "reel");
+  const cursor = mono.ops.find((op) => op.kind === "box");
+  const p = AN.plan(mono, "mono", "typewriter", measurer);
+  const boxAt = (t) => {
+    let out = null;
+    const walk = (ops) => {
+      for (const op of ops) {
+        if (op.kind === "fade" || op.kind === "matrix") walk(op.ops);
+        else if (op.kind === "box") out = op;
+      }
+    };
+    walk(p.frame(t).ops);
+    return out;
+  };
+  // Along each line it only moves on, as the letters come; it moves at all.
+  let last = null;
+  let moved = 0;
+  for (let t = 0; t < p.duration; t += 1 / 60) {
+    const box = boxAt(t);
+    if (!box) continue;
+    if (last && near(box.y, last.y, 1e-6)) {
+      assert.ok(box.x >= last.x - 1e-6, `the cursor went back at ${t.toFixed(3)}`);
+      if (box.x > last.x + 1e-6) moved += 1;
+    }
+    last = box;
+  }
+  assert.ok(moved > 5, "the cursor is not following the typing");
+  assert.ok(near(boxAt(p.duration - 1e-6).x, cursor.x, 0.5), "the cursor does not land where the cover has it");
+});
+
+check("a frame's fades and wipes paint: a fade's alpha times a word's own, a wipe drawn in clipped bands, nothing once wholly clear", () => {
+  const word = { kind: "text", text: "draw", face: "funky-yesteryear", size: 100, x: 100, y: 500, color: "#000", alpha: 0.5 };
+  const scene = { width: 1080, height: 1920, ops: [{ kind: "fade", alpha: 0.4, ops: [word] }, { kind: "wipe", x: 100, y: 420, w: 300, h: 110, at: 0.5, ops: [{ ...word, alpha: 1 }] }, { kind: "fade", alpha: 0, ops: [word] }], readable: { x: 0, y: 0, w: 1, h: 1 }, truncated: false };
+  const ctx = recorder();
+  paint(ctx, scene, { scale: 1, font, grain: null });
+  const texts = ctx.calls.filter((c) => c.kind === "fillText");
+  assert.ok(near(texts[0].alpha, 0.2, 1e-12), "a fade does not multiply the word's own alpha");
+  const clips = ctx.calls.filter((c) => c.kind === "clip").length;
+  assert.equal(clips, 9, "the wipe is not one solid part and eight soft bands");
+  assert.equal(texts.length, 1 + 9, "a clear fade drew something");
+  const alphas = texts.slice(1).map((c) => c.alpha);
+  for (let i = 1; i < alphas.length; i += 1) assert.ok(alphas[i] < alphas[i - 1], "the soft edge does not fade out");
+  assert.equal(ctx.depth, 0);
+});
+
+check("a video is ProRes 4444 with its alpha in a QuickTime movie with no photo, H.264 in an MP4 with one, its frames read in turn", () => {
+  const mov = VID.encodeArgs("mov", 30, "out.mov");
+  for (const part of ["prores_ks", "yuva444p10le", "apl0"]) assert.ok(mov.includes(part), part);
+  assert.equal(mov[mov.indexOf("-profile:v") + 1], "4");
+  assert.equal(mov.at(-1), "out.mov");
+  const mp4 = VID.encodeArgs("mp4", 30, "out.mp4");
+  for (const part of ["libx264", "yuv420p", "+faststart"]) assert.ok(mp4.includes(part), part);
+  assert.equal(VID.frameName(0), "f00000.png");
+  assert.equal(VID.frameName(123), "f00123.png");
+  assert.equal(VID.VIDEO_TYPE.mov, "video/quicktime");
 });
 
 console.log("page");

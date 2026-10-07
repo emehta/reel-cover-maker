@@ -3,15 +3,17 @@
  * style, Stickery's lettering and plain face and the colour of its letters,
  * Pasty's lettering, the colour (hue, shade and ground), the size, the
  * shuffle, how the photo behind the cover is framed and adjusted (the
- * photo itself is kept in photo-store.ts, being too big for here), and
- * where the letters have been moved to, so the next cover matches the
- * last one on the grid. Kept in this browser only.
+ * photo itself is kept in photo-store.ts, being too big for here), where
+ * the letters have been moved to, and whether the cover is animated and
+ * how, so the next cover matches the last one on the grid. Kept in this
+ * browser only.
  *
  * Read defensively: storage can hold anything (an older version's shape, a
  * hand edit, nothing at all), and whatever is not understood falls back to
  * the default rather than breaking the page.
  */
 
+import { animationsFor, offers, type AnimationId } from "@/components/reel-cover-maker/animate";
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
 import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, isTextMode, type Ground, type TextMode } from "@/components/reel-cover-maker/palettes";
@@ -24,6 +26,7 @@ import {
   isLetteringId,
   isPastyLetteringId,
   isStyleId,
+  STYLES,
   type LetteringId,
   type PastyLetteringId,
   type StyleId,
@@ -50,6 +53,10 @@ export interface Design {
   photoAdjust: PhotoAdjust;
   /** Where the letters have been moved, turned and scaled to; home is where the style sets them. */
   place: Place;
+  /** Animated (the owner's ask, 7 Oct): the cover drawn in as its style's chosen animation has it, and saved as a video. */
+  animated: boolean;
+  /** The animation picked for each style; a style not named is on its first. */
+  animations: Partial<Record<StyleId, AnimationId>>;
 }
 
 export const STORAGE_KEY = "reel-cover-maker:v1";
@@ -80,7 +87,26 @@ export const DEFAULT_DESIGN: Design = {
   photoFrame: DEFAULT_FRAME,
   photoAdjust: DEFAULT_ADJUST,
   place: HOME,
+  animated: false,
+  animations: {},
 };
+
+/** The animation a design's style is on: the one picked for it, else the style's first. */
+export function animationOf(design: Pick<Design, "style" | "animations">): AnimationId {
+  const picked = design.animations[design.style];
+  return picked && offers(design.style, picked) ? picked : animationsFor(design.style)[0].id;
+}
+
+/** The animations stored, each kept only where its style offers it. */
+function readAnimations(value: unknown): Partial<Record<StyleId, AnimationId>> {
+  const out: Partial<Record<StyleId, AnimationId>> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  for (const style of STYLES) {
+    const id = (value as Record<string, unknown>)[style.id];
+    if (offers(style.id, id)) out[style.id] = id;
+  }
+  return out;
+}
 
 const number = (value: unknown, lo: number, hi: number): number | null =>
   typeof value === "number" && Number.isFinite(value) && value >= lo && value <= hi ? value : null;
@@ -114,6 +140,8 @@ export function readDesign(raw: string | null): Design {
     photoFrame: readFrame(stored.photoFrame),
     photoAdjust: readAdjust(stored.photoAdjust),
     place: readPlace(stored.place),
+    animated: stored.animated === true,
+    animations: readAnimations(stored.animations),
   };
 }
 

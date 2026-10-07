@@ -43,6 +43,7 @@ export type PaintTarget = Pick<
   | "closePath"
   | "stroke"
   | "drawImage"
+  | "clip"
 >;
 
 export interface PaintOptions {
@@ -152,7 +153,8 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
     case "text":
       ctx.save();
       ctx.font = options.font(op.face, op.size);
-      ctx.globalAlpha = op.alpha ?? 1;
+      // Its own alpha within whatever fade it is in.
+      ctx.globalAlpha *= op.alpha ?? 1;
       if (op.outline) {
         ctx.strokeStyle = op.color;
         ctx.lineWidth = op.outline;
@@ -177,6 +179,68 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions) {
       ctx.transform(...op.m);
       for (const inner of op.ops) draw(ctx, scene, inner, options);
       ctx.restore();
+      return;
+    case "fade":
+      if (op.alpha <= 0) return;
+      ctx.save();
+      ctx.globalAlpha *= Math.min(1, op.alpha);
+      for (const inner of op.ops) draw(ctx, scene, inner, options);
+      ctx.restore();
+      return;
+    case "wipe":
+      wipe(ctx, scene, op, options);
+  }
+}
+
+/** How far a wipe's edge leans, across for each pixel down: handwriting's slant, about 15 degrees. */
+export const WIPE_LEAN = 0.27;
+
+/** How many bands the wipe's soft edge is drawn in, each a little fainter. */
+const WIPE_BANDS = 8;
+
+/**
+ * A wipe: the ops shown left of a leaning edge, solid behind a soft band
+ * that runs from solid to clear. Drawn in clipped bands that never overlap,
+ * each once at its own alpha, so the edge is exact and needs no second
+ * canvas.
+ */
+function wipe(ctx: PaintTarget, scene: Scene, op: Extract<Op, { kind: "wipe" }>, options: PaintOptions) {
+  if (op.at <= 0) return;
+  if (op.at >= 1) {
+    for (const inner of op.ops) draw(ctx, scene, inner, options);
+    return;
+  }
+  const feather = Math.max(1, op.h * 0.45);
+  const mid = op.y + op.h / 2;
+  const top = op.y - op.h;
+  const bottom = op.y + op.h * 2;
+  // The edge's position, where it crosses the box's middle: from wholly left of the box to wholly past it, soft band and lean included.
+  const reach = (op.h * 1.5) * WIPE_LEAN;
+  const edge = op.x - reach + op.at * (op.w + reach * 2 + feather);
+  const far = op.w + op.h * 4;
+  /** The part of the picture left of an edge through (at, mid) and right of one through (from, mid). */
+  const band = (from: number, at: number) => {
+    const xAt = (x: number, y: number) => x - (y - mid) * WIPE_LEAN;
+    ctx.beginPath();
+    ctx.moveTo(xAt(from, top), top);
+    ctx.lineTo(xAt(at, top), top);
+    ctx.lineTo(xAt(at, bottom), bottom);
+    ctx.lineTo(xAt(from, bottom), bottom);
+    ctx.closePath();
+    ctx.clip();
+  };
+  const solid = edge - feather;
+  ctx.save();
+  band(op.x - far, solid);
+  for (const inner of op.ops) draw(ctx, scene, inner, options);
+  ctx.restore();
+  const step = feather / WIPE_BANDS;
+  for (let k = 0; k < WIPE_BANDS; k += 1) {
+    ctx.save();
+    band(solid + k * step, solid + (k + 1) * step);
+    ctx.globalAlpha *= 1 - (k + 0.5) / WIPE_BANDS;
+    for (const inner of op.ops) draw(ctx, scene, inner, options);
+    ctx.restore();
   }
 }
 

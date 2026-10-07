@@ -116,8 +116,6 @@ interface TextColourProps {
   shade: number;
   /** A change to the text colour: what changed, each part of it named. */
   onPick: (change: { textMode?: TextMode; textHue?: number; textShade?: number }) => void;
-  /** The letters close to a sticker they are on in lightness. */
-  low: boolean;
 }
 
 /**
@@ -127,7 +125,7 @@ interface TextColourProps {
  * colour is. The sliders stay in sight, quieter, while another choice is
  * made, so nothing under them moves; a press on one picks its colour.
  */
-export function TextColourField({ mode, hue, shade, onPick, low }: TextColourProps) {
+export function TextColourField({ mode, hue, shade, onPick }: TextColourProps) {
   const hex = textColour(mode, hue, shade);
   /** Each choice's colour, for its swatch: auto is a sticker's black or white. */
   const swatch: Record<TextMode, string> = {
@@ -142,15 +140,8 @@ export function TextColourField({ mode, hue, shade, onPick, low }: TextColourPro
         <span className={styles.label} id="rcm-text-colour-label">
           Text colour
         </span>
-        <span className={styles.colourSide}>
-          {low && (
-            <span className={styles.warnPill} title="The letters are close to their sticker in lightness, and may blur once Instagram compresses the cover">
-              Low contrast
-            </span>
-          )}
-          {/* Auto is each sticker's own black or white: no one colour to copy. */}
-          {hex && <HexChip hex={hex} of="the text colour's" />}
-        </span>
+        {/* Auto is each sticker's own black or white: no one colour to copy. */}
+        {hex && <HexChip hex={hex} of="the text colour's" />}
       </div>
       <div className={styles.segments} style={{ "--rcm-segments": TEXT_MODES.length } as CSSProperties} role="radiogroup" aria-labelledby="rcm-text-colour-label">
         {TEXT_MODES.map((m) => (

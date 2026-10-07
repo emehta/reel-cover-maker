@@ -115,12 +115,10 @@ on a label's row.
   white, whichever reads on each sticker), **Black**, **White**, or
   **Colour**, a colour of your own from two sliders like the stickers'.
   The sliders stay in sight, quieter, while another choice is made;
-  pressing one picks its colour. **Low contrast** says when the letters
-  are near a sticker they are on in lightness.
+  pressing one picks its colour.
 - **Pick the background**, light or dark, with the sun (or moon) button
   over the cover, which turns from one to the other: what the letters are
-  coloured, outlined and lit for. Beside the colour, **Low contrast** says
-  when the letters are near the background in lightness.
+  coloured, outlined and lit for.
 - **With no photo, the cover is a clear PNG**: the letters alone, with
   whatever is theirs (Stickery's stickers and their borders, Pasty's gel
   and the soft shadow it casts, Pasty Flat's paste, Editorial's, Echo's and
@@ -135,13 +133,41 @@ on a label's row.
   the cover, or Cmd+Z and Cmd+Shift+Z (Ctrl+Z and Ctrl+Shift+Z on Windows,
   where Ctrl+Y redoes too), in the Text field too. A slider dragged or a
   word typed is one step.
-- **Animate**, the sparkle by the phone button, is a mode still to be
-  made: for now the button turns on and off and changes nothing else.
+- **Animate** the cover with the sparkle by the phone button: a card
+  opens with the cover playing in each of its style's animations; pick
+  one and **Save**, and the cover plays it, in the preview and on the
+  phone, until the sparkle is pressed again to stop. Each lays the cover
+  down over a few seconds and ends on it exactly:
+  - Stickery: **Type and draw** (each sticker laid, its plain words typed,
+    its funky words written on along their slant, or piped bead by bead in
+    Goo), **Pop** (each sticker springs on), **Rise** (each floats up).
+  - Pasty and Pasty Flat: **Written live** (letter after letter, each
+    stroke piped as if by hand, the light on what is laid unchanged as more
+    comes), **All at once** (every letter piped together), **Pop** (letter
+    by letter, swelling into place).
+  - Editorial: **Word by word**, **Typewriter**, **Line by line**.
+  - Echo: **Ripple** (the words, then each echo out from them), **Spread**
+    (the echoes slide out from the words to their places), **Cascade**
+    (every line drops in, top to bottom).
+  - Mono: **Typewriter**, its cursor following the letters, and **Word by
+    word**.
+
+  Animated, **Download video** saves it at 1080 wide and 30 frames a
+  second, the motion and then the cover held for a second and a half. With
+  no photo it is a QuickTime movie (.mov) in ProRes 4444 with its
+  transparency, so it lays over a video in any editor (Final Cut,
+  Premiere, DaVinci Resolve, CapCut) or on an iPhone; with a photo, an
+  MP4. It is made in the browser: the first one fetches the encoder
+  (ffmpeg, about 30 MB, from jsDelivr), and a video takes about 20 to 40
+  seconds to make and runs to tens of megabytes, as ProRes does. The
+  button fills as it goes; press it again to stop.
 - **Pick a size**: a reel cover (9:16), or a post at 3:4 or 4:5. Tick
   **Grid crop**, beside it, to dim what the profile grid cuts off.
 - **See it on a phone** with the phone button at the end of the row: the
   whole phone, to scale, with the cover in the middle of the profile grid
-  of @eshaan.tm (a public account, so with no lock by its name).
+  of @eshaan.tm (a public account, so with no lock by its name), the
+  account's four reels after it as they would follow a new post, its
+  profile picture in the tab bar.
   The screen is an iPhone 15 or 16's, 393 by 852 points, with its status
   bar (54), the profile's name bar and tabs from its safe area's top (59),
   the tab bar over the home indicator (34), and the grid between them
@@ -150,8 +176,10 @@ on a label's row.
   point from its neighbours, marked as a reel if it is one. Everything is
   in proportion to that screen; the phone is drawn as large as the preview
   has room for, so on a laptop it is smaller than a phone in your hand.
-  The status bar's and tab bar's icons stand in for Instagram's own, and
-  the posts round the cover are blank tiles. A clear cover sits on the
+  The status bar's and tab bar's icons stand in for Instagram's own; the
+  tiles before the cover stand for posts to come, and the grid ends after
+  the last reel. The reels are the covers Instagram served on 7 Oct, kept
+  in the code, so a reel posted since is not there. A clear cover sits on the
   background picked. The style, colour, background, shuffle and photo all
   still change it as it shows; press the button again, or Escape, to edit
   the cover.
@@ -223,9 +251,8 @@ nothing a cover says is cut off wherever it appears.
   on a phone.
 - **Colours that differ in lightness, not just hue.** Instagram stores colour
   at half resolution (4:2:0 chroma), so letters on a ground of the same
-  lightness fringe at every edge. The sliders leave the choice to you, and
-  the page says so beside them when the letters fall below 3:1 against the
-  background (or, for Stickery's text colour, a sticker). The sliders work
+  lightness fringe at every edge. The sliders leave the choice to you (a
+  warning said so until the owner asked for it gone, 7 Oct). The sliders work
   in OKLCH, so equal steps look equal and a shade is as light at every hue;
   a sticker's words left to auto are black or white, whichever reads, and
   the tests hold them to 4.5:1 at every hue and shade.
@@ -364,6 +391,10 @@ Only the plain face chosen is loaded.
 | `platform.ts` | Whether this is a Mac or an iPhone, for Cmd or Ctrl |
 | `PhoneView.tsx`, `phone.ts` | The phone view: a whole iPhone to scale, the cover in the middle of @eshaan.tm's profile grid |
 | `ColourField.tsx` | A colour's sliders and its hex chip, and Stickery's Text colour field |
+| `animate.ts` | Each style's animations, as a function of time on the cover's own scene |
+| `animation-frames.ts`, `Motion.tsx`, `AnimateCard.tsx` | Frames drawn in the page, played in a loop, and the card to pick an animation in |
+| `video.ts`, `video.worker.ts` | The video: frames encoded by ffmpeg in WebAssembly, ProRes 4444 with alpha or H.264 |
+| `posts/` | @eshaan.tm's reel covers and profile picture, for the phone view |
 | `Shortcuts.tsx` | The keyboard shortcuts, behind the ? beside Download |
 | `history.ts` | Undo and redo, a run of the same change one step |
 | `layout.ts` | `flow` sets lines at one size, balanced, as large as the box allows |

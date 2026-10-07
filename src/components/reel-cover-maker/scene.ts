@@ -84,6 +84,13 @@ export interface LiquidOp {
   seed: number;
   /** What the paste is, its colours aside, for a cache of made layers: a new colour is only light again. */
   key: string;
+  /**
+   * A typical stroke's radius, in pixels of the picture, where it must not
+   * follow the chains: paste piped a stroke at a time (animate.ts) keeps the
+   * finished paste's, so the letters already laid keep their light. Unset,
+   * the chains' own median.
+   */
+  radius?: number;
 }
 
 export type Op =
@@ -109,7 +116,15 @@ export type Op =
   /** The owner's photo, framed to cover the whole picture: drawn by the page, which holds it. */
   | { kind: "photo" }
   /** Ops drawn through an affine map, as a canvas's `transform` takes it: letters the owner has moved. */
-  | { kind: "matrix"; m: Matrix; ops: Op[] };
+  | { kind: "matrix"; m: Matrix; ops: Op[] }
+  /** Ops drawn see-through, `alpha` of their own: an animation's frame, fading them in. */
+  | { kind: "fade"; alpha: number; ops: Op[] }
+  /**
+   * Ops shown left of an edge that leans as handwriting does and sweeps
+   * across the box as `at` goes from 0 to 1, softly, so a word is drawn on
+   * as if written: an animation's frame (animate.ts).
+   */
+  | { kind: "wipe"; x: number; y: number; w: number; h: number; at: number; ops: Op[] };
 
 export interface Scene {
   width: number;
@@ -1535,7 +1550,7 @@ export function liquidOps(scene: Scene): LiquidOp[] {
   const walk = (ops: Op[]) => {
     for (const op of ops) {
       if (op.kind === "liquid") out.push(op);
-      else if (op.kind === "turn" || op.kind === "matrix") walk(op.ops);
+      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "wipe") walk(op.ops);
     }
   };
   walk(scene.ops);

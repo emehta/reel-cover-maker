@@ -59,16 +59,6 @@ export function paletteFor(choice: ColourChoice): Palette {
   };
 }
 
-/**
- * Whether the letters stand clear of the ground by lightness (3:1, WCAG's
- * bar for large text). Instagram keeps colour at half the resolution of
- * lightness, so letters apart from their ground only by hue blur at their
- * edges once posted; the page says so, and leaves the choice to the eye.
- */
-export function standsOut(palette: Palette): boolean {
-  return contrast(palette.ink, palette.bg) >= 3;
-}
-
 export function isGround(value: unknown): value is Ground {
   return value === "light" || value === "dark";
 }
@@ -134,19 +124,6 @@ export function textColour(mode: TextMode, hue: number, shade: number): string |
   if (mode === "white") return SOFT_WHITE;
   if (mode === "colour") return sliderColour(hue, shade);
   return null;
-}
-
-/**
- * The stickers a title is set on: one a paragraph, the two colours taken
- * in turn, so a title of one paragraph shows only the first.
- */
-export function stickersUsed(palette: Palette, paragraphs: number): string[] {
-  return palette.sticker.slice(0, Math.max(1, Math.min(2, paragraphs)));
-}
-
-/** Whether letters in `text` stand clear (3:1) of every sticker they are set on: auto always does. */
-export function readsOnStickers(text: string | null, stickers: readonly string[]): boolean {
-  return text === null || stickers.every((fill) => contrast(text, fill) >= 3);
 }
 
 /** `#RRGGBB` with an alpha, for canvas colours. */

@@ -126,10 +126,14 @@ npm run build   # the static site, in out/
   and redo at its left corner; the background (one button, the sun
   turning to the moon), Shuffle and Reset text in its middle; Animate
   and the phone view at its right corner. Icons only, with their names on
-  hover (`.tip`); a tool that cannot act is disabled, never removed. A
-  warning is a pill on its label row ("Low contrast"), never a line under
-  a control; with one showing, the hex chip's copy icon gives way so the
-  row stays one line.
+  hover (`.tip`); a tool that cannot act is disabled, never removed.
+  There is no contrast warning any more (the owner's ask, 7 Oct: "I
+  don't want the error message for low contrast"). A chosen segment is
+  white in dark mode too, its word dark (the owner's ask, 7 Oct). From
+  900 to 1199 pixels the photo goes under the left column and the page
+  scrolls with the cover sticky; under 900, one column. **No scrollbar
+  shows anywhere** (the owner's ask): every scroller hides its bar, the
+  page's too (`globals.css`).
 - **The shortcuts are behind a ?** beside Download (`Shortcuts.tsx`, the
   owner's ask, 7 Oct), not at the foot of the left card: a card opened by
   the button or by ? (never while typing), closed by either again, by
@@ -143,12 +147,40 @@ npm run build   # the static site, in out/
   Stickery (`CoverInput.textColour`, and the scene cache keys it only for
   Stickery, so a pick builds no other style). A press on a resting slider
   and its drag are one undo step (`pickText` names all three fields).
-- **Animate** is a button only (the owner's ask, 7 Oct: "we will discuss
-  what that means later"): `animating` turns it on and off and nothing
-  reads it yet. From 900 to 1199 pixels the photo goes under the left column
-  and the page scrolls with the cover sticky; under 900, one column.
-  **No scrollbar shows anywhere** (the owner's ask): every scroller hides
-  its bar, the page's too (`globals.css`).
+- **Animate** (the owner's ask, 7 Oct). The sparkle opens a card
+  (`AnimateCard`) of the cover playing in each of its style's
+  animations; Save sets `animated` and the style's pick
+  (`design.animations`), and the sparkle pressed again stops it. Every
+  animation (`animate.ts`, pure, tested) is a function of time on the
+  style's own scene, so its last frame is the cover exactly: an effect is
+  worked out where it is seen and carried into each op's frame through
+  its turns and the placement (`looked`), paste is moved bead by bead
+  (`pasteAt`), piped by length (`chainPart`) with the finished paste's
+  radius pinned (`LiquidOp.radius`) so its light holds, and its seed kept
+  so its gloss does not flicker. Two new ops draw frames: `fade`, and
+  `wipe` (a word written on behind a leaning edge, in clipped bands, no
+  second canvas). Frames are drawn in the page (`animation-frames.ts`,
+  three asked of the workers at a time) and kept as bitmaps to loop
+  (`Motion.tsx`, 24 a second, within a 110 MB budget), drawn again a
+  moment after the cover settles; the preview plays them over the cover,
+  which stays drawn underneath for its file, and stops while the letters
+  are pressed. The video (`video.ts`, `video.worker.ts`) is every frame at
+  full size, 30 a second, then the cover held 1.5 s, encoded by ffmpeg's
+  WebAssembly core (fetched from jsDelivr on first use, pinned 0.12.10):
+  ProRes 4444 with alpha in a .mov with no photo, H.264 MP4 with one.
+  Browsers' own encoders keep no alpha (none offered VP9, AV1 or HEVC
+  with alpha, measured in Chromium and WebKit), and ffmpeg.wasm's own
+  worker cannot be bundled (Turbopack refuses its computed import), so
+  this repo has its own worker. A press on Download video in its first
+  800 ms is a double click, not a stop.
+- **The phone view's posts are the owner's** (the owner's ask, 7 Oct):
+  @eshaan.tm's four reels, newest first, after the cover as they would
+  follow a new post, and its profile picture in the tab bar
+  (`posts/`, downscaled from the covers Instagram served that day; the
+  thumbnail links were read from Vitae's `instagram_media`, never with a
+  secret key). A reel posted since is not there until `posts/` is
+  refreshed. The header's mark is `src/app/icon.svg` itself, so it is
+  the favicon.
 - **Three heights** (the owner's ask, 7 Oct): `--rcm-h-field` (44: a text
   field, a list, a segmented control), `--rcm-h-button` (36: every button,
   the toolbar's, Download, the photo's) and `--rcm-h-mini` (28: a button

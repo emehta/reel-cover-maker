@@ -38,6 +38,11 @@ export function fileName(title: string, format: FormatId): string {
   return `${slug ? `${slug}-` : ""}${suffix}.png`;
 }
 
+/** The same name for an animated cover's video: ".mov" clear, ".mp4" over a photo. */
+export function videoName(title: string, format: FormatId, kind: "mov" | "mp4"): string {
+  return fileName(title, format).replace(/\.png$/u, `.${kind}`);
+}
+
 /** The browsers inside apps, which neither download nor always share. */
 export function isInAppBrowser(userAgent: string): boolean {
   return /\b(Instagram|FBAN|FBAV|FB_IAB|Line\/|musical_ly|BytedanceWebview|TikTok|Snapchat|LinkedInApp|Twitter)\b/i.test(userAgent);

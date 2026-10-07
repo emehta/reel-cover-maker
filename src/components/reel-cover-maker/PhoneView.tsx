@@ -4,6 +4,11 @@ import { BatteryFull, CaretDown, CellSignalFull, FilmSlate, GridNine, House, Lis
 import type { CSSProperties, ReactNode } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { GROUNDS, type Ground } from "@/components/reel-cover-maker/palettes";
+import profile from "@/components/reel-cover-maker/posts/profile.jpg";
+import reel1 from "@/components/reel-cover-maker/posts/reel-1.jpg";
+import reel2 from "@/components/reel-cover-maker/posts/reel-2.jpg";
+import reel3 from "@/components/reel-cover-maker/posts/reel-3.jpg";
+import reel4 from "@/components/reel-cover-maker/posts/reel-4.jpg";
 import { BEZEL, GRID_COLUMNS, GRID_GAP, GRID_ROWS, NAV_BAR, PHONE_HEIGHT, PHONE_WIDTH, SAFE_BOTTOM, SAFE_TOP, SCREEN_RADIUS, TAB_BAR, TABS_BAR, gridArea } from "@/components/reel-cover-maker/phone";
 
 interface Props {
@@ -22,6 +27,20 @@ const HANDLE = "eshaan.tm";
 
 /** The cover's place among the posts drawn: the middle row's middle. */
 const COVER_AT = Math.floor(GRID_ROWS / 2) * GRID_COLUMNS + Math.floor(GRID_COLUMNS / 2);
+
+/**
+ * The owner's own reels on @eshaan.tm, newest first, their covers as
+ * Instagram served them on 7 Oct (all four the account had), shown at the
+ * grid's 3:4 middle as the grid shows a reel. A new post goes first, so
+ * they follow the cover; the grid ends after the last of them. The tiles
+ * before the cover stand for posts still to come.
+ */
+const POSTS = [
+  { src: reel1.src, name: "Apple Iphone 5 Ad (2013)" },
+  { src: reel2.src, name: "Match Group's Hail Mary" },
+  { src: reel3.src, name: "The Grammys (and Instagrams like count)" },
+  { src: reel4.src, name: "Most apps you use are Chocolate-covered Broccoli" },
+];
 
 /**
  * The cover among a profile's posts, on a phone, all of it to scale
@@ -86,17 +105,22 @@ export function PhoneView({ tile, reel, ground, children }: Props) {
               i === COVER_AT ? (
                 <div key={i} className={styles.phoneTile} style={{ background: GROUNDS[ground] }}>
                   {tile}
-                  {reel && (
-                    // A reel is marked at its corner, as the grid marks one.
-                    <svg className={styles.phoneReel} viewBox="0 0 24 24" aria-hidden="true">
-                      <rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" strokeWidth="2" />
-                      <path d="M3 8.5h18M9 3l3 5.5M14.5 3l3 5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-                      <path d="M10 11.6v5.3c0 .5.5.8.9.5l4.2-2.6c.4-.3.4-.8 0-1.1l-4.2-2.6c-.4-.3-.9 0-.9.5Z" fill="currentColor" />
-                    </svg>
-                  )}
+                  {reel && <ReelMark />}
                 </div>
               ) : (
-                <div key={i} className={styles.phoneTile} data-tone={(i * 7) % 4} />
+                i < COVER_AT ? (
+                  <div key={i} className={styles.phoneTile} data-tone={(i * 7) % 4} />
+                ) : POSTS[i - COVER_AT - 1] ? (
+                  <div key={i} className={styles.phoneTile}>
+                    {/* A reel's cover, at the grid's window of it: next/image has nothing to add to a picture this small. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img className={styles.phonePost} src={POSTS[i - COVER_AT - 1].src} alt="" />
+                    <ReelMark />
+                  </div>
+                ) : (
+                  // Past the last post, the profile has nothing more.
+                  <div key={i} className={styles.phoneTile} data-empty="" />
+                )
               ),
             )}
           </div>
@@ -106,11 +130,24 @@ export function PhoneView({ tile, reel, ground, children }: Props) {
           <MagnifyingGlass />
           <PlusSquare />
           <FilmSlate />
-          <span className={styles.phoneMe} />
+          {/* The owner's own picture, in the ring the profile's tab is chosen by. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className={styles.phoneMe} src={profile.src} alt="" />
         </div>
         <span className={styles.phoneHome} aria-hidden="true" />
         {children}
       </div>
     </div>
+  );
+}
+
+/** A reel, marked at its post's corner as the grid marks one. */
+function ReelMark() {
+  return (
+    <svg className={styles.phoneReel} viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M3 8.5h18M9 3l3 5.5M14.5 3l3 5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M10 11.6v5.3c0 .5.5.8.9.5l4.2-2.6c.4-.3.4-.8 0-1.1l-4.2-2.6c-.4-.3-.9 0-.9.5Z" fill="currentColor" />
+    </svg>
   );
 }
