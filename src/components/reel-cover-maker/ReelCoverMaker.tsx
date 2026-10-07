@@ -8,7 +8,7 @@ import { Camera } from "@/components/reel-cover-maker/Camera";
 import { CoverSurface } from "@/components/reel-cover-maker/CoverSurface";
 import { loadDesign, saveDesign, type Design } from "@/components/reel-cover-maker/design";
 import { Dropdown } from "@/components/reel-cover-maker/Dropdown";
-import { PLAIN_FACES } from "@/components/reel-cover-maker/faces";
+import { PLAIN_FACES, type FaceId } from "@/components/reel-cover-maker/faces";
 import { facesFor, fontCss, fontsSnapshot, interTight, measurerFor, requestFonts, subscribeFonts } from "@/components/reel-cover-maker/fonts";
 import { FORMATS, formatById, type Format } from "@/components/reel-cover-maker/formats";
 import { GRAIN_TILE, grainPixels } from "@/components/reel-cover-maker/grain";
@@ -51,6 +51,13 @@ const PREPARE_DELAY_MS = 250;
 const THUMB_WIDTH = 240;
 
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
+
+/** The type a style sets its words in where it offers no choice of lettering, shown where the choice would be. */
+const FIXED_FACES: Record<"editorial" | "echo" | "mono", { face: FaceId; name: string }> = {
+  editorial: { face: "serif", name: "Instrument Serif" },
+  echo: { face: "wide", name: "Archivo Black" },
+  mono: { face: "mono", name: "Space Mono" },
+};
 
 /** The longest side a photo is kept at: sharp at a reel cover's size zoomed in twice, without holding a phone camera's 48 megapixels. */
 const PHOTO_SIDE = 2560;
@@ -101,7 +108,7 @@ async function decodePhoto(file: Blob): Promise<Photo | null> {
   ctx.drawImage(source, 0, 0, w, h);
   if (source instanceof ImageBitmap) source.close();
   if (url) URL.revokeObjectURL(url);
-  const small = keptSize(w, h, 192);
+  const small = keptSize(w, h, 640);
   const thumbCanvas = document.createElement("canvas");
   thumbCanvas.width = small.w;
   thumbCanvas.height = small.h;
@@ -759,21 +766,61 @@ export default function ReelCoverMaker() {
             inputRef={inputRef}
             placeholder={PLACEHOLDER_TITLE}
             maxLength={MAX_TITLE_LENGTH}
+            side={
+              <button type="button" className={styles.toggle} onClick={shuffle} title="Draw the letters another way">
+                <Shuffle size={16} weight="bold" aria-hidden="true" />
+                Shuffle
+              </button>
+            }
           >
             {scene?.truncated && <p className={styles.note}>Too long for the cover: the end is cut.</p>}
             {layers.failed && <p className={styles.note}>This style could not be drawn here. Try another.</p>}
           </TextField>
 
-          <PhotoControls
-            thumb={photo?.thumb ?? null}
-            frame={design.photoFrame}
-            adjust={design.photoAdjust}
-            onFile={(file) => void takePhoto(file)}
-            onCamera={openCamera}
-            onRemove={removePhoto}
-            onFrame={(photoFrame) => update({ photoFrame })}
-            onAdjust={(photoAdjust) => update({ photoAdjust })}
-          />
+          {/* The style's own type: one row, the same height for every style, so nothing under it moves when another is picked. */}
+          <div className={styles.letteringRow}>
+            {design.style === "stickery" ? (
+              <>
+                <Dropdown
+                  label="Lettering"
+                  value={design.lettering}
+                  options={LETTERINGS.filter((l) => l.chosen || l.id === design.lettering).map((l) => ({
+                    value: l.id,
+                    label: l.name,
+                    font: l.face ? fontCss(l.face, 19) : undefined,
+                  }))}
+                  onChange={(lettering) => update({ lettering })}
+                />
+                <Dropdown
+                  label="Plain words"
+                  value={design.plainFace}
+                  options={PLAIN_FACES.filter((f) => f.offered || f.id === design.plainFace).map((f) => ({
+                    value: f.id,
+                    label: f.name,
+                    font: fontCss(f.id, 16),
+                  }))}
+                  onChange={(plainFace) => update({ plainFace })}
+                />
+              </>
+            ) : design.style === "pasty" || design.style === "pasty-flat" ? (
+              <Dropdown
+                label="Lettering"
+                value={design.pastyLettering}
+                options={PASTY_LETTERINGS.map((l) => ({ value: l.id, label: l.name }))}
+                onChange={(pastyLettering) => update({ pastyLettering })}
+              />
+            ) : (
+              <div className={styles.dropdown}>
+                <span className={styles.label} id="rcm-fixed-face">
+                  Lettering
+                </span>
+                {/* Set by the style, not chosen: shown in its own type, as a fact. */}
+                <span className={styles.fixedFace} aria-labelledby="rcm-fixed-face" style={{ font: fontCss(FIXED_FACES[design.style].face, 17) }}>
+                  {FIXED_FACES[design.style].name}
+                </span>
+              </div>
+            )}
+          </div>
 
           <div className={styles.field}>
             <div className={styles.labelRow}>
@@ -940,73 +987,35 @@ export default function ReelCoverMaker() {
             </div>
           </div>
 
-          <div className={styles.styleBlock}>
-            <div className={styles.styleBar}>
-              <span className={styles.label} id="rcm-style-label">
-                Style
-              </span>
-              {/* The chosen style's own choices, beside Shuffle: one row, whatever the style, so nothing moves when another is picked. */}
-              <div className={styles.styleChoices}>
-                {design.style === "stickery" && (
-                  <>
-                    <Dropdown
-                      compact
-                      label="Lettering"
-                      value={design.lettering}
-                      options={LETTERINGS.filter((l) => l.chosen || l.id === design.lettering).map((l) => ({
-                        value: l.id,
-                        label: l.name,
-                        font: l.face ? fontCss(l.face, 19) : undefined,
-                      }))}
-                      onChange={(lettering) => update({ lettering })}
-                    />
-                    <Dropdown
-                      compact
-                      label="Plain words"
-                      value={design.plainFace}
-                      options={PLAIN_FACES.filter((f) => f.offered || f.id === design.plainFace).map((f) => ({
-                        value: f.id,
-                        label: f.name,
-                        font: fontCss(f.id, 16),
-                      }))}
-                      onChange={(plainFace) => update({ plainFace })}
-                    />
-                  </>
-                )}
-                {(design.style === "pasty" || design.style === "pasty-flat") && (
-                  <Dropdown
-                    compact
-                    label="Lettering"
-                    value={design.pastyLettering}
-                    options={PASTY_LETTERINGS.map((l) => ({ value: l.id, label: l.name }))}
-                    onChange={(pastyLettering) => update({ pastyLettering })}
-                  />
-                )}
-                <button type="button" className={`${styles.toggle} ${styles.shuffle}`} onClick={shuffle} title="Draw the letters another way" aria-label="Shuffle">
-                  <Shuffle size={16} weight="bold" aria-hidden="true" />
-                  <span className={styles.shuffleLabel}>Shuffle</span>
-                </button>
-              </div>
-            </div>
-            <div ref={stylesRef} className={styles.styles} role="radiogroup" aria-labelledby="rcm-style-label">
-              {STYLES.map((style, i) => (
-                <label key={style.id} className={styles.style} data-chosen={design.style === style.id || undefined}>
-                  <input
-                    type="radio"
-                    name="rcm-style"
-                    className={styles.radio}
-                    checked={design.style === style.id}
-                    onChange={() => update({ style: style.id })}
-                  />
-                  <span className={styles.thumb}>
-                    <Thumb scene={thumbs?.[i] ?? null} format={format} slot={`thumb-${style.id}`} photoFor={photoFor} />
-                  </span>
-                  <span className={styles.styleName}>{style.name}</span>
-                </label>
-              ))}
-            </div>
+          <div ref={stylesRef} className={styles.styles} role="radiogroup" aria-label="Style">
+            {STYLES.map((style, i) => (
+              <label key={style.id} className={styles.style} data-chosen={design.style === style.id || undefined}>
+                <input
+                  type="radio"
+                  name="rcm-style"
+                  className={styles.radio}
+                  checked={design.style === style.id}
+                  onChange={() => update({ style: style.id })}
+                />
+                <span className={styles.thumb}>
+                  <Thumb scene={thumbs?.[i] ?? null} format={format} slot={`thumb-${style.id}`} photoFor={photoFor} />
+                </span>
+                <span className={styles.styleName}>{style.name}</span>
+              </label>
+            ))}
           </div>
         </section>
+
+        <PhotoControls
+          thumb={photo?.thumb ?? null}
+          frame={design.photoFrame}
+          adjust={design.photoAdjust}
+          onFile={(file) => void takePhoto(file)}
+          onCamera={openCamera}
+          onRemove={removePhoto}
+          onFrame={(photoFrame) => update({ photoFrame })}
+          onAdjust={(photoAdjust) => update({ photoAdjust })}
+        />
       </div>
 
       {cameraOpen && (

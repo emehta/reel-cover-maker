@@ -89,10 +89,10 @@ npm run build   # the static site, in out/
   whose letters are clear, under a mirror of the same text in plain and
   bold runs; bold is a text stroke, never a bolder weight, which would be
   wider and put the caret out of line. Keep the two set alike to the pixel
-  (`.input, .mirror`). Cmd+B and the B button toggle bold (the button
-  holds back mousedown, never pointerdown, which loses WebKit's tap);
-  typing carries bold on by `editMarked` and never across a space; typed
-  `*word*` pairs become bold by `convertStars`.
+  (`.input, .mirror`). Cmd+B toggles bold; there is no B button (the
+  owner asked for none, 7 Oct). Typing carries bold on by `editMarked` and
+  never across a space; typed `*word*` pairs become bold by
+  `convertStars`.
 - **One undo for the whole cover** (`history.ts`): every `update` is a
   step unless told otherwise (a photo taken, which undo cannot bring back,
   seals instead), runs of the same fields within 800 ms are one step, and
@@ -106,15 +106,20 @@ npm run build   # the static site, in out/
   Drip.** A design saved before `DESIGN_VERSION` 2 still on Drip, the old
   default, takes Goo Teardrop. The tests' `cover` helper names Drip, since
   Pasty's Drip tests were written on it.
-- **The controls, and nothing moves** (the owner's ask, 7 Oct): Text,
-  Photo, Colour and Size on the left; on the right the cover at a height
-  set by the window alone (`.stage`), never by the size or style, then the
-  styles in one row under it (a vertical wheel scrolls it), with the chosen
-  style's own choices as compact `Dropdown`s beside Shuffle on the row
-  above them, so picking a style changes nothing's place. Over the cover:
-  undo and redo, Light and Dark, and Reset text once the text is moved. A
-  warning is a pill on its label row ("Low contrast"), never a line under
-  a control.
+- **Three columns, and nothing moves** (the owner's asks, 7 Oct): on the
+  left Text (Shuffle on its label row), the lettering row (`.letteringRow`:
+  Stickery's two lists, Pasty's one, or the fixed style's typeface, always
+  one row), Colour and Size; in the middle the cover at a height set by the
+  window alone (`.stage`), never by the size or style, and the styles in
+  one row under it; on the right the photo (`PhotoControls`): a slot of one
+  height, empty or full, and zoom and adjustments shown, disabled, before
+  there is a photo, so adding one moves nothing. Over the cover: undo and
+  redo, Light and Dark, and Reset text once the text is moved. A warning is
+  a pill on its label row ("Low contrast"), never a line under a control.
+  From 900 to 1199 pixels the photo goes under the left column and the page
+  scrolls with the cover sticky; under 900, one column. **No scrollbar
+  shows anywhere** (the owner's ask): every scroller hides its bar, the
+  page's too (`globals.css`).
 - **The photo never leaves the browser.** It is kept in IndexedDB
   (`photo-store.ts`), framed by `photoFrame` and adjusted by `photoAdjust`
   in the design. `photo-gl.ts` and `photo.ts`'s tables are the same

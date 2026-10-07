@@ -11,6 +11,15 @@ body {
   background: #f3f2ef;
 }
 
+/* The page scrolls on a phone, with no bar showing (the owner's ask, 7 Oct). */
+html {
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-color-scheme: dark) {
   html,
   body {

@@ -1,7 +1,6 @@
 "use client";
 
-import { TextB } from "@phosphor-icons/react";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { boldRuns, convertStars, editMarked, isBold, readMarked, toggleBold, writeMarked, type Marked } from "@/components/reel-cover-maker/title";
 
@@ -17,6 +16,8 @@ interface Props {
   /** Shown, bold and all, while the field is empty. */
   placeholder: string;
   maxLength: number;
+  /** Beside the field's label: what acts on the text as drawn (Shuffle). */
+  side?: ReactNode;
   /** Under the field: a note the text needs (too long for the cover, a style that could not be drawn). */
   children?: ReactNode;
 }
@@ -26,10 +27,10 @@ const isApple = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform) || navigat
 
 /**
  * The Text field: the words as typed, with bold, which is Stickery's
- * funky words. Select words and press Cmd+B (Ctrl+B elsewhere), or the B
- * button over the field, to make them bold or plain again; with nothing
- * selected, what is typed next is. Words typed between stars turn bold as
- * the second star goes in, as they always did.
+ * funky words. Select words and press Cmd+B (Ctrl+B elsewhere) to make
+ * them bold or plain again; with nothing selected, what is typed next is.
+ * Words typed between stars turn bold as the second star goes in, as they
+ * always did. No button for it: the owner asked for none (7 Oct).
  *
  * A textarea does the typing, so the keyboard, autocorrect, spelling and
  * the caret are the browser's own; its letters are drawn clear, and the
@@ -37,7 +38,7 @@ const isApple = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform) || navigat
  * by a stroke round the letters rather than a bolder face, which would be
  * wider and put every letter after it out of line with the caret.
  */
-export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, placeholder, maxLength, children }: Props) {
+export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, placeholder, maxLength, side, children }: Props) {
   const marked = readMarked(value);
   const mirrorRef = useRef<HTMLDivElement>(null);
   /** Cmd+B with nothing selected: whether what is typed at that caret is bold. */
@@ -47,9 +48,7 @@ export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, place
   /** What this field last sent, to tell a change it made from one made elsewhere (an undo). */
   const sent = useRef(value);
   const shownText = useRef(marked.text);
-  const [boldOn, setBoldOn] = useState(false);
   const apple = useSyncExternalStore(subscribeNothing, isApple, () => true);
-  const shortcut = apple ? "⌘B" : "Ctrl+B";
 
   const send = (next: Marked) => {
     const markup = writeMarked(next.text, next.marks);
@@ -57,12 +56,11 @@ export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, place
     onChange(markup);
   };
 
-  const readSelection = (current: Marked) => {
+  /** What Cmd+B with nothing selected set holds only while the caret stays where it was pressed. */
+  const readSelection = () => {
     const el = inputRef.current;
-    if (!el) return;
     const t = typing.current;
-    if (t && (t.at !== el.selectionStart || el.selectionStart !== el.selectionEnd)) typing.current = null;
-    setBoldOn(typing.current ? typing.current.bold : isBold(current, el.selectionStart, el.selectionEnd));
+    if (el && t && (t.at !== el.selectionStart || el.selectionStart !== el.selectionEnd)) typing.current = null;
   };
 
   const change = (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -81,7 +79,6 @@ export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, place
       pending.current = { start: stars.moved(el.selectionStart), end: stars.moved(caret) };
     }
     send(next);
-    setBoldOn(isBold(next, pending.current?.start ?? el.selectionStart, pending.current?.end ?? caret));
   };
 
   const toggle = () => {
@@ -92,13 +89,10 @@ export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, place
     if (start === end) {
       const now = typing.current?.at === start ? typing.current.bold : isBold(marked, start, start);
       typing.current = { at: start, bold: !now };
-      setBoldOn(!now);
       return;
     }
-    const next = toggleBold(marked, start, end);
     pending.current = { start, end };
-    send(next);
-    setBoldOn(isBold(next, start, end));
+    send(toggleBold(marked, start, end));
   };
 
   const key = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -156,19 +150,7 @@ export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, place
         <label className={styles.label} htmlFor={id}>
           Text
         </label>
-        <button
-          type="button"
-          className={styles.boldButton}
-          aria-pressed={boldOn}
-          aria-label="Bold"
-          aria-keyshortcuts="Meta+B Control+B"
-          title={`Bold: Stickery's funky words (${shortcut})`}
-          // Pressing it leaves the field focused and its selection as it is. Mousedown, not pointerdown: WebKit drops the tap's click when a pointerdown is held back.
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={toggle}
-        >
-          <TextB size={17} weight="bold" aria-hidden="true" />
-        </button>
+        {side}
       </div>
       <div className={styles.textBox}>
         <textarea
@@ -178,7 +160,8 @@ export function TextField({ id, value, onChange, onUndo, onRedo, inputRef, place
           value={marked.text}
           onChange={change}
           onKeyDown={key}
-          onSelect={() => readSelection(marked)}
+          onSelect={readSelection}
+          aria-keyshortcuts={apple ? "Meta+B" : "Control+B"}
           onScroll={(event) => {
             if (mirrorRef.current) mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
           }}

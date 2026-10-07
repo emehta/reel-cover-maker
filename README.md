@@ -8,25 +8,30 @@ Use it at **[emehta.github.io/reel-cover-maker](https://emehta.github.io/reel-co
 
 ## Using it
 
-The text, photo, colour and size are on the left; on the right, the cover,
-and under it the styles, the chosen style's own choices and Shuffle (on a
-phone, the cover and the styles on top, so they stay in sight while you
-type). The cover keeps one height whatever the size or style, so nothing
-under it ever moves when you pick another.
+Three columns: on the left the text (with Shuffle), its lettering, the
+colour and the size; in the middle the cover, the styles in a row under
+it; on the right the photo and its adjustments. In a narrower window the
+photo goes under the left column and the page scrolls past it while the
+cover stays in view; on a phone it is the cover and styles, then the text,
+then the photo. The cover keeps one height whatever the size or style,
+and every control keeps its place: nothing moves when another style, size
+or photo is picked. No scrollbar shows anywhere.
 
 - **Type the text.** It is set as large as the cover allows. A line break
   you type is kept.
-- **Add a photo** under the text, if you want one behind it: **Upload** one,
-  **Take photo** with the computer's camera (on a phone, the camera app
-  opens), drop a picture on the cover, or paste one. It fills the whole
-  cover, cut to fit by its shorter side. Then:
+- **Add a photo** in the right column, if you want one behind it:
+  **Upload** one, **Take photo** with the computer's camera (on a phone,
+  the camera app opens), drop a picture on the photo slot or the cover, or
+  paste one. It fills the whole cover, cut to fit by its shorter side, and
+  shows in the slot with **Replace** and a new photo over it, and Mirror,
+  Fit and Remove beside its label. Then:
   - **Drag it** on the cover to move it, and **scroll**, pinch with two
     fingers or use the **zoom slider** to zoom in, up to five times, about
     the point under the pointer or between your fingers. It never runs off
     an edge. **Double-click** it, or press the fit button, to see it whole
     again; the mirror button flips it.
-  - **Adjust** opens exposure, brightness, contrast, saturation,
-    temperature, tint, hue and dim, each reading what it does ("+0.5 EV",
+  - **Adjust**, always open under it: exposure, brightness, contrast,
+    saturation, temperature, tint, hue and dim, each reading what it does ("+0.5 EV",
     "-12%"), each back to nothing at a double click, all of them at once
     with Reset. They are worked out on the GPU, so a slider keeps up with
     your finger.
@@ -34,8 +39,7 @@ under it ever moves when you pick another.
     and is still there next time. Pasty's gel and paste cast their shadow
     onto it.
 - **Make a word bold** to make it Stickery's funky word: select it and
-  press **Cmd+B** (Ctrl+B on Windows), or the **B** over the field, as in
-  any editor. The field shows it bold. Press again to make it plain; with
+  press **Cmd+B** (Ctrl+B on Windows), as in any editor. The field shows it bold. Press again to make it plain; with
   nothing selected, Cmd+B makes what you type next bold or plain. Bold
   carries on as you type the end of a word, and stops at a space. Words
   typed between stars turn bold too, the moment the second star is typed
@@ -82,8 +86,9 @@ under it ever moves when you pick another.
     no light, shadow or texture at all.
   - Pasty and Pasty Flat letter in Goo Teardrop (the default) or Goo Even,
     Stickery's drawn hands, or in Drip, picked from their Lettering list.
-  - A style's own choices (Stickery's Lettering and Plain words, Pasty's
-    Lettering) sit on the row over the styles, beside Shuffle.
+  - A style's own choices sit under the text: Stickery's Lettering and
+    Plain words, Pasty's Lettering, and for the other three the typeface
+    they are set in, in one row of the same height for every style.
   - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
     outline, and a typewriter with its cursor.
 - **Shuffle** draws the letters another way: every random choice a style
@@ -307,7 +312,7 @@ Only the plain face chosen is loaded.
 | `CoverSurface.tsx` | The cover as an illustration program's canvas: selecting, moving, scaling and turning the text, and framing the photo |
 | `photo.ts` | The photo's framing and adjustments, as arithmetic |
 | `photo-gl.ts`, `photo-store.ts` | The adjustments on the GPU, and the photo kept in IndexedDB |
-| `PhotoControls.tsx`, `Camera.tsx` | The Photo field, and the computer's camera |
+| `PhotoControls.tsx`, `Camera.tsx` | The photo's column (its slot, zoom and adjustments), and the computer's camera |
 | `Dropdown.tsx` | The Lettering and Plain words lists: a select of the maker's own, each option in its own type |
 | `paint.ts` | Draws a scene on a canvas at any scale, from any origin |
 | `colour.ts`, `palettes.ts` | The sliders' colours in OKLCH, the roles a style reads, and WCAG contrast |

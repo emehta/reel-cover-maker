@@ -142,8 +142,9 @@
 .main {
   flex: 1;
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 40px;
+  grid-template-columns: 300px minmax(0, 1fr) 300px;
+  grid-template-areas: "left centre right";
+  gap: 36px;
   min-height: 0;
   padding: 4px max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
     max(24px, env(safe-area-inset-left));
@@ -155,6 +156,7 @@
  * chosen, so the row of styles under it never moves.
  */
 .preview {
+  grid-area: centre;
   display: flex;
   flex-direction: column;
   justify-content: safe center;
@@ -177,36 +179,6 @@
   place-items: center;
 }
 
-/* Under the cover: the styles, their own choices and Shuffle on the row above them. */
-.styleBlock {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  max-width: 640px;
-  margin: 0 auto;
-}
-
-.styleBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 34px;
-}
-
-.styleChoices {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 0;
-}
-
-.styleChoices .shuffle {
-  flex: none;
-  height: 34px;
-}
 
 .frame {
   position: relative;
@@ -483,6 +455,7 @@
 /* Controls. */
 
 .panel {
+  grid-area: left;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -492,6 +465,36 @@
   /* Room for the focus rings the scroller would otherwise clip. */
   margin: -4px;
   padding: 4px;
+  scrollbar-width: none;
+}
+
+.panel::-webkit-scrollbar {
+  display: none;
+}
+
+/* The style's own type, under the text: two choices for Stickery, one for Pasty, the style's face for the rest, always one row. */
+.letteringRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* One choice alone takes the whole row. */
+.letteringRow > :only-child {
+  grid-column: 1 / -1;
+}
+
+.fixedFace {
+  display: flex;
+  align-items: center;
+  height: 46px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--rcm-inset);
+  color: var(--rcm-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .field {
@@ -589,39 +592,6 @@
   -webkit-text-stroke: 0.75px currentColor;
 }
 
-/* The B over the field: Stickery's funky words. */
-.boldButton {
-  appearance: none;
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--rcm-line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--rcm-text);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
-}
-
-.boldButton:hover {
-  border-color: var(--rcm-muted);
-}
-
-.boldButton[aria-pressed="true"] {
-  border-color: var(--rcm-strong);
-  background: var(--rcm-strong);
-  color: var(--rcm-bg);
-}
-
-.boldButton:focus-visible {
-  outline: 2px solid var(--rcm-focus);
-  outline-offset: 2px;
-}
-
 /* The colour's label row: a word on its contrast, then the colour. */
 .colourSide {
   display: inline-flex;
@@ -678,8 +648,10 @@
 }
 
 /* The styles in one row, scrolled sideways, the next one showing at the edge. */
+/* Under the cover, centred under it: each thumbnail shares the width, from 80 to 104 pixels, and the row scrolls sideways only where six cannot fit. */
 .styles {
   display: flex;
+  justify-content: safe center;
   gap: 10px;
   margin: 0 -4px;
   padding: 4px;
@@ -696,7 +668,9 @@
 
 .style {
   position: relative;
-  flex: 0 0 96px;
+  flex: 1 1 0;
+  max-width: 104px;
+  min-width: 80px;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -877,48 +851,6 @@
   border-color: var(--rcm-muted);
 }
 
-/* In a row of controls: the height of a button, its label inside it. */
-.dropdownCompact {
-  flex-direction: row;
-  gap: 0;
-  min-width: 0;
-}
-
-.dropdownCompact .dropdownButton {
-  justify-content: flex-start;
-  width: auto;
-  max-width: 230px;
-  height: 34px;
-  padding: 0 9px 0 11px;
-  border-radius: 8px;
-  font-size: 14px;
-}
-
-.dropdownCompact .dropdownValue {
-  line-height: 1;
-}
-
-.dropdownCompact .dropdownCaret {
-  margin-left: 2px;
-}
-
-.dropdownPrefix {
-  flex: none;
-  color: var(--rcm-muted);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.dropdownPrefixHidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 
 .dropdownButton[aria-expanded="true"] {
   border-color: var(--rcm-strong);
@@ -1018,14 +950,67 @@
   outline-offset: 1px;
 }
 
-/* The photo: two ways to add one, then its picture, its tools, its zoom and its adjustments. */
-.photoAdd {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 8px;
-  border: 1.5px dashed var(--rcm-line);
+/*
+ * The photo, in its own column beside the cover: a slot of one height,
+ * empty (a place to drop one, Upload, Take photo) or showing the photo
+ * with Replace and a new photo over it; then its zoom and adjustments,
+ * there before a photo is, waiting, so nothing moves when one is added.
+ */
+.photoPanel {
+  grid-area: right;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  margin: -4px;
+  padding: 4px;
+  scrollbar-width: none;
+}
+
+.photoPanel::-webkit-scrollbar {
+  display: none;
+}
+
+.photoSlot {
+  position: relative;
+  height: 150px;
+  overflow: hidden;
   border-radius: 12px;
+  background: var(--rcm-inset);
+  box-shadow: inset 0 0 0 1px var(--rcm-line);
+  transition: box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.photoSlot[data-empty] {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed var(--rcm-line);
+}
+
+.photoSlot[data-over] {
+  border-color: var(--rcm-focus);
+  background: color-mix(in srgb, var(--rcm-focus) 8%, transparent);
+  box-shadow: inset 0 0 0 2px var(--rcm-focus);
+}
+
+.photoAdd {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.photoAddIcon {
+  color: var(--rcm-muted);
+}
+
+.photoAddButtons {
+  display: flex;
+  gap: 8px;
 }
 
 .photoButton {
@@ -1033,47 +1018,125 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 44px;
+  gap: 7px;
+  height: 36px;
   margin: 0;
-  padding: 0 12px;
-  border: 0;
+  padding: 0 13px;
+  border: 1px solid var(--rcm-line);
   border-radius: 8px;
-  background: var(--rcm-inset);
+  background: var(--rcm-surface);
   color: var(--rcm-text);
   font: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease;
+}
+
+.photoButton:hover {
+  border-color: var(--rcm-muted);
+}
+
+.photoPicture {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Over the photo, at its foot: dark glass, so they read on any picture. */
+.photoOver {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.glassButton {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  margin: 0;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(18, 18, 18, 0.58);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background-color 0.15s ease;
 }
 
-.photoButton:hover {
-  background: color-mix(in srgb, var(--rcm-inset) 100%, var(--rcm-text) 6%);
+.glassButton[aria-label] {
+  width: 32px;
+  padding: 0;
 }
 
-.photoRow {
+.glassButton:hover {
+  background: rgba(18, 18, 18, 0.75);
+}
+
+/* Mirror, Fit and Remove, on the Photo label's row. */
+.photoActions {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+  gap: 4px;
 }
 
-.photoThumb {
-  flex: none;
-  width: 56px;
-  height: 56px;
-  border-radius: 8px;
-  object-fit: cover;
-  box-shadow: 0 0 0 1px var(--rcm-line);
+.smallIcon {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--rcm-line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--rcm-text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
-.photoTools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
+.smallIcon:hover:not(:disabled) {
+  border-color: var(--rcm-muted);
+}
+
+.smallIcon[aria-pressed="true"] {
+  border-color: var(--rcm-strong);
+  background: var(--rcm-strong);
+  color: var(--rcm-bg);
+}
+
+.smallIcon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.smallIcon.danger:hover {
+  border-color: var(--rcm-danger);
+  color: var(--rcm-danger);
+}
+
+.photoButton:focus-visible,
+.glassButton:focus-visible,
+.smallIcon:focus-visible,
+.iconButton:focus-visible,
+.linkButton:focus-visible {
+  outline: 2px solid var(--rcm-focus);
+  outline-offset: 2px;
 }
 
 .iconButton {
@@ -1106,27 +1169,6 @@
 .iconButton:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-.iconButton.danger:hover {
-  border-color: var(--rcm-danger);
-  color: var(--rcm-danger);
-}
-
-.photoButton:focus-visible,
-.iconButton:focus-visible,
-.disclosure:focus-visible,
-.linkButton:focus-visible {
-  outline: 2px solid var(--rcm-focus);
-  outline-offset: 2px;
-}
-
-.zoomRow {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 44px;
-  align-items: center;
-  gap: 10px;
-  color: var(--rcm-muted);
 }
 
 .value {
@@ -1206,14 +1248,6 @@
   border-radius: 4px;
 }
 
-.adjustHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.disclosure,
 .linkButton {
   appearance: none;
   display: inline-flex;
@@ -1242,23 +1276,6 @@
   color: var(--rcm-text);
 }
 
-.disclosureCaret {
-  color: var(--rcm-muted);
-  transition: transform 0.15s ease;
-}
-
-.disclosure[aria-expanded="true"] .disclosureCaret {
-  transform: rotate(90deg);
-}
-
-/* A mark beside Adjust while anything is adjusted, so it is not forgotten. */
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--rcm-focus);
-}
-
 .adjustList {
   display: flex;
   flex-direction: column;
@@ -1276,6 +1293,15 @@
 
 .adjustRow .thinSlider {
   grid-column: 1 / -1;
+}
+
+/* Waiting for a photo. */
+.adjustRow[data-off] {
+  opacity: 0.4;
+}
+
+.adjustRow[data-off] .thinSlider {
+  cursor: default;
 }
 
 .adjustName {
@@ -1446,6 +1472,44 @@
   }
 }
 
+/*
+ * A laptop's narrower window: the photo under the text's controls, the
+ * page scrolling past them (no bar) while the cover stays in view beside
+ * them, rather than a column cut off part way down a slider.
+ */
+@media (min-width: 900px) and (max-width: 1199.98px) {
+  .root {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .main {
+    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "left centre"
+      "right centre";
+    row-gap: 28px;
+  }
+
+  .panel,
+  .photoPanel {
+    overflow: visible;
+  }
+
+  .preview {
+    position: sticky;
+    top: 12px;
+    align-self: start;
+    grid-row: 1 / span 2;
+    overflow: visible;
+  }
+
+  .stage {
+    height: clamp(300px, calc(100dvh - 330px), 560px);
+  }
+}
+
 /* A phone or a narrow window: preview, then controls, the page scrolling. */
 @media (max-width: 899.98px) {
   .header {
@@ -1455,25 +1519,22 @@
 
   .main {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "centre"
+      "left"
+      "right";
     gap: 22px;
     padding: 0 max(16px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom))
       max(16px, env(safe-area-inset-left));
   }
 
-  .preview {
-    order: -1;
-  }
-
-  .preview {
+  .preview,
+  .photoPanel {
     overflow: visible;
   }
 
   .stage {
     height: min(46svh, 500px);
-  }
-
-  .styleBlock {
-    max-width: none;
   }
 
   .panel {
@@ -1488,27 +1549,11 @@
   }
 
   .style {
-    flex-basis: 88px;
+    flex: 0 0 88px;
+    max-width: none;
   }
 }
 
-/* A phone: the choices' labels go, their values and Shuffle's arrows say enough. */
-@media (max-width: 519.98px) {
-  .dropdownPrefix,
-  .shuffleLabel {
-    display: none;
-  }
-
-  .styleChoices .shuffle {
-    width: 34px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .dropdownCompact .dropdownButton {
-    max-width: 150px;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .save,
@@ -1518,8 +1563,10 @@
   .dropdownCaret,
   .checkBox,
   .photoButton,
+  .photoSlot,
+  .glassButton,
+  .smallIcon,
   .iconButton,
-  .disclosureCaret,
   .shutter {
     transition: none;
   }
