@@ -6,69 +6,97 @@
  * light), never recorded and never redrawn by hand: every cover in it is
  * one the maker makes from the same title and colour.
  *
- * One take, 1600 by 2000 (twice the card's 800 by 1000, the 4:5 of every
- * card on the page), the reel shown close as the feed shows it, its middle
- * 4:5: "day one" in blue gel; it clears, "rate my setup" is typed and
- * "setup" made bold, as the maker marks Stickery's script word; the sticker
- * is made; the camera draws back until the cover is the newest post of a
- * feed of nine, its grid window, holds, and goes back in; it clears, "day
- * one" is typed and piped along its own strokes in the order they are
- * written, its drips falling after; and the last frame is the first.
+ * One take, 1600 by 2000 (twice the card's 800 by 1000), about ten
+ * seconds: an iPhone with a profile's grid of reel covers, drawn as the
+ * maker's own phone view draws it (phone.ts, dark); the camera dives into
+ * the newest post; it swipes away, and "day in my life" is typed; it swipes up
+ * through all six styles, each in its own colour, as reels swipe; the
+ * last, Stickery, is the post the camera dives back out to; and the last
+ * frame is the first.
+ *
+ * Close in, the card shows the reel as the feed does, its middle 4:5,
+ * with the grid's 3:4 window a whole 67 pixels past the card's top, so a
+ * post drawn there is the card pixel for pixel.
  *
  * `window.STAGE.seek(t)` draws the frame at t seconds; a renderer reads the
  * canvas after each.
  */
 
-import { useEffect, useRef } from "react";
+import {
+  BatteryFull,
+  CaretDown,
+  CellSignalFull,
+  FilmSlate,
+  GridNine,
+  House,
+  List,
+  MagnifyingGlass,
+  PlusSquare,
+  UserSquare,
+  WifiHigh,
+} from "@phosphor-icons/react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { FaceId } from "@/components/reel-cover-maker/faces";
 import { facesFor, fontCss, fontsSnapshot, interTight, measurerFor, requestFonts } from "@/components/reel-cover-maker/fonts";
-import type { Bead, Chain } from "@/components/reel-cover-maker/liquid";
 import { shadeOnGpu } from "@/components/reel-cover-maker/liquid-gl";
 import { liquidField, type LiquidField, type LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
 import { paint, type PaintOptions } from "@/components/reel-cover-maker/paint";
-import { GROUNDS, paletteFor, rgb, type Ground } from "@/components/reel-cover-maker/palettes";
+import { GROUNDS, type Ground } from "@/components/reel-cover-maker/palettes";
 import {
-  buildScene,
-  letteringFace,
-  liquidOps,
-  type CoverInput,
-  type LetteringId,
-  type LiquidOp,
-  type Op,
-  type PastyLetteringId,
-  type Scene,
-  type StyleId,
-} from "@/components/reel-cover-maker/scene";
-import { clamp01, easeOut, glide, keystrokes, sine, span, typedCount } from "@/cover/timeline";
+  BEZEL,
+  GRID_COLUMNS,
+  GRID_GAP,
+  GRID_ROWS,
+  NAV_BAR,
+  PHONE_HEIGHT,
+  PHONE_WIDTH,
+  SAFE_BOTTOM,
+  SAFE_TOP,
+  SCREEN_RADIUS,
+  TAB_BAR,
+  TABS_BAR,
+  coverTile,
+  gridArea,
+  gridTile,
+  phoneSize,
+} from "@/components/reel-cover-maker/phone";
+import { buildScene, letteringFace, type CoverInput, type LetteringId, type LiquidOp, type PastyLetteringId, type Scene, type StyleId } from "@/components/reel-cover-maker/scene";
+import { clamp01, keystrokes, sine, span, swipe, typedCount } from "@/cover/timeline";
 
 const FPS = 60;
 const W = 1600;
 const H = 2000;
-/** Canvas pixels per pixel of the 1080-wide cover, when it fills the card. */
-const SCALE = W / 1080;
 /** The profile grid's window on a reel cover, in its pixels. */
 const WINDOW_Y = 240;
 const WINDOW_H = 1440;
-/**
- * All the way in, the card shows the reel as the feed does, its middle 4:5,
- * with the grid's 3:4 window 67 pixels past the card's top: a whole number,
- * so the newest post drawn there is the card pixel for pixel.
- */
+/** Close in, the grid's window starts this far above the card's top: a whole number of pixels. */
 const IN_TOP = -67;
-const HERO: LiquidTarget = { width: W, height: H, scale: SCALE, origin: { x: 0, y: WINDOW_Y - IN_TOP / SCALE } };
-const TILE: LiquidTarget = { width: W, height: Math.ceil(WINDOW_H * SCALE), scale: SCALE, origin: { x: 0, y: WINDOW_Y } };
-const TILE_SRC_H = WINDOW_H * SCALE;
-/** The feed: three by three 3:4 posts eight pixels apart, as tall as the card and centred across it, so none is cut. */
-const GAP = 8;
-const TILE_H = (H - 2 * GAP) / 3;
-const TILE_W = (TILE_H * 3) / 4;
-const FEED_X = (W - 3 * TILE_W - 2 * GAP) / 2;
-/** How far in the camera is when one post fills the card. */
-const ZOOM = W / TILE_W;
 
-const GUTTER = "#FFFFFF";
+/* ---- The phone at rest, in the card's pixels: the maker's phone view, as large as the card holds. ---- */
+
+const PHONE = phoneSize();
+/** Pixels to a point. */
+const U = (H - 2 * 92) / PHONE.h;
+const PHONE_X = (W - PHONE.w * U) / 2;
+const PHONE_Y = (H - PHONE.h * U) / 2;
+/** The screen's top left, in the card's pixels. */
+const SX = PHONE_X + BEZEL * U;
+const SY = PHONE_Y + BEZEL * U;
+const POST = gridTile();
+const COVER = coverTile();
+/** The newest post at rest, in the card's pixels. */
+const COVER_AT = { x: SX + COVER.x * U, y: SY + COVER.y * U, w: COVER.w * U, h: COVER.h * U };
+/** How far in the camera is when that post fills the card's width. */
+const ZOOM = W / COVER_AT.w;
+
+/* Dark, as the phone view is in a dark system: Instagram's own night colours. */
+const IG = { bg: "#000000", text: "#f5f5f5", muted: "#a8a8a8", line: "rgba(255, 255, 255, 0.18)", body: "#2a2a2d" };
+const UI_FONT = `-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif`;
+const CARD = GROUNDS.light;
+
 const TYPED_INK = "#1B1A18";
-const TYPED_SIZE = 156;
+const TYPED_SIZE = 196;
+const TITLE = "day in my life";
 
 interface Spec {
   title: string;
@@ -80,22 +108,33 @@ interface Spec {
   pastyLettering?: PastyLetteringId;
 }
 
-/** The poster: the cover the loop begins and ends on. */
-const DAY_ONE: Spec = { title: "day one", style: "pasty", hue: 258, shade: 0.45, ground: "light" };
-/** The cover made in the middle, and the newest post of the feed. */
-const SETUP: Spec = { title: "rate my *setup*", style: "stickery", hue: 352, shade: 0.55, ground: "light" };
+/** The title through every style, each its own colour, dark and light grounds in turn; Stickery last, the post it becomes. */
+const STYLES: Spec[] = [
+  { title: TITLE, style: "echo", hue: 95, shade: 0.84, ground: "dark" },
+  { title: TITLE, style: "editorial", hue: 26, shade: 0.45, ground: "light" },
+  { title: TITLE, style: "pasty-flat", hue: 150, shade: 0.64, ground: "dark" },
+  { title: TITLE, style: "mono", hue: 258, shade: 0.42, ground: "light" },
+  { title: TITLE, style: "pasty", hue: 62, shade: 0.72, ground: "dark" },
+  { title: TITLE, style: "stickery", hue: 352, shade: 0.55, ground: "light" },
+];
 
-/** The feed, row by row; light and dark grounds in turn, no two neighbours one colour. */
-const FEED: Spec[] = [
-  SETUP,
-  { title: "part two", style: "pasty", hue: 62, shade: 0.72, ground: "dark" },
+/** The rest of the grid, row by row, the newest post in the middle row's middle; light and dark in turn round it. */
+const GRID: (Spec | null)[] = [
+  { title: "wild flower", style: "pasty", hue: 62, shade: 0.7, ground: "dark", pastyLettering: "drip" },
+  { title: "taste test", style: "pasty-flat", hue: 352, shade: 0.52, ground: "light" },
+  { title: "the plan", style: "pasty", hue: 302, shade: 0.66, ground: "dark", pastyLettering: "goo-even" },
   { title: "lisbon diaries", style: "editorial", hue: 258, shade: 0.42, ground: "light" },
-  { title: "desk tour", style: "pasty-flat", hue: 150, shade: 0.64, ground: "dark" },
+  { title: "part two", style: "pasty", hue: 62, shade: 0.72, ground: "dark" },
   { title: "get *ready*", style: "stickery", hue: 302, shade: 0.5, ground: "light", lettering: "leckerli" },
   { title: "golden hour", style: "pasty-flat", hue: 95, shade: 0.84, ground: "dark" },
-  { title: "studio tour", style: "pasty", hue: 210, shade: 0.48, ground: "light", pastyLettering: "goo-even" },
+  null,
   { title: "night *out*", style: "stickery", hue: 26, shade: 0.58, ground: "dark", lettering: "damion" },
-  { title: "slow sundays", style: "editorial", hue: 150, shade: 0.42, ground: "light" },
+  { title: "studio tour", style: "pasty", hue: 210, shade: 0.48, ground: "light", pastyLettering: "goo-even" },
+  { title: "desk tour", style: "pasty-flat", hue: 150, shade: 0.64, ground: "dark" },
+  { title: "slow sundays", style: "editorial", hue: 40, shade: 0.5, ground: "light" },
+  { title: "on repeat", style: "echo", hue: 258, shade: 0.6, ground: "dark" },
+  { title: "sunday reset", style: "editorial", hue: 26, shade: 0.45, ground: "light" },
+  { title: "big news", style: "pasty", hue: 352, shade: 0.62, ground: "dark" },
 ];
 
 function inputOf(spec: Spec): CoverInput {
@@ -121,25 +160,21 @@ function facesOf(spec: Spec): FaceId[] {
 /* ---- The beats, in seconds. ---- */
 
 const T = (() => {
-  const clearA = { from: 1.4, to: 2.0 };
-  const caretB = 1.88;
-  const typeB = keystrokes("rate my setup", 2.25, 11);
-  const typedB = typeB[typeB.length - 1] + 0.1;
-  const select = { from: typedB + 0.25, to: typedB + 0.55 };
-  const bold = { from: select.to + 0.15, to: select.to + 0.45 };
-  // The typed line is gone before the first letter of the sticker is drawn.
-  const fadeB = { from: bold.to + 0.3, to: bold.to + 0.6 };
-  const make = fadeB.to - 0.2;
-  const made = make + 1.3;
-  const away = { from: made + 1.0, to: made + 3.2 };
-  const back = { from: away.to + 2.3, to: away.to + 4.2 };
-  const clearB = { from: back.to + 0.5, to: back.to + 1.05 };
-  const caretA = clearB.to - 0.12;
-  const typeA = keystrokes("day one", clearB.to + 0.3, 7);
-  const typedA = typeA[typeA.length - 1] + 0.1;
-  const fadeA = { from: typedA + 0.3, to: typedA + 0.6 };
-  const pipe = fadeA.to - 0.05;
-  return { clearA, caretB, typeB, select, bold, fadeB, make, made, away, back, clearB, caretA, typeA, fadeA, pipe };
+  const rest = 0.3;
+  const diveIn = { from: rest, to: rest + 0.7 };
+  // The newest post swipes away as the styles will, to the empty field: no fade, so nothing goes grey on its colour.
+  const clear = { from: diveIn.to + 0.12, to: diveIn.to + 0.38 };
+  const type = keystrokes(TITLE, clear.to + 0.12, 5, 0.048, 0.03, 0.035);
+  const typed = type[type.length - 1] + 0.05;
+  const swipes: { from: number; to: number }[] = [];
+  let t = typed + 0.28;
+  for (let i = 0; i < 6; i += 1) {
+    swipes.push({ from: t, to: t + 0.26 });
+    t += 0.26 + 0.5;
+  }
+  const diveOut = { from: t, to: t + 0.75 };
+  const end = diveOut.to + 0.9;
+  return { rest, diveIn, clear, type, swipes, diveOut, end };
 })();
 
 /* ---- Drawing helpers. ---- */
@@ -156,9 +191,11 @@ function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContex
 }
 
 /** Paint's liquid layers for a target, lit on the GPU as the maker lights them; a field is made once an op. */
-function lighter(target: LiquidTarget, fieldOf: (op: LiquidOp) => LiquidField | null): NonNullable<PaintOptions["liquid"]> {
+function lighter(target: LiquidTarget): NonNullable<PaintOptions["liquid"]> {
+  const fields = new Map<LiquidOp, LiquidField | null>();
   return (op, part) => {
-    const field = fieldOf(op);
+    if (!fields.has(op)) fields.set(op, liquidField({ chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, seed: op.seed }, target));
+    const field = fields.get(op);
     if (!field) return null;
     const gpu = shadeOnGpu(field, { colours: op.colours, ground: op.ground, under: op.under, shadow: part === "shadow" }, op.seed);
     if (!gpu) throw new Error("no WebGL 2: the stage lights paste on the GPU only");
@@ -166,124 +203,53 @@ function lighter(target: LiquidTarget, fieldOf: (op: LiquidOp) => LiquidField | 
   };
 }
 
-function cachedFields(target: LiquidTarget) {
-  const fields = new Map<LiquidOp, LiquidField | null>();
-  return (op: LiquidOp) => {
-    if (!fields.has(op)) fields.set(op, liquidField({ chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, seed: op.seed }, target));
-    return fields.get(op) ?? null;
-  };
+interface Tile {
+  canvas: HTMLCanvasElement;
+  /** The grid window's size in the canvas. */
+  w: number;
+  h: number;
 }
 
-function paintOptions(target: LiquidTarget, liquid: PaintOptions["liquid"]): PaintOptions {
-  return { scale: target.scale, origin: target.origin, font: fontCss, grain: null, liquid };
-}
-
-/** A cover on its ground, as it reads once posted: the maker's clear PNG laid on the colour it was lit for. */
-function coverCanvas(scene: Scene, ground: Ground, target: LiquidTarget, ops?: Op[]): HTMLCanvasElement {
+/**
+ * A cover's grid window on its ground, as it reads once posted: the
+ * maker's clear PNG laid on the colour it was lit for, `width` pixels
+ * across (the card's for a post shown close, less for one only ever seen
+ * in the grid or rushing past).
+ */
+function tileCanvas(scene: Scene, ground: Ground, width = W): Tile {
+  const scale = width / 1080;
+  const target: LiquidTarget = { width, height: Math.ceil(WINDOW_H * scale), scale, origin: { x: 0, y: WINDOW_Y } };
   const [c, ctx] = canvas(target.width, target.height);
   ctx.fillStyle = GROUNDS[ground];
   ctx.fillRect(0, 0, c.width, c.height);
-  paint(ctx, ops ? { ...scene, ops } : scene, paintOptions(target, lighter(target, cachedFields(target))));
-  return c;
+  paint(ctx, scene, { scale, origin: target.origin, font: fontCss, grain: null, liquid: lighter(target) });
+  return { canvas: c, w: width, h: WINDOW_H * scale };
 }
 
-/* ---- Piping: the paste laid along its own strokes, in the order they are written. ---- */
+/** Each icon's outline, from the Phosphor icons the phone view draws, as paths on a 256 grid. */
+type Icons = Record<string, Path2D[]>;
 
-interface Stroke {
-  chain: Chain;
-  index: number;
-  /** The paste laid by each bead, from the first: its length times its section, so a swelling end fills as slowly as it would squeezed out. */
-  at: number[];
-  start: number;
-  end: number;
-  drip: boolean;
-}
-
-const same = (a: Bead, b: Bead) => a.x === b.x && a.y === b.y && a.r === b.r;
-
-/** Each chain's moment: strokes one after another as a hand pipes them, a drip falling once its stem is done. */
-function pipingPlan(op: LiquidOp, start: number): { strokes: Stroke[]; done: number; radius: number } {
-  const lengths = op.chains.map((c) => {
-    const at = [0];
-    for (let i = 1; i < c.length; i += 1) {
-      const r = (c[i].r + c[i - 1].r) / 2;
-      at.push(at[i - 1] + Math.hypot(c[i].x - c[i - 1].x, c[i].y - c[i - 1].y) * r * r);
-    }
-    return at;
-  });
-  const parentOf = (j: number): number => {
-    const c = op.chains[j];
-    if (j >= op.letters || c.length < 3) return -1;
-    const first = c[0];
-    const last = c[c.length - 1];
-    if (!(last.y - first.y > first.r * 1.5 && Math.abs(last.x - first.x) < last.y - first.y)) return -1;
-    for (let i = j - 1; i >= 0; i -= 1) {
-      if (op.glyphOf[i] !== op.glyphOf[j]) continue;
-      const p = op.chains[i];
-      if (p.length && (same(p[0], first) || same(p[p.length - 1], first))) return i;
-    }
-    return -1;
-  };
-  const flowTotal = op.chains.reduce((sum, c, j) => sum + (parentOf(j) < 0 ? lengths[j][lengths[j].length - 1] : 0), 0);
-  // An even flow of paste, about two seconds of it in all.
-  const speed = flowTotal / 1.9;
-  const strokes: Stroke[] = [];
-  let t = start;
-  let glyph = -1;
-  op.chains.forEach((chain, j) => {
-    const parent = parentOf(j);
-    if (parent >= 0) {
-      const from = strokes[parent].end + 0.04;
-      strokes.push({ chain, index: j, at: lengths[j], start: from, end: from + 0.85, drip: true });
-      return;
-    }
-    const g = j < op.letters ? op.glyphOf[j] : -2 - j;
-    if (strokes.length) t += g !== glyph ? 0.085 : 0.045;
-    glyph = g;
-    const length = lengths[j][lengths[j].length - 1];
-    const duration = chain.length < 2 ? 0.12 : Math.max(0.08, length / speed);
-    strokes.push({ chain, index: j, at: lengths[j], start: t, end: t + duration, drip: false });
-    t += duration;
-  });
-  const radii = op.chains.flatMap((c) => c.map((b) => b.r)).sort((p, q) => p - q);
-  return { strokes, done: Math.max(...strokes.map((s) => s.end)), radius: Math.max(0.5 / SCALE, radii[Math.floor(radii.length / 2)]) };
-}
-
-/** A stroke as far as it has been piped at time t: cut at its length so far, a drip stretched down from its foot. */
-function pipedChain(s: Stroke, t: number): Chain | null {
-  const u = span(t, s.start, s.end);
-  if (u <= 0) return null;
-  if (u >= 1) return s.chain;
-  if (s.drip) {
-    const q = sine(u);
-    const foot = s.chain[0];
-    return s.chain.map((b) => ({ x: foot.x + (b.x - foot.x) * q, y: foot.y + (b.y - foot.y) * q, r: b.r }));
+function readIcons(root: HTMLElement): Icons {
+  const icons: Icons = {};
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>("[data-icon]"))) {
+    const svg = el.querySelector("svg");
+    if (!svg) throw new Error(`icon ${el.dataset.icon} did not render`);
+    const shapes = Array.from(svg.querySelectorAll("path, rect, circle, line, polyline, polygon"));
+    if (shapes.some((s) => s.tagName.toLowerCase() !== "path")) throw new Error(`icon ${el.dataset.icon} is drawn with more than paths`);
+    icons[el.dataset.icon as string] = shapes.map((s) => new Path2D(s.getAttribute("d") ?? ""));
   }
-  if (s.chain.length < 2) {
-    const b = s.chain[0];
-    return [{ ...b, r: b.r * (0.35 + 0.65 * easeOut(u)) }];
-  }
-  // A hand gathers pace and slows to a stop.
-  const along = (u * 0.5 + sine(u) * 0.5) * s.at[s.at.length - 1];
-  let k = 0;
-  while (k < s.at.length - 2 && s.at[k + 1] <= along) k += 1;
-  const f = clamp01((along - s.at[k]) / Math.max(1e-6, s.at[k + 1] - s.at[k]));
-  const a = s.chain[k];
-  const b = s.chain[k + 1];
-  return [...s.chain.slice(0, k + 1), { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, r: a.r + (b.r - a.r) * f }];
+  return icons;
 }
 
-/* ---- The stage. ---- */
-
-interface Built {
-  draw: (t: number) => void;
-  duration: number;
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
 }
 
 async function waitForFonts(specs: Spec[]): Promise<number> {
   for (const s of specs) requestFonts(s.title, facesOf(s));
-  const family = interTight.style.fontFamily;
-  await document.fonts.load(`400 ${TYPED_SIZE}px ${family}`, "rate my setup day one");
+  await document.fonts.load(`400 ${TYPED_SIZE}px ${interTight.style.fontFamily}`, TITLE);
+  await document.fonts.load(`600 40px ${UI_FONT}`, "9:41 eshaan.tm");
   for (let i = 0; i < 400; i += 1) {
     const snaps = specs.map((s) => fontsSnapshot(s.title, facesOf(s)));
     if (snaps.every((v) => v >= 0)) {
@@ -296,264 +262,275 @@ async function waitForFonts(specs: Spec[]): Promise<number> {
   throw new Error("fonts never arrived");
 }
 
-async function build(main: HTMLCanvasElement): Promise<Built> {
-  (globalThis as { __reelicStage?: boolean }).__reelicStage = true;
-  const loads = await waitForFonts([DAY_ONE, ...FEED]);
-  const measurer = measurerFor(loads);
-  const sceneOf = (spec: Spec) => buildScene(inputOf(spec), measurer);
+/* ---- The stage. ---- */
 
+interface Built {
+  draw: (t: number) => void;
+  duration: number;
+}
+
+async function build(main: HTMLCanvasElement, iconRoot: HTMLElement): Promise<Built> {
+  const all = [...STYLES, ...GRID.filter((s): s is Spec => !!s)];
+  const loads = await waitForFonts(all);
+  const measurer = measurerFor(loads);
+  const icons = readIcons(iconRoot);
   const ctx = main.getContext("2d");
   if (!ctx) throw new Error("no 2D canvas");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
-  // The poster, piped.
-  const dayOne = sceneOf(DAY_ONE);
-  const [pasteA] = liquidOps(dayOne);
-  if (!pasteA) throw new Error("day one has no paste");
-  const plan = pipingPlan(pasteA, T.pipe);
-  const pipedScene = (t: number): Scene => {
-    const chains: Chain[] = [];
-    const colourOf: number[] = [];
-    const tone: number[] = [];
-    for (const s of plan.strokes) {
-      const c = pipedChain(s, t);
-      if (!c) continue;
-      chains.push(c);
-      colourOf.push(pasteA.colourOf[s.index]);
-      tone.push(pasteA.tone[s.index]);
-    }
-    const op: LiquidOp = { ...pasteA, chains, colourOf, tone, letters: chains.length };
-    return { ...dayOne, ops: dayOne.ops.map((o) => (o === pasteA ? op : o)) };
-  };
-  const pinnedField = (op: LiquidOp) =>
-    op.chains.length ? liquidField({ chains: op.chains, colourOf: op.colourOf, tone: op.tone, finish: op.finish, pool: op.pool, seed: pasteA.seed, radius: plan.radius }, HERO) : null;
-  const drawDayOne = (target: CanvasRenderingContext2D, scene: Scene) => {
-    const fields = new Map<LiquidOp, LiquidField | null>();
-    const fieldOf = (op: LiquidOp) => {
-      if (!fields.has(op)) fields.set(op, pinnedField(op));
-      return fields.get(op) ?? null;
-    };
-    paint(target, scene, paintOptions(HERO, lighter(HERO, fieldOf)));
-  };
-  const [posterCanvas, posterCtx] = canvas(W, H);
-  posterCtx.fillStyle = GROUNDS.light;
-  posterCtx.fillRect(0, 0, W, H);
-  drawDayOne(posterCtx, pipedScene(Infinity));
+  const styleTiles = STYLES.map((spec) => tileCanvas(buildScene(inputOf(spec), measurer), spec.ground));
+  const newestTile = styleTiles[styleTiles.length - 1];
+  const gridTiles = GRID.map((spec) => (spec ? tileCanvas(buildScene(inputOf(spec), measurer), spec.ground, 1000) : newestTile));
+  /** A post shown close: the card's 4:5 of it, `dy` down the card. */
+  const close = (target: CanvasRenderingContext2D, tile: Tile, dy = 0) => target.drawImage(tile.canvas, 0, -IN_TOP, W, H, 0, dy, W, H);
 
-  // The sticker, and its parts for the making.
-  const setup = sceneOf(SETUP);
-  const setupCanvas = coverCanvas(setup, SETUP.ground, HERO);
-  const paper = setup.ops.filter((op) => op.kind === "shape");
-  const funky = setup.ops.filter((op): op is Extract<Op, { kind: "turn" }> => op.kind === "turn");
-  const plain = setup.ops.filter((op): op is Extract<Op, { kind: "text" }> & { settled?: number } => op.kind === "text");
-  const paperCanvas = coverCanvasClear(setup, paper);
-  const funkyCanvas = coverCanvasClear(setup, funky);
-  const setupPalette = paletteFor({ hue: SETUP.hue, shade: SETUP.shade, ground: SETUP.ground });
-
-  function coverCanvasClear(scene: Scene, ops: Op[]): HTMLCanvasElement {
-    const [c, cctx] = canvas(W, H);
-    paint(cctx, { ...scene, ops }, paintOptions(HERO, lighter(HERO, cachedFields(HERO))));
-    return c;
-  }
-
-  // The paper is pressed on under the letters, settling from a touch larger, about its own middle.
-  const paperBox = (() => {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const op of paper)
-      if (op.kind === "shape")
-        for (const poly of op.polygons)
-          for (let i = 0; i < poly.length; i += 2) {
-            x0 = Math.min(x0, poly[i]); x1 = Math.max(x1, poly[i]);
-            y0 = Math.min(y0, poly[i + 1]); y1 = Math.max(y1, poly[i + 1]);
-          }
-    return { cx: (((x0 + x1) / 2 - HERO.origin.x) * SCALE), cy: (((y0 + y1) / 2 - HERO.origin.y) * SCALE) };
-  })();
-  const [workCanvas, workCtx] = canvas(W, H);
-
-  // The rest of the feed, each post its grid window.
-  const tiles = FEED.map((spec, i) => coverCanvas(i === 0 ? setup : sceneOf(spec), spec.ground, TILE));
-  const [feedCanvas, feedCtx] = canvas(W, H);
-
-  const family = interTight.style.fontFamily;
-  const typedFont = `400 ${TYPED_SIZE}px ${family}`;
+  const typedFont = `400 ${TYPED_SIZE}px ${interTight.style.fontFamily}`;
 
   /** The typed line, as the maker's text field holds it: set from where the whole line will start, so it never shifts. */
-  function typed(target: CanvasRenderingContext2D, text: string, count: number, alpha: number, caret: number, select = 0, bold = 0) {
-    if (alpha <= 0) return;
+  function typed(target: CanvasRenderingContext2D, count: number, caret: number, dy = 0) {
     target.save();
-    target.globalAlpha = alpha;
     target.font = typedFont;
     target.textBaseline = "alphabetic";
-    const full = target.measureText(text).width;
+    const full = target.measureText(TITLE).width;
     const cap = target.measureText("H").actualBoundingBoxAscent;
     const x0 = (W - full) / 2;
-    const base = H / 2 + cap / 2;
-    const shown = text.slice(0, count);
-    const word = text.lastIndexOf(" ") + 1;
-    if (select > 0) {
-      const sx = x0 + target.measureText(text.slice(0, word)).width;
-      const sw = target.measureText(text.slice(word)).width;
-      const [r, g, b] = rgb(setupPalette.ink);
-      target.fillStyle = `rgba(${r}, ${g}, ${b}, 0.24)`;
-      target.fillRect(sx - 6, base - cap * 1.32, (sw + 12) * easeOut(select), cap * 1.72);
-    }
+    const base = H / 2 + cap / 2 + dy;
+    const shown = TITLE.slice(0, count);
     target.fillStyle = TYPED_INK;
     target.fillText(shown, x0, base);
-    if (bold > 0 && count === text.length) {
-      // Bold as the maker's field shows it: the word stroked thicker, its width kept.
-      target.strokeStyle = TYPED_INK;
-      target.lineJoin = "round";
-      target.lineWidth = TYPED_SIZE * 0.05 * sine(bold);
-      target.strokeText(text.slice(word), x0 + target.measureText(text.slice(0, word)).width, base);
-    }
     if (caret > 0) {
-      target.globalAlpha = alpha * caret;
+      target.globalAlpha = caret;
       target.fillRect(x0 + target.measureText(shown).width + 9, base - cap * 1.22, 9, cap * 1.6);
     }
     target.restore();
   }
 
-  /** The caret: in a moment before the first key, steady while typing. */
-  function caretAt(t: number, from: number): number {
-    const on = span(t, from, from + 0.12);
-    return on;
+  /** An icon, `size` points square, its top left at (x, y) in points on the screen. */
+  function icon(target: CanvasRenderingContext2D, name: string, x: number, y: number, size: number, color: string) {
+    const paths = icons[name];
+    if (!paths) throw new Error(`no icon ${name}`);
+    target.save();
+    target.translate(SX + x * U, SY + y * U);
+    target.scale((size * U) / 256, (size * U) / 256);
+    target.fillStyle = color;
+    for (const p of paths) target.fill(p);
+    target.restore();
   }
 
-  /** The sticker being made: its script word written on, the plain words settling onto it, its paper growing out from them. */
-  function making(target: CanvasRenderingContext2D, t: number) {
-    const m = T.make;
-    // Paper first in the stack, pressed on as the words land.
-    const press = span(t, m + 0.62, m + 0.97);
-    if (press > 0) {
-      const grow = 1 + 0.025 * (1 - easeOut(press));
-      target.save();
-      target.globalAlpha = sine(press);
-      target.translate(paperBox.cx, paperBox.cy);
-      target.scale(grow, grow);
-      target.translate(-paperBox.cx, -paperBox.cy);
-      target.drawImage(paperCanvas, 0, 0);
-      target.restore();
-    }
-    // The script word, written on along its own slant.
-    const write = sine(span(t, m + 0.05, m + 0.85));
-    if (write > 0) {
-      workCtx.globalCompositeOperation = "copy";
-      workCtx.drawImage(funkyCanvas, 0, 0);
-      workCtx.globalCompositeOperation = "destination-in";
-      for (const op of funky) {
-        const inner = op.ops.filter((o): o is Extract<Op, { kind: "text" }> => o.kind === "text");
-        let x0 = Infinity;
-        let x1 = -Infinity;
-        for (const o of inner) {
-          workCtx.font = fontCss(o.face, o.size);
-          x0 = Math.min(x0, o.x);
-          x1 = Math.max(x1, o.x + workCtx.measureText(o.text).width);
-        }
-        const pad = (x1 - x0) * 0.12;
-        const feather = (x1 - x0) * 0.06;
-        const edge = x0 - pad + write * (x1 - x0 + 2 * pad + feather);
-        workCtx.save();
-        workCtx.setTransform(SCALE, 0, 0, SCALE, -HERO.origin.x * SCALE, -HERO.origin.y * SCALE);
-        workCtx.translate(op.cx, op.cy);
-        workCtx.rotate(op.angle);
-        workCtx.translate(-op.cx, -op.cy);
-        const g = workCtx.createLinearGradient(edge - feather, 0, edge, 0);
-        g.addColorStop(0, "rgba(0,0,0,1)");
-        g.addColorStop(1, "rgba(0,0,0,0)");
-        workCtx.fillStyle = g;
-        workCtx.fillRect(x0 - 4000, op.cy - 4000, 8000 + (x1 - x0), 8000);
-        workCtx.restore();
-      }
-      workCtx.globalCompositeOperation = "source-over";
-      target.drawImage(workCanvas, 0, 0);
-    }
-    // The plain words, each dropping the way the maker settled it.
-    plain.forEach((op, i) => {
-      const u = span(t, m + 0.45 + i * 0.09, m + 1.0 + i * 0.09);
-      if (u <= 0) return;
-      const travel = op.settled ?? 0;
-      const moved = { ...op, y: op.y - travel * (1 - easeOut(u)), alpha: sine(span(u, 0, 0.45)) };
-      paint(target, { ...setup, ops: [moved] }, paintOptions(HERO, undefined));
+  /** A reel's mark, at a post's top right, as the grid marks one; `alpha` fades it as the camera goes in. */
+  function reelMark(target: CanvasRenderingContext2D, x: number, y: number, w: number, alpha: number) {
+    if (alpha <= 0) return;
+    const size = 18 * U;
+    const zoom = target.getTransform().a;
+    target.save();
+    target.globalAlpha = alpha;
+    target.translate(x + w - 7 * U - size, y + 7 * U);
+    target.scale(size / 24, size / 24);
+    // A tight edge of shadow, so the white mark shows on a light post as on a dark one without a smudge.
+    target.shadowColor = "rgba(0, 0, 0, 0.5)";
+    target.shadowBlur = 1.2 * U * zoom;
+    target.strokeStyle = "#ffffff";
+    target.fillStyle = "#ffffff";
+    target.lineWidth = 2;
+    target.lineJoin = "round";
+    roundRect(target, 3, 3, 18, 18, 5);
+    target.stroke();
+    target.stroke(new Path2D("M3 8.5h18M9 3l3 5.5M14.5 3l3 5.5"));
+    target.fill(new Path2D("M10 11.6v5.3c0 .5.5.8.9.5l4.2-2.6c.4-.3.4-.8 0-1.1l-4.2-2.6c-.4-.3-.9 0-.9.5Z"));
+    target.restore();
+  }
+
+  /** The phone, drawn in the card's pixels at rest; the camera is the context's transform. */
+  function phone(target: CanvasRenderingContext2D) {
+    const pw = PHONE.w * U;
+    const ph = PHONE.h * U;
+    // A canvas's shadow is in the canvas's own pixels whatever the transform, so it is scaled with the camera.
+    const zoom = target.getTransform().a;
+    // The marks are the grid's at rest, gone before the camera is close.
+    const marks = clamp01(1 - (zoom - 1) / 0.5);
+    // The phone's body, its glass and its shadow.
+    target.save();
+    target.shadowColor = "rgba(0, 0, 0, 0.22)";
+    target.shadowBlur = 48 * 2 * zoom;
+    target.shadowOffsetY = 18 * 2 * zoom;
+    roundRect(target, PHONE_X, PHONE_Y, pw, ph, (SCREEN_RADIUS + BEZEL) * U);
+    target.fillStyle = IG.body;
+    target.fill();
+    target.restore();
+    target.save();
+    roundRect(target, PHONE_X + 0.5, PHONE_Y + 0.5, pw - 1, ph - 1, (SCREEN_RADIUS + BEZEL) * U);
+    target.strokeStyle = "rgba(255, 255, 255, 0.1)";
+    target.lineWidth = 1.5;
+    target.stroke();
+    target.restore();
+
+    // The screen.
+    target.save();
+    roundRect(target, SX, SY, PHONE_WIDTH * U, PHONE_HEIGHT * U, SCREEN_RADIUS * U);
+    target.clip();
+    target.fillStyle = IG.bg;
+    target.fillRect(SX, SY, PHONE_WIDTH * U, PHONE_HEIGHT * U);
+
+    // The grid, under the tabs and over the tab bar, the newest post in its middle.
+    const area = gridArea();
+    target.save();
+    target.beginPath();
+    target.rect(SX, SY + area.top * U, PHONE_WIDTH * U, (area.bottom - area.top) * U);
+    target.clip();
+    const middleRow = Math.floor(GRID_ROWS / 2);
+    gridTiles.forEach((tile, i) => {
+      const r = Math.floor(i / GRID_COLUMNS);
+      const c = i % GRID_COLUMNS;
+      const x = SX + c * (POST.w + GRID_GAP) * U;
+      const y = SY + (COVER.y + (r - middleRow) * (POST.h + GRID_GAP)) * U;
+      target.drawImage(tile.canvas, 0, 0, tile.w, tile.h, x, y, POST.w * U, POST.h * U);
+      reelMark(target, x, y, POST.w * U, marks);
     });
+    target.restore();
+
+    // The status bar round the Dynamic Island.
+    target.fillStyle = IG.text;
+    target.font = `600 ${17 * U}px ${UI_FONT}`;
+    target.textAlign = "center";
+    target.textBaseline = "middle";
+    const statusMid = (5 + 54) / 2;
+    const side = (PHONE_WIDTH - 125) / 2;
+    target.fillText("9:41", SX + (side / 2) * U, SY + statusMid * U);
+    roundRect(target, SX + side * U, SY + 6 * U, 125 * U, 37 * U, 18.5 * U);
+    target.fillStyle = "#000000";
+    target.fill();
+    const signals = PHONE_WIDTH - side / 2;
+    icon(target, "signal", signals - 33, statusMid - 9, 18, IG.text);
+    icon(target, "wifi", signals - 10, statusMid - 9, 18, IG.text);
+    icon(target, "battery", signals + 13, statusMid - 13, 26, IG.text);
+
+    // The profile's name, and its tabs.
+    const navMid = SAFE_TOP + NAV_BAR / 2;
+    target.fillStyle = IG.text;
+    target.font = `700 ${20 * U}px ${UI_FONT}`;
+    target.textAlign = "left";
+    // The owner's own account, public, so with no lock by its name, as the phone view shows it.
+    const name = "eshaan.tm";
+    target.fillText(name, SX + 16 * U, SY + navMid * U);
+    const nameW = target.measureText(name).width / U;
+    icon(target, "caret", 16 + nameW + 5, navMid - 7, 14, IG.text);
+    icon(target, "plus", PHONE_WIDTH - 16 - 27 - 22 - 27, navMid - 13.5, 27, IG.text);
+    icon(target, "list", PHONE_WIDTH - 16 - 27, navMid - 13.5, 27, IG.text);
+    const tabsTop = SAFE_TOP + NAV_BAR;
+    const third = PHONE_WIDTH / 3;
+    ["grid", "film", "user"].forEach((name, i) => icon(target, name, third * i + third / 2 - 12, tabsTop + TABS_BAR / 2 - 12, 24, i === 0 ? IG.text : IG.muted));
+    target.fillStyle = IG.text;
+    target.fillRect(SX, SY + (tabsTop + TABS_BAR - 1) * U, third * U, 1 * U);
+    target.fillStyle = IG.line;
+    target.fillRect(SX + third * U, SY + (tabsTop + TABS_BAR - 0.5) * U, (PHONE_WIDTH - third) * U, 0.5 * U);
+
+    // The tab bar over the home indicator.
+    const barTop = PHONE_HEIGHT - SAFE_BOTTOM - TAB_BAR;
+    target.fillStyle = IG.bg;
+    target.fillRect(SX, SY + barTop * U, PHONE_WIDTH * U, (TAB_BAR + SAFE_BOTTOM) * U);
+    target.fillStyle = IG.line;
+    target.fillRect(SX, SY + (barTop - 0.5) * U, PHONE_WIDTH * U, 0.5 * U);
+    const fifth = PHONE_WIDTH / 5;
+    const barMid = barTop + TAB_BAR / 2;
+    ["house", "search", "plus", "film"].forEach((name, i) => icon(target, name, fifth * i + fifth / 2 - 13, barMid - 13, 26, IG.text));
+    const meX = SX + (fifth * 4 + fifth / 2) * U;
+    target.beginPath();
+    target.arc(meX, SY + barMid * U, (13 + 3) * U, 0, Math.PI * 2);
+    target.fillStyle = IG.text;
+    target.fill();
+    target.beginPath();
+    target.arc(meX, SY + barMid * U, (13 + 1.5) * U, 0, Math.PI * 2);
+    target.fillStyle = IG.bg;
+    target.fill();
+    // The profile's own picture: a warm one, so the tab reads as a face, not an empty ring.
+    const avatar = target.createLinearGradient(meX - 13 * U, SY + (barMid - 13) * U, meX + 13 * U, SY + (barMid + 13) * U);
+    avatar.addColorStop(0, "#f6a04d");
+    avatar.addColorStop(1, "#e1306c");
+    target.beginPath();
+    target.arc(meX, SY + barMid * U, 13 * U, 0, Math.PI * 2);
+    target.fillStyle = avatar;
+    target.fill();
+    roundRect(target, SX + ((PHONE_WIDTH - 134) / 2) * U, SY + (PHONE_HEIGHT - 8 - 5) * U, 134 * U, 5 * U, 2.5 * U);
+    target.fillStyle = IG.text;
+    target.fill();
+    target.restore();
   }
 
-  /** The feed at a zoom, the camera drawing back about a point near its top left, so every post travels in a straight line. */
-  function feed(target: CanvasRenderingContext2D, zoom: number) {
+  /** The card at a zoom: the phone drawn back from, about a point near the newest post, so everything travels in a straight line. */
+  function camera(target: CanvasRenderingContext2D, zoom: number) {
     if (Math.abs(zoom - ZOOM) < 1e-6) {
-      // All the way in, the sticker is the card pixel for pixel, never resampled.
-      target.drawImage(setupCanvas, 0, 0);
+      // All the way in, the newest post is the card pixel for pixel, never resampled.
+      close(target, newestTile);
       return;
     }
     const f = (zoom - 1) / (ZOOM - 1);
-    const tx = -ZOOM * FEED_X * f;
-    const ty = IN_TOP * f;
-    feedCtx.fillStyle = GUTTER;
-    feedCtx.fillRect(0, 0, W, H);
-    tiles.forEach((tile, i) => {
-      const x = zoom * (FEED_X + (i % 3) * (TILE_W + GAP)) + tx;
-      const y = zoom * Math.floor(i / 3) * (TILE_H + GAP) + ty;
-      const w = zoom * TILE_W;
-      const h = zoom * TILE_H;
-      if (x > W || y > H || x + w < 0 || y + h < 0) return;
-      feedCtx.drawImage(tile, 0, 0, W, TILE_SRC_H, x, y, w, h);
-    });
-    target.drawImage(feedCanvas, 0, 0);
+    const tx = -ZOOM * COVER_AT.x * f;
+    const ty = (IN_TOP - ZOOM * COVER_AT.y) * f;
+    target.fillStyle = CARD;
+    target.fillRect(0, 0, W, H);
+    target.save();
+    target.setTransform(zoom, 0, 0, zoom, tx, ty);
+    phone(target);
+    target.restore();
   }
 
-  const duration = Math.ceil((plan.done + 0.75) * FPS) / FPS;
-  const typedB = (t: number) => 1 - sine(span(t, T.fadeB.from, T.fadeB.to));
+  /** The style cycle: the typed line, then each style swiping up over the one before. */
+  function styles(target: CanvasRenderingContext2D, t: number) {
+    // Which swipe is the latest begun, and how far through it.
+    let k = -1;
+    for (let i = 0; i < T.swipes.length; i += 1) if (t >= T.swipes[i].from) k = i;
+    const drawFrame = (i: number, dy: number) => {
+      if (i < 0) {
+        target.fillStyle = CARD;
+        target.fillRect(0, dy, W, H);
+        typed(target, TITLE.length, 1, dy);
+      } else {
+        close(target, styleTiles[i], dy);
+      }
+    };
+    if (k < 0) {
+      drawFrame(-1, 0);
+      return;
+    }
+    const u = swipe(span(t, T.swipes[k].from, T.swipes[k].to));
+    if (u >= 1) {
+      drawFrame(k, 0);
+      return;
+    }
+    drawFrame(k - 1, -u * H);
+    drawFrame(k, (1 - u) * H);
+  }
 
   function draw(t: number) {
     ctx!.save();
-    ctx!.globalCompositeOperation = "source-over";
     ctx!.globalAlpha = 1;
-    const cream = () => {
-      ctx!.fillStyle = GROUNDS.light;
+    ctx!.globalCompositeOperation = "source-over";
+    if (t < T.diveIn.to) {
+      // In log scale on a sine, so the zoom never crawls and then whips.
+      camera(ctx!, Math.exp(Math.log(ZOOM) * sine(span(t, T.diveIn.from, T.diveIn.to))));
+    } else if (t < T.clear.from) {
+      close(ctx!, newestTile);
+    } else if (t < T.clear.to) {
+      // The newest post swipes up and away, the empty field with its caret coming up under it.
+      const u = swipe(span(t, T.clear.from, T.clear.to));
+      close(ctx!, newestTile, -u * H);
+      ctx!.fillStyle = CARD;
+      ctx!.fillRect(0, (1 - u) * H, W, H);
+      typed(ctx!, 0, 1, (1 - u) * H);
+    } else if (t < T.swipes[0].from) {
+      ctx!.fillStyle = CARD;
       ctx!.fillRect(0, 0, W, H);
-    };
-    if (t < T.clearA.to) {
-      // The poster, then its letters fading off the ground.
-      cream();
-      ctx!.globalAlpha = 1 - sine(span(t, T.clearA.from, T.clearA.to));
-      ctx!.drawImage(posterCanvas, 0, 0);
-      ctx!.globalAlpha = 1;
-      typed(ctx!, "rate my setup", 0, 1, caretAt(t, T.caretB));
-    } else if (t < T.make) {
-      cream();
-      const count = typedCount(T.typeB, t);
-      const selecting = span(t, T.select.from, T.select.to);
-      typed(ctx!, "rate my setup", count, typedB(t), selecting > 0 ? 0 : caretAt(t, T.caretB), selecting, span(t, T.bold.from, T.bold.to));
-    } else if (t < T.away.from) {
-      cream();
-      if (t < T.made) making(ctx!, t);
-      else ctx!.drawImage(setupCanvas, 0, 0);
-      typed(ctx!, "rate my setup", 13, typedB(t), 0, 1, 1);
-    } else if (t < T.back.to) {
-      const away = glide(span(t, T.away.from, T.away.to));
-      const back = glide(span(t, T.back.from, T.back.to));
-      feed(ctx!, Math.exp(Math.log(ZOOM) * (1 - away + back)));
-    } else if (t < T.clearB.to) {
-      cream();
-      ctx!.globalAlpha = 1 - sine(span(t, T.clearB.from, T.clearB.to));
-      ctx!.drawImage(setupCanvas, 0, 0);
-      ctx!.globalAlpha = 1;
-      typed(ctx!, "day one", 0, 1, caretAt(t, T.caretA));
-    } else if (t < T.pipe) {
-      cream();
-      typed(ctx!, "day one", typedCount(T.typeA, t), 1 - sine(span(t, T.fadeA.from, T.fadeA.to)), caretAt(t, T.caretA));
-    } else if (t < plan.done) {
-      cream();
-      drawDayOne(ctx!, pipedScene(t));
-      typed(ctx!, "day one", 7, 1 - sine(span(t, T.fadeA.from, T.fadeA.to)), 0);
+      typed(ctx!, typedCount(T.type, t), 1);
+    } else if (t < T.diveOut.from) {
+      styles(ctx!, t);
     } else {
-      cream();
-      ctx!.drawImage(posterCanvas, 0, 0);
+      camera(ctx!, Math.exp(Math.log(ZOOM) * (1 - sine(span(t, T.diveOut.from, T.diveOut.to)))));
     }
     ctx!.restore();
   }
 
-  return { draw, duration };
+  return { draw, duration: Math.round(T.end * FPS) / FPS };
 }
 
 declare global {
@@ -562,11 +539,22 @@ declare global {
   }
 }
 
+/** The phone view's icons, drawn once out of sight so their outlines can be read. */
+function IconSource({ children }: { children: ReactNode }) {
+  return (
+    <div aria-hidden="true" style={{ position: "fixed", left: -10000, top: 0, width: 1, height: 1, overflow: "hidden" }}>
+      {children}
+    </div>
+  );
+}
+
 export default function Stage() {
   const ref = useRef<HTMLCanvasElement>(null);
+  const iconsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const main = ref.current;
-    if (!main || window.STAGE) return;
+    const iconRoot = iconsRef.current;
+    if (!main || !iconRoot || window.STAGE) return;
     let built: Built | null = null;
     const stage = {
       ready: Promise.resolve(),
@@ -580,11 +568,30 @@ export default function Stage() {
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       },
     };
-    stage.ready = build(main).then((b) => {
+    stage.ready = build(main, iconRoot).then((b) => {
       built = b;
       stage.duration = b.duration;
     });
     window.STAGE = stage;
   }, []);
-  return <canvas ref={ref} id="stage" width={W} height={H} style={{ position: "fixed", left: 0, top: 0, width: W, height: H, display: "block" }} />;
+  return (
+    <>
+      <canvas ref={ref} id="stage" width={W} height={H} style={{ position: "fixed", left: 0, top: 0, width: W, height: H, display: "block" }} />
+      <IconSource>
+        <div ref={iconsRef}>
+          <span data-icon="signal"><CellSignalFull weight="fill" /></span>
+          <span data-icon="wifi"><WifiHigh weight="bold" /></span>
+          <span data-icon="battery"><BatteryFull weight="fill" /></span>
+          <span data-icon="caret"><CaretDown weight="bold" /></span>
+          <span data-icon="plus"><PlusSquare /></span>
+          <span data-icon="list"><List /></span>
+          <span data-icon="grid"><GridNine /></span>
+          <span data-icon="film"><FilmSlate /></span>
+          <span data-icon="user"><UserSquare /></span>
+          <span data-icon="house"><House /></span>
+          <span data-icon="search"><MagnifyingGlass /></span>
+        </div>
+      </IconSource>
+    </>
+  );
 }

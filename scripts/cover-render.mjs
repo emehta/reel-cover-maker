@@ -37,7 +37,7 @@ if (mode === "stills") {
   const fps = 60;
   const total = Math.round(info.duration * fps);
   const from = Number(a ?? 0), to = Number(b ?? total);
-  const ff = spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", "60", "-c:v", "png", "-i", "-", "-vf", "scale=800:1000:flags=lanczos+accurate_rnd+full_chroma_int", "-c:v", "ffv1", "-level", "3", "-pix_fmt", "bgr0", out], { stdio: ["pipe", "inherit", "inherit"] });
+  const ff = spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", "60", "-c:v", "png", "-i", "-", "-vf", "scale=800:1000:flags=area+accurate_rnd+full_chroma_int", "-c:v", "ffv1", "-level", "3", "-pix_fmt", "bgr0", out], { stdio: ["pipe", "inherit", "inherit"] });
   const start = Date.now();
   for (let f = from; f < to; f += 1) {
     await page.evaluate((t) => window.STAGE.seek(t), f / fps);

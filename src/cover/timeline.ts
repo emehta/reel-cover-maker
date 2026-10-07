@@ -43,17 +43,23 @@ export function seeded(seed: number): () => number {
   };
 }
 
-/** When each character of `text` is typed, from `start`: a person's pace, a beat longer after a space. */
-export function keystrokes(text: string, start: number, seed: number): number[] {
+/** When each character of `text` is typed, from `start`: a person's pace (`gap` seconds a key, give or take `jitter`), a beat longer after a space. */
+export function keystrokes(text: string, start: number, seed: number, gap = 0.075, jitter = 0.05, space = 0.07): number[] {
   const next = seeded(seed);
   const times: number[] = [];
   let t = start;
   for (let i = 0; i < text.length; i += 1) {
     times.push(t);
-    t += 0.075 + next() * 0.05 + (text[i] === " " ? 0.07 : 0);
+    t += gap + next() * jitter + (text[i] === " " ? space : 0);
   }
   return times;
 }
+
+/** A quick move that lands softly: the swipe between styles. */
+export const swipe = bezier(0.7, 0, 0.18, 1);
+
+/** The camera's dive into the phone and back out: fast through the middle, eased at both ends. */
+export const dive = bezier(0.8, 0, 0.2, 1);
 
 /** How many characters are showing at time t. */
 export function typedCount(times: number[], t: number): number {
