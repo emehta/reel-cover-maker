@@ -2242,6 +2242,11 @@
   letter-spacing: -0.01em;
 }
 
+/* Focused only so the card opens with nothing lit: it is not a control. */
+.animateTitle:focus {
+  outline: none;
+}
+
 .animateClose.tip::after {
   left: auto;
   right: 0;

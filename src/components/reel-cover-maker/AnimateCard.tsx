@@ -47,12 +47,17 @@ function speedLabel(speed: number): string {
  */
 export function AnimateCard({ options, current, speed, requestFor, target, still, ratio, clear, ground, onSave, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const [picked, setPicked] = useState<AnimationId>(current);
   const [pace, setPace] = useState(speed);
 
   useEffect(() => {
     const dialog = ref.current;
-    if (dialog && !dialog.open) dialog.showModal();
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+      // The card's name takes the focus, not its first button: Safari draws a button focused so with its ring, and its tooltip shows.
+      heading.current?.focus({ preventScroll: true });
+    }
   }, []);
 
   const place = speedPlace(pace);
@@ -70,7 +75,7 @@ export function AnimateCard({ options, current, speed, requestFor, target, still
       }}
     >
       <div className={styles.animateHead}>
-        <h2 className={styles.animateTitle} id="rcm-animate-title">
+        <h2 ref={heading} tabIndex={-1} className={styles.animateTitle} id="rcm-animate-title">
           Animate
         </h2>
         <button type="button" className={`${styles.tool} ${styles.tip} ${styles.animateClose}`} onClick={onClose} aria-label="Close" data-tip="Close  Esc">
