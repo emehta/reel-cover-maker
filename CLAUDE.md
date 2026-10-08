@@ -149,11 +149,16 @@ npm run build   # the static site, in out/
   and its drag are one undo step (`pickText` names all three fields).
 - **Animate** (the owner's asks, 7 Oct). The sparkle opens a card
   (`AnimateCard`) of the cover playing in each of its style's
-  animations, with a speed throttle (half to twice); Save sets
-  `animated`, the style's pick (`design.animations`) and
-  `animationSpeed`, and the sparkle pressed again stops it. Stickery has
-  Type and draw and Slap, Pasty and Pasty Flat Written live; All at once,
-  Pop and Rise were cut ("so bad"), so do not bring them back. Every
+  animations, with a speed throttle; Save sets `animated`, the style's
+  pick (`design.animations`) and `animationSpeed`, and the sparkle
+  pressed again stops it. The throttle slides smoothly, to the hundredth
+  (the owner, 8 Oct: not fixed steps, and 1 not in the middle): half as
+  fast at the left, its own in the middle, twice at the right, on a log
+  scale (`speedPlace`, `speedAtPlace`), caught at 1 near the middle.
+  Stickery has Type and draw, Slap, Pop and Reveal; Pasty and Pasty Flat
+  Written live. All at once, Pasty's Pop and Rise were cut ("so bad"; 8
+  Oct: "I don't want rise"), so do not bring them back; Stickery's Pop
+  came back on the owner's ask of 8 Oct ("keep pop"). Every
   animation (`animate.ts`, pure, tested) is a function of time on the
   style's own scene, so its last frame is the cover exactly, and a speed
   only scales time (`plan(..., speed)`); an effect is worked out where
@@ -167,6 +172,25 @@ npm run build   # the static site, in out/
   moment after so a bowl fills as the pen passes, each ink pixel taking
   its nearest line point's time straight across the stroke), drawn part
   written by `writer.ts`; with no page to trace in, paint wipes it on.
+  In Type and draw the sticker's paper comes with its words (the owner, 8
+  Oct: it was "already there"): each sticker shape carries the grid its
+  steps were cut on (`grid`), its cells are timed by the letter laid
+  nearest each (`paperCells`, `paperTimes`, earlier where two are as
+  near) and the cells laid so far traced again as its outline
+  (`paperGrowing`, `traceCells`), so it grows a step at a time under the
+  typing and ends the sticker exactly. Slap, Pop and Reveal set out the
+  frame themselves (`Built.ops`): what is laid in the cover's order, then
+  each sticker on its way over it, its words and paste with it, as a thing
+  nearer the eye is. Slap comes from in front of the screen (8 Oct: not
+  "from the bottom"): first bigger than the cover and blurred, then down
+  in perspective (`1 / (1/near + (1 - 1/near) z)`), its shadow on the page
+  where it lands closing in, slapped flat, the laid ones knocked back
+  about where it lands. Blur is a `blur` op that paint draws with
+  shadows, in every engine: the thing drawn far off the canvas and its
+  shadow cast back, in its own colour (or a `tint`, for a shadow cast).
+  Safari's canvas has no `filter`, and casts a see-through drawing's
+  shadow solid, so the alpha goes in the shadow's colour; paste, an image
+  of many colours, is softened by drawing it small and back up.
   The preview is painted live at the canvas's own pixels every frame
   (`PlayCanvas`, no stored frames: the owner said it was too low-res);
   only paste is made ahead (`usePaste`, 24 a second, within 200 MB, kept
@@ -187,13 +211,14 @@ npm run build   # the static site, in out/
   Browsers' own encoders keep no alpha, and ffmpeg.wasm's own worker
   cannot be bundled (Turbopack refuses its computed import), so this repo
   has its own worker. Measured 7 Oct: Stickery 3 to 9 s, Pasty 6 to 14 s.
-  A press on Export in its first 800 ms is a double click, not a stop.
-- **Export is at the foot of the photo's card** (the owner's ask, 7 Oct:
+  A press on Download in its first 800 ms is a double click, not a stop.
+- **Download is at the foot of the photo's card** (the owner's ask, 7 Oct:
   "below dim"), sticky there, the card drawn closer on windows under 900
-  tall so Dim and Export both show (`@media (max-height: 900px)`); from
+  tall so Dim and Download both show (`@media (max-height: 900px)`); from
   900 to 1199 wide it is held at the foot of the left column, and on a
-  phone at the foot of the screen. It reads Export (Save where the share
-  sheet is used) with a tag of what it makes: PNG, MOV or MP4.
+  phone at the foot of the screen. It reads Download everywhere (the
+  owner, 8 Oct: not "Export"), with a tag of what it makes (PNG, MOV or
+  MP4), and Preparing and how far while a video is made.
 - **The phone view's posts are the owner's** (the owner's ask, 7 Oct):
   @eshaan.tm's four reels, newest first, after the cover as they would
   follow a new post, and its profile picture in the tab bar
@@ -223,7 +248,7 @@ npm run build   # the static site, in out/
   property, and the tests hold them. The profile is the owner's own,
   @eshaan.tm (`HANDLE`), public, so with no lock by its name. The tile is drawn from the scene like
   every canvas (`SceneCanvas`, `gridWindow`), on the ground picked. The
-  cover to edit stays mounted and painted underneath (hidden), so Export
+  cover to edit stays mounted and painted underneath (hidden), so Download
   never waits on it. Never say it is a phone's real size: on a laptop it
   is smaller.
 - **With no photo the cover is clear** (the owner's ask, 7 Oct): no fill,

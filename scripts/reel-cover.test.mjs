@@ -735,8 +735,9 @@ check("a design round-trips through storage", () => {
   // Animated or not, and each style's animation: one a style does not offer is let go, the rest kept.
   const animated = { ...design, animated: true, animations: { stickery: "slap", pasty: "written", echo: "spread" }, animationSpeed: 1.5 };
   assert.deepEqual(D.readDesign(D.writeDesign(animated)), animated);
-  // An animation since cut (Pop, Rise, All at once) is let go, the style back on its first.
-  assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "pop", mono: "words", editorial: 7, pasty: "together", "pasty-flat": "swell" } })).animations, { mono: "words" });
+  // An animation since cut (Rise, All at once, Pasty's Pop) is let go, the style back on its first; Stickery's Pop is back.
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "rise", mono: "words", editorial: 7, pasty: "together", "pasty-flat": "swell" } })).animations, { mono: "words" });
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "pop", echo: "reveal" } })).animations, { stickery: "pop" });
   // A speed is held to half to twice, and is its own where unreadable.
   assert.equal(D.readDesign(JSON.stringify({ animationSpeed: 9 })).animationSpeed, AN.FASTEST);
   assert.equal(D.readDesign(JSON.stringify({ animationSpeed: 0.1 })).animationSpeed, AN.SLOWEST);
@@ -915,6 +916,8 @@ function recorder() {
   const stack = [];
   const calls = [];
   const point = (x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  /** The shadow anything drawn now casts, if it casts one. */
+  const shadowOf = () => (ctx.shadowBlur || ctx.shadowOffsetX || ctx.shadowOffsetY ? { color: ctx.shadowColor, blur: ctx.shadowBlur, dx: ctx.shadowOffsetX, dy: ctx.shadowOffsetY } : null);
   const multiply = (n) => {
     m = [
       m[0] * n[0] + m[2] * n[1],
@@ -935,12 +938,18 @@ function recorder() {
     font: "",
     textAlign: "start",
     textBaseline: "alphabetic",
-    save: () => stack.push({ m: [...m], alpha: ctx.globalAlpha, font: ctx.font }),
+    shadowColor: "rgba(0, 0, 0, 0)",
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    getTransform: () => ({ a: m[0], b: m[1], c: m[2], d: m[3], e: m[4], f: m[5] }),
+    save: () => stack.push({ m: [...m], alpha: ctx.globalAlpha, font: ctx.font, shadow: [ctx.shadowColor, ctx.shadowBlur, ctx.shadowOffsetX, ctx.shadowOffsetY] }),
     restore: () => {
       const s = stack.pop();
       m = s.m;
       ctx.globalAlpha = s.alpha;
       ctx.font = s.font;
+      [ctx.shadowColor, ctx.shadowBlur, ctx.shadowOffsetX, ctx.shadowOffsetY] = s.shadow;
     },
     setTransform: (a, b, c, d, e, f) => {
       m = [a, b, c, d, e, f];
@@ -950,7 +959,7 @@ function recorder() {
     transform: (a, b, c, d, e, f) => multiply([a, b, c, d, e, f]),
     rotate: (a) => multiply([Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]),
     fillRect: (x, y, w, h) => calls.push({ kind: "fillRect", at: point(x, y), w, h, style: ctx.fillStyle }),
-    fillText: (text, x, y) => calls.push({ kind: "fillText", text, at: point(x, y), font: ctx.font, alpha: ctx.globalAlpha, align: ctx.textAlign, baseline: ctx.textBaseline }),
+    fillText: (text, x, y) => calls.push({ kind: "fillText", text, at: point(x, y), font: ctx.font, alpha: ctx.globalAlpha, align: ctx.textAlign, baseline: ctx.textBaseline, style: ctx.fillStyle, shadow: shadowOf() }),
     strokeText: (text, x, y) => calls.push({ kind: "strokeText", text, at: point(x, y), width: ctx.lineWidth, alpha: ctx.globalAlpha }),
     beginPath: () => {},
     moveTo: () => {},
@@ -958,8 +967,8 @@ function recorder() {
     arcTo: () => {},
     closePath: () => {},
     clip: () => calls.push({ kind: "clip" }),
-    fill: () => calls.push({ kind: "fill", style: ctx.fillStyle }),
-    stroke: () => calls.push({ kind: "stroke", style: ctx.strokeStyle, width: ctx.lineWidth }),
+    fill: () => calls.push({ kind: "fill", style: ctx.fillStyle, shadow: shadowOf(), m: [...m], alpha: ctx.globalAlpha }),
+    stroke: () => calls.push({ kind: "stroke", style: ctx.strokeStyle, width: ctx.lineWidth, shadow: shadowOf(), m: [...m] }),
     drawImage: (image, ...args) => calls.push({ kind: "drawImage", image, at: args.length > 2 ? args.slice(4, 6) : args, from: args.length > 2 ? args.slice(0, 4) : null, m: [...m] }),
     createRadialGradient: () => ({ stops: [], addColorStop(o, c) { this.stops.push([o, c]); } }),
     createPattern: () => ({ pattern: true }),
@@ -2480,6 +2489,8 @@ function shown(scene) {
     for (const op of ops) {
       if (op.kind === "fade") walk(op.ops, alpha * op.alpha);
       else if (op.kind === "turn" || op.kind === "matrix") walk(op.ops, alpha);
+      // A shadow cast shows nothing of the cover; something out of focus is still there.
+      else if (op.kind === "blur") walk(op.ops, op.tint ? 0 : alpha);
       else if (op.kind === "write") walk(op.ops, alpha * op.at);
       else if (op.kind === "text") out.chars += T.graphemes(op.text).length * alpha * (op.alpha ?? 1);
       else if (op.kind === "shape") out.shapes += alpha;
@@ -2568,7 +2579,7 @@ check("a chain piped part way is its first part by length, the nozzle's bead bet
   assert.deepEqual(AN.chainPart([chain[0]], 0.3), [chain[0]]);
 });
 
-check("Stickery's Type and draw lays each sticker, then its words in reading order, plain ones typed and funky ones written on", () => {
+check("Stickery's Type and draw sets each sticker's words in reading order, plain ones typed and funky ones written on, its paper with them", () => {
   const scene = cover("things *aren't*\n*what* they seem", "stickery", "reel", { lettering: "yesteryear" });
   const p = AN.plan(scene, "stickery", "type-draw", measurer);
   const firstSeen = new Map();
@@ -2584,8 +2595,8 @@ check("Stickery's Type and draw lays each sticker, then its words in reading ord
           const key = scene.ops.flatMap((o) => (o.kind === "turn" ? o.ops : [o])).find((o) => o.kind === "text" && o.text.startsWith(op.text) && o.y === op.y && o.x === op.x)?.text ?? op.text;
           if (!firstSeen.has(key)) firstSeen.set(key, t);
         } else if (op.kind === "shape") {
-          const at = op.polygons[0][1];
-          if (!firstSeen.has(`shape ${at}`)) firstSeen.set(`shape ${at}`, t);
+          // Each sticker its own colour; its paper grows, so its outline is not the same from frame to frame.
+          if (!firstSeen.has(`shape ${op.color}`)) firstSeen.set(`shape ${op.color}`, t);
         }
       }
     };
@@ -2607,7 +2618,7 @@ check("an effect is where it is seen: a sticker pressed flat as it lands is pres
   const scene = S.placeScene(cover("things *aren't*", "stickery", "reel", { lettering: "yesteryear" }), { x: 120, y: -200, angle: 0.4, sx: 1.3, sy: 0.9 });
   const p = AN.plan(scene, "stickery", "slap", measurer);
   // Just landed: pressed flat, about its middle.
-  const frame = p.frame(0.37);
+  const frame = p.frame(0.42);
   // The sticker's shape, inside the placement and the frame's own map: its middle where the cover has it.
   const placed = scene.ops.find((op) => op.kind === "matrix");
   const sticker = placed.ops.find((op) => op.kind === "shape");
@@ -2688,11 +2699,41 @@ check("Echo's Ripple and Spread bring the words first and each ring after the on
   assert.ok(near(boxAt(p.duration - 1e-6).x, cursor.x, 0.5), "the cursor does not land where the cover has it");
 });
 
-check("the animations on offer: Stickery types and draws or slaps, Pasty and Pasty Flat are written live, and what was cut is gone", () => {
-  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.id), ["type-draw", "slap"]);
-  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.name), ["Type and draw", "Slap"]);
+check("the animations on offer: Stickery types and draws, slaps, pops or reveals, Pasty and Pasty Flat are written live, and what was cut is gone", () => {
+  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.id), ["type-draw", "slap", "pop", "reveal"]);
+  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.name), ["Type and draw", "Slap", "Pop", "Reveal"]);
   for (const style of ["pasty", "pasty-flat"]) assert.deepEqual(AN.animationsFor(style).map((a) => a.id), ["written"]);
-  for (const cut of ["pop", "rise", "together", "swell"]) for (const style of S.STYLES) assert.ok(!AN.offers(style.id, cut), `${style.id} still offers ${cut}`);
+  for (const cut of ["rise", "together", "swell"]) for (const style of S.STYLES) assert.ok(!AN.offers(style.id, cut), `${style.id} still offers ${cut}`);
+  for (const style of S.STYLES) if (style.id !== "stickery") for (const only of ["pop", "reveal", "slap"]) assert.ok(!AN.offers(style.id, only), `${style.id} offers ${only}`);
+});
+
+check("the speed slider has the animation's own speed in its middle, half as fast at one end and twice at the other, sliding smoothly between", () => {
+  assert.equal(AN.speedPlace(1), 0);
+  assert.equal(AN.speedPlace(AN.SLOWEST), -1);
+  assert.equal(AN.speedPlace(AN.FASTEST), 1);
+  assert.equal(AN.speedPlace(9), 1);
+  assert.equal(AN.speedAtPlace(0), 1);
+  assert.equal(AN.speedAtPlace(-1), AN.SLOWEST);
+  assert.equal(AN.speedAtPlace(1), AN.FASTEST);
+  assert.equal(AN.speedAtPlace(7), AN.FASTEST);
+  assert.equal(AN.speedAtPlace(Number.NaN), 1);
+  // Caught in the middle on the way past.
+  assert.equal(AN.speedAtPlace(0.03), 1);
+  assert.equal(AN.speedAtPlace(-0.03), 1);
+  // Every hundredth between, never a fixed few, always faster to the right.
+  const seen = new Set();
+  let last = 0;
+  for (let v = -1; v <= 1.0001; v += 0.01) {
+    const speed = AN.speedAtPlace(v);
+    assert.ok(speed >= last, `slower to the right at ${v}`);
+    assert.equal(speed, Math.round(speed * 100) / 100);
+    last = speed;
+    seen.add(speed);
+  }
+  assert.ok(seen.size > 120, `only ${seen.size} speeds`);
+  assert.equal(AN.speedAtPlace(0.5), 1.41);
+  assert.equal(AN.speedAtPlace(-0.5), 0.71);
+  for (const speed of [0.5, 0.75, 1.25, 1.6, 2]) assert.equal(AN.speedAtPlace(AN.speedPlace(speed)), speed);
 });
 
 check("a speed only scales time: twice as fast is the same frames in half the time, and a speed is held to half to twice", () => {
@@ -2711,46 +2752,167 @@ check("a speed only scales time: twice as fast is the same frames in half the ti
   assert.ok(near(AN.plan(scene, "stickery", "type-draw", measurer, 9).duration, own.duration / AN.FASTEST, 1e-9));
 });
 
-check("Slap throws each sticker on from beyond the cover, big and turned, and lands it exactly; one already down jolts at the next landing, then is still", () => {
+/** Every shape a frame draws, in the order drawn: the map it is drawn through, and the ops round it (a blur, a shadow's tint, a fade). */
+function shapesOf(frame) {
+  const out = [];
+  const walk = (ops, m, around) => {
+    for (const op of ops) {
+      if (op.kind === "matrix") walk(op.ops, PL.multiply(m, op.m), around);
+      else if (op.kind === "turn") {
+        const c = Math.cos(op.angle);
+        const sn = Math.sin(op.angle);
+        walk(op.ops, PL.multiply(m, [c, sn, -sn, c, op.cx - c * op.cx + sn * op.cy, op.cy - sn * op.cx - c * op.cy]), around);
+      } else if (op.kind === "fade") walk(op.ops, m, { ...around, alpha: (around.alpha ?? 1) * op.alpha });
+      else if (op.kind === "blur") walk(op.ops, m, { ...around, blur: op.radius, tint: op.tint ?? around.tint });
+      else if (op.kind === "shape") out.push({ op, m, ...around });
+    }
+  };
+  walk(frame.ops, [1, 0, 0, 1, 0, 0], {});
+  return out;
+}
+
+const scaleOf = (m) => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+
+check("Slap brings each sticker down from in front of the screen: bigger than the cover, out of focus and over everything, its shadow closing in, then slapped flat and exact; one already down is knocked back as the next lands", () => {
   const scene = cover("things *aren't*\n*what* they seem", "stickery", "reel", { lettering: "yesteryear" });
   const p = AN.plan(scene, "stickery", "slap", measurer);
-  const shapeAt = (t, index) => {
-    let out = null;
-    let n = -1;
-    const walk = (ops, m) => {
-      for (const op of ops) {
-        if (op.kind === "matrix") walk(op.ops, PL.multiply(m, op.m));
-        else if (op.kind === "fade") walk(op.ops, m);
-        else if (op.kind === "shape") {
-          n += 1;
-          if (n === index || (index === 1 && n === 0 && false)) out = { op, m };
-        }
-      }
-    };
-    walk(p.frame(t).ops, [1, 0, 0, 1, 0, 0]);
-    return out;
-  };
   const originals = scene.ops.filter((op) => op.kind === "shape");
-  // Just after it is thrown: most of the first sticker is off the cover, and it is bigger than it will be.
-  const early = shapeAt(0.02, 0);
-  assert.ok(early, "the first sticker is not in the air at once");
+  assert.equal(originals.length, 2);
+  const W = scene.width;
+  const H = scene.height;
+  /** The sticker itself (not its shadow) as a frame draws it. */
+  const sticker = (t, index) => shapesOf(p.frame(t)).find((d) => d.op === originals[index] && !d.tint) ?? null;
+  // Just after it starts: bigger than the cover, past both its sides, seen about the middle (not from below), soft, and its shadow on the page under it.
+  const early = sticker(0.06, 0);
+  assert.ok(early, "the first sticker is not on its way at once");
   const box = SP.polygonBounds(originals[0].polygons);
   const corners = [[box.x, box.y], [box.x + box.w, box.y], [box.x, box.y + box.h], [box.x + box.w, box.y + box.h]].map(([x, y]) => PL.apply(early.m, { x, y }));
-  const inside = corners.filter((c) => c.x >= 0 && c.x <= scene.width && c.y >= 0 && c.y <= scene.height).length;
-  assert.ok(inside <= 1, `${inside} corners already on the cover`);
-  const scale = Math.sqrt(Math.abs(early.m[0] * early.m[3] - early.m[1] * early.m[2]));
-  assert.ok(scale > 1.8, `thrown at ${scale.toFixed(2)} times its size`);
-  // The second waits its turn; once all have landed, everything is where the cover has it.
-  const before = p.frame(0.05);
-  assert.equal(before.ops.filter((op) => op.kind === "shape" || (op.kind === "matrix" && op.ops.some((o) => o.kind === "shape"))).length, 1, "the second sticker is in the air at once");
-  // The first jolts as the second lands, a moment, and no more.
-  let jolted = false;
-  for (let t = 0.6; t < p.duration; t += 1 / 120) {
-    const first = shapeAt(t, 0);
-    if (first && first.m[5] !== 0 && Math.abs(first.m[0] - 1) < 1e-9) jolted = true;
+  assert.ok(Math.min(...corners.map((c) => c.x)) < 0 && Math.max(...corners.map((c) => c.x)) > W, "it is not bigger than the cover");
+  assert.ok(scaleOf(early.m) > 2.5, `first seen at ${scaleOf(early.m).toFixed(2)} times its size`);
+  const middle = PL.apply(early.m, { x: box.x + box.w / 2, y: box.y + box.h / 2 });
+  assert.ok(middle.y > H * 0.3 && middle.y < H * 0.75 && middle.x > W * 0.25 && middle.x < W * 0.75, `seen first at ${middle.x.toFixed(0)},${middle.y.toFixed(0)}, not in front`);
+  assert.ok(early.blur > 5, "it is not out of focus near the eye");
+  // Drawn over everything: nothing of the cover after it.
+  const frame = p.frame(0.25);
+  const drawn = shapesOf(frame);
+  assert.equal(drawn.at(-1).op, originals[0]);
+  const shadow = drawn.find((d) => d.op === originals[0] && d.tint);
+  assert.ok(shadow && shadow.alpha > 0.05 && shadow.alpha < 0.5, "it casts no shadow on the page");
+  // Smaller every moment of the way down, sharper too, and at its own size as it lands.
+  let lastScale = Infinity;
+  let lastBlur = Infinity;
+  for (let t = 0.02; t < 0.4; t += 0.01) {
+    const d = sticker(t, 0);
+    const k = scaleOf(d.m);
+    assert.ok(k <= lastScale + 1e-9, `it grew at ${t.toFixed(2)}`);
+    assert.ok((d.blur ?? 0) <= lastBlur + 1e-9, `it went softer at ${t.toFixed(2)}`);
+    lastScale = k;
+    lastBlur = d.blur ?? 0;
   }
-  assert.ok(jolted, "the first sticker does not jolt at the second landing");
+  assert.ok(lastScale < 1.15, `it lands at ${lastScale.toFixed(3)} times its size`);
+  // Slapped flat on landing: smaller than its size a moment, about its own middle.
+  const pressed = sticker(0.42, 0);
+  assert.ok(scaleOf(pressed.m) < 0.97, "it is not pressed flat as it lands");
+  // The second waits its turn.
+  assert.equal(sticker(0.1, 1), null, "the second sticker comes at once");
+  // The first, laid, is knocked back into the page as the second lands, and then is still.
+  let knocked = false;
+  for (let t = 0.82; t < 1.05; t += 1 / 120) {
+    const d = sticker(t, 0);
+    if (d && !d.blur && scaleOf(d.m) < 0.995) knocked = true;
+  }
+  assert.ok(knocked, "the first sticker is not knocked back as the second lands");
   assert.equal(p.frame(p.duration), scene);
+  const still = sticker(p.duration - 1e-6, 0);
+  assert.ok(near(scaleOf(still.m), 1, 1e-6));
+});
+
+check("Pop springs each sticker on from small, past its size and back; Reveal brings each into focus out of nothing, softer and fainter the earlier, never far from its size", () => {
+  const scene = cover("things *aren't*\n*what* they seem", "stickery", "reel", { lettering: "yesteryear" });
+  const first = scene.ops.find((op) => op.kind === "shape");
+  const pop = AN.plan(scene, "stickery", "pop", measurer);
+  const scales = [];
+  for (let t = 0.01; t < 0.5; t += 0.01) {
+    const d = shapesOf(pop.frame(t)).find((x) => x.op === first);
+    if (d) scales.push(scaleOf(d.m));
+  }
+  assert.ok(scales[0] < 0.6, `it pops from ${scales[0]}`);
+  assert.ok(Math.max(...scales) > 1.02, "it never springs past its size");
+  const reveal = AN.plan(scene, "stickery", "reveal", measurer);
+  let last = { alpha: -1, blur: Infinity };
+  for (let t = 0.05; t < 1.1; t += 0.05) {
+    const d = shapesOf(reveal.frame(t)).find((x) => x.op === first);
+    if (!d) continue;
+    const alpha = d.alpha ?? 1;
+    const blur = d.blur ?? 0;
+    assert.ok(alpha >= last.alpha - 1e-9, `it faded out at ${t.toFixed(2)}`);
+    assert.ok(blur <= last.blur + 1e-9, `it went softer at ${t.toFixed(2)}`);
+    assert.ok(scaleOf(d.m) <= 1.06 + 1e-9 && scaleOf(d.m) >= 1 - 1e-9);
+    last = { alpha, blur };
+  }
+  const soft = shapesOf(reveal.frame(0.2)).find((x) => x.op === first);
+  assert.ok(soft.blur > 10 && soft.alpha < 0.5, "it is not soft and faint early on");
+  // The second comes while the first is still coming, and both end exact.
+  assert.ok(shapesOf(reveal.frame(0.8)).length === 2);
+  for (const p of [pop, reveal]) assert.equal(p.frame(p.duration), scene);
+});
+
+check("Type and draw lays a sticker's paper under each letter as it comes: it only grows, every letter typed is on it, and it ends the sticker exactly", () => {
+  const area = (polygons) => polygons.reduce((sum, poly) => {
+    let a = 0;
+    for (let i = 0; i < poly.length; i += 2) {
+      const j = (i + 2) % poly.length;
+      a += poly[i] * poly[j + 1] - poly[j] * poly[i + 1];
+    }
+    return sum + Math.abs(a) / 2;
+  }, 0);
+  for (const lettering of ["yesteryear", "goo"]) {
+    const scene = cover("things *aren't*\n*what* they seem", "stickery", "reel", { lettering });
+    const originals = scene.ops.filter((op) => op.kind === "shape");
+    assert.ok(originals.every((op) => op.grid && op.grid.cell > 0 && op.grid.cellY > 0), "a sticker carries no grid");
+    const p = AN.plan(scene, "stickery", "type-draw", measurer);
+    const grown = originals.map(() => 0);
+    let halfway = false;
+    for (let t = 0; t < p.duration; t += 1 / 60) {
+      const frame = p.frame(t);
+      const papers = frame.ops.filter((op) => op.kind === "shape");
+      originals.forEach((o, i) => {
+        const now = papers.find((x) => x.color === o.color);
+        const a = now ? area(now.polygons) : 0;
+        assert.ok(a >= grown[i] - 1e-6, `${lettering}: sticker ${i}'s paper shrank at ${t.toFixed(3)}`);
+        if (a > 0 && a < area(o.polygons) - 1) halfway = true;
+        grown[i] = a;
+        // Never more than the sticker itself.
+        assert.ok(a <= area(o.polygons) + 1e-6);
+      });
+      // Every plain letter typed is on paper: the middle of the last one typed of each word inside its sticker's paper.
+      for (const op of frame.ops) {
+        if (op.kind !== "text" || op.face.startsWith("funky-")) continue;
+        const g = T.graphemes(op.text);
+        const lastLetter = g[g.length - 1];
+        const b = measurer.bounds(op.face, lastLetter);
+        const x = op.x + measurer.width(op.face, g.slice(0, -1).join("")) * op.size + ((b.right - b.left) / 2) * op.size;
+        const y = op.y - ((b.ascent - b.descent) / 2) * op.size;
+        assert.ok(papers.some((paper) => paper.polygons.some((poly) => SP.insidePolygon(poly, x, y))), `${lettering}: "${op.text}" typed off its paper at ${t.toFixed(3)}`);
+      }
+    }
+    assert.ok(halfway, `${lettering}: the paper is never part laid`);
+    originals.forEach((o, i) => assert.ok(near(grown[i], area(o.polygons), 1e-6), `${lettering}: sticker ${i} ends at ${grown[i]} of ${area(o.polygons)}`));
+  }
+  // The cells of a sticker traced again are the sticker; a cell takes the time of what is laid nearest it, the earlier where two are as near.
+  const scene = cover("things *aren't*", "stickery", "reel", { lettering: "yesteryear" });
+  const shape = scene.ops.find((op) => op.kind === "shape");
+  const paper = AN.paperCells(shape.polygons, shape.grid.cell, shape.grid.cellY);
+  const all = AN.paperGrowing(paper, AN.paperTimes(paper, [{ x0: -1e6, y0: -1e6, x1: 1e6, y1: 1e6, at: 0 }]));
+  assert.deepEqual(all(-1), []);
+  assert.equal(all(0), null, "the sticker laid whole is not the sticker");
+  const cells = { cols: 7, rows: 1, ox: 0, oy: 0, cell: 10, cellY: 10, inside: Uint8Array.from([0, 1, 1, 1, 1, 1, 0]) };
+  const times = AN.paperTimes(cells, [{ x0: 10, y0: 0, x1: 20, y1: 10, at: 2 }, { x0: 50, y0: 0, x1: 60, y1: 10, at: 1 }]);
+  assert.deepEqual(Array.from(times), [Infinity, 2, 2, 1, 1, 1, Infinity]);
+  const grow = AN.paperGrowing(cells, times);
+  assert.deepEqual(grow(0.5), []);
+  assert.deepEqual(grow(1).map((poly) => SP.polygonBounds([poly])), [{ x: 30, y: 0, w: 30, h: 10 }]);
+  assert.equal(grow(2), null);
 });
 
 check("a word is written as a pen goes: a bar from its left end to its right, an L down then along, pieces left to right, every pixel of ink written", () => {
@@ -2802,6 +2964,31 @@ check("a frame's fades and written words paint: a fade's alpha times a word's ow
   const alphas = texts.slice(1).map((c) => c.alpha);
   for (let i = 1; i < alphas.length; i += 1) assert.ok(alphas[i] < alphas[i - 1], "the soft edge does not fade out");
   assert.equal(ctx.depth, 0);
+});
+
+check("a blur paints in every engine: each thing drawn off the canvas, its shadow cast back where it belongs, soft and in its own colour, or a shadow's tint", () => {
+  const sticker = { kind: "shape", polygons: [[100, 100, 300, 100, 300, 200, 100, 200]], color: "#E0102F", stroke: "#1C1A16", strokeWidth: 3 };
+  const word = { kind: "text", text: "seem", face: "plain-outfit", size: 60, x: 120, y: 170, color: "#FFFFFF" };
+  const scene = { width: 1080, height: 1920, ops: [{ kind: "blur", radius: 6, ops: [sticker, word] }, { kind: "fade", alpha: 0.3, ops: [{ kind: "blur", radius: 4, tint: "#000000", ops: [{ kind: "matrix", m: [1, 0, 0, 1, 20, 30], ops: [sticker] }] }] }, sticker], readable: { x: 0, y: 0, w: 1, h: 1 }, truncated: false };
+  const ctx = recorder();
+  paint(ctx, scene, { scale: 0.5, font, grain: null });
+  assert.equal(ctx.depth, 0);
+  const [paper, outline, ink, shade, solid] = [ctx.calls.filter((c) => c.kind === "fill")[0], ctx.calls.find((c) => c.kind === "stroke"), ctx.calls.find((c) => c.kind === "fillText"), ctx.calls.filter((c) => c.kind === "fill")[1], ctx.calls.filter((c) => c.kind === "fill")[2]];
+  // Blurred: twice the spread asked for, in the canvas's pixels, in each thing's own colour, drawn as far off as its shadow is cast back.
+  assert.deepEqual(paper.shadow, { color: "rgba(224, 16, 47, 1)", blur: 6, dx: -32768, dy: 0 });
+  assert.equal(paper.m[4], 32768);
+  assert.deepEqual(outline.shadow, { color: "rgba(28, 26, 22, 1)", blur: 6, dx: -32768, dy: 0 });
+  assert.equal(ink.shadow.color, "rgba(255, 255, 255, 1)");
+  assert.ok(ink.at[0] > 32768, "the word is drawn on the canvas as well as its shadow");
+  // A shadow cast: the paper alone, in the tint, faded, moved where it falls; no outline. How faint is in the shadow's colour, the drawing solid (Safari casts a faded drawing's shadow solid).
+  assert.deepEqual(shade.shadow, { color: "rgba(0, 0, 0, 0.3)", blur: 4, dx: -32768, dy: 0 });
+  assert.equal(shade.style, "#000");
+  assert.equal(shade.alpha, 1);
+  assert.equal(shade.m[4], 32768 + 10);
+  assert.equal(ctx.calls.filter((c) => c.kind === "stroke").length, 2, "a shadow is outlined");
+  // And after it, drawn as it is.
+  assert.equal(solid.shadow, null);
+  assert.ok(near(solid.m[4], 0, 1e-12));
 });
 
 check("a video is ProRes 4444 with its alpha in a QuickTime movie with no photo, H.264 in an MP4 with one, its frames read in turn", () => {

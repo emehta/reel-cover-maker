@@ -17,7 +17,7 @@ interface Props {
   onRemove: () => void;
   onFrame: (frame: PhotoFrame) => void;
   onAdjust: (adjust: PhotoAdjust) => void;
-  /** At the card's foot, held in sight however the card scrolls: Export. */
+  /** At the card's foot, held in sight however the card scrolls: Download. */
   footer?: ReactNode;
 }
 

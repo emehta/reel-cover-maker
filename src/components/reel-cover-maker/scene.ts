@@ -97,7 +97,15 @@ export type Op =
   | { kind: "fill"; color: string }
   | { kind: "grain"; alpha: number }
   | { kind: "box"; x: number; y: number; w: number; h: number; radius: number; color: string }
-  | { kind: "shape"; polygons: Polygon[]; color: string; stroke: string; strokeWidth: number }
+  | {
+      kind: "shape";
+      polygons: Polygon[];
+      color: string;
+      stroke: string;
+      strokeWidth: number;
+      /** The grid a sticker's steps are cut on, its cell and the cell's height: what an animation grows the sticker by, step by step. */
+      grid?: { cell: number; cellY: number };
+    }
   | {
       kind: "text";
       text: string;
@@ -125,7 +133,13 @@ export type Op =
    * page cannot trace it, shown left of an edge that leans as handwriting
    * does and sweeps across the box.
    */
-  | { kind: "write"; x: number; y: number; w: number; h: number; at: number; ops: Op[] };
+  | { kind: "write"; x: number; y: number; w: number; h: number; at: number; ops: Op[] }
+  /**
+   * Ops drawn out of focus, `radius` pixels of the picture soft: an
+   * animation's frame, a sticker coming into being (animate.ts). With
+   * `tint`, only their shape is drawn, in that colour: a shadow cast.
+   */
+  | { kind: "blur"; radius: number; tint?: string; ops: Op[] };
 
 export interface Scene {
   width: number;
@@ -1439,7 +1453,7 @@ function stickery(
       const cell = Math.max(2, unit * steps.cell);
       const polygons = steppedOutline(boxes, { cell, cellY: Math.max(2, unit * steps.cellY), pad: unit * steps.pad, rough: { run: Math.max(6, Math.round(ROUGH_RUN / steps.cell)), seed: mixSeed(salt, 0x5e7 + gi) }, onePiece: true });
       // Fitted by the paper and every turned funky word's whole box, so nothing it draws can pass the safe area.
-      return { fill, texts, chains, colourOf, polygons, bounds: union([polygonBounds(polygons), ...extent]), next, unit };
+      return { fill, texts, chains, colourOf, polygons, bounds: union([polygonBounds(polygons), ...extent]), next, unit, grid: { cell, cellY: Math.max(2, unit * steps.cellY) } };
     });
     // Then stacked, well apart, each set a little to the left or right of
     // the one before (Main Sticker 2's lower sticker sits an eighth of its
@@ -1455,7 +1469,7 @@ function stickery(
       if (i) x += (i % 2 ? -1 : 1) * between(st.next, 0.08, 0.16) * st.bounds.w;
       const dx = x - st.bounds.x;
       const dy = y - st.bounds.y;
-      shapes.push({ kind: "shape", polygons: st.polygons.map((p) => p.map((v, k) => v + (k % 2 ? dy : dx))), color: st.fill, stroke: palette.outline, strokeWidth: Math.max(1.2, st.unit * 0.045) });
+      shapes.push({ kind: "shape", polygons: st.polygons.map((p) => p.map((v, k) => v + (k % 2 ? dy : dx))), color: st.fill, stroke: palette.outline, strokeWidth: Math.max(1.2, st.unit * 0.045), grid: st.grid });
       texts.push(...st.texts.map((t) => moveOp(t, dx, dy)));
       chains.push(...shiftChains(st.chains, dx, dy));
       colourOf.push(...st.colourOf);
@@ -1551,7 +1565,7 @@ export function liquidOps(scene: Scene): LiquidOp[] {
   const walk = (ops: Op[]) => {
     for (const op of ops) {
       if (op.kind === "liquid") out.push(op);
-      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write") walk(op.ops);
+      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write" || op.kind === "blur") walk(op.ops);
     }
   };
   walk(scene.ops);

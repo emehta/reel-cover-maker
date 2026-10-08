@@ -2328,9 +2328,30 @@
   font-weight: 600;
 }
 
-.speed .thinSlider {
+/* Its own speed marked in the middle of the track, under the thumb when it is there. */
+.speedTrack {
+  position: relative;
+  display: block;
   flex: 1;
   min-width: 0;
+}
+
+.speedTrack::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--rcm-line-strong);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.speedTrack .thinSlider {
+  position: relative;
+  z-index: 1;
 }
 
 .speed .value {

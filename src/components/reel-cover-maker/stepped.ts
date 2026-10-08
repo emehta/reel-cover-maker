@@ -91,32 +91,41 @@ export function steppedOutline(boxes: Rect[], spec: StepSpec): Polygon[] {
   const touchesEmpty = around(dilated, (v) => v === 0);
   for (let i = 0; i < grid.length; i += 1) if (dilated[i] && !touchesEmpty[i]) grid[i] = 1;
 
-  // Holes filled: any empty cell the outside cannot reach.
-  const fillHoles = (g: Uint8Array) => {
-    const outside = new Uint8Array(cols * rows);
-    const queue: number[] = [];
-    for (let c = 0; c < cols; c += 1) queue.push(c, (rows - 1) * cols + c);
-    for (let r = 0; r < rows; r += 1) queue.push(r * cols, r * cols + cols - 1);
-    while (queue.length) {
-      const i = queue.pop() as number;
-      if (outside[i] || g[i]) continue;
-      outside[i] = 1;
-      const r = Math.floor(i / cols);
-      const c = i % cols;
-      if (r > 0) queue.push(i - cols);
-      if (r < rows - 1) queue.push(i + cols);
-      if (c > 0) queue.push(i - 1);
-      if (c < cols - 1) queue.push(i + 1);
-    }
-    return g.map((v, i) => (v || !outside[i] ? 1 : 0));
-  };
-  grid = fillHoles(grid);
-  if (spec.onePiece) grid = fillHoles(joinPieces(grid, cols, rows));
+  grid = fillHoles(grid, cols, rows);
+  if (spec.onePiece) grid = fillHoles(joinPieces(grid, cols, rows), cols, rows);
   if (spec.rough) {
     grid = roughen(grid, cols, rows, spec.rough);
-    grid = fillHoles(grid);
+    grid = fillHoles(grid, cols, rows);
   }
+  return traceCells(grid, cols, rows, ox, oy, cell, cellY);
+}
 
+/** A grid with its holes filled: any empty cell the outside cannot reach. */
+export function fillHoles(g: Uint8Array<ArrayBuffer>, cols: number, rows: number): Uint8Array<ArrayBuffer> {
+  const outside = new Uint8Array(cols * rows);
+  const queue: number[] = [];
+  for (let c = 0; c < cols; c += 1) queue.push(c, (rows - 1) * cols + c);
+  for (let r = 0; r < rows; r += 1) queue.push(r * cols, r * cols + cols - 1);
+  while (queue.length) {
+    const i = queue.pop() as number;
+    if (outside[i] || g[i]) continue;
+    outside[i] = 1;
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    if (r > 0) queue.push(i - cols);
+    if (r < rows - 1) queue.push(i + cols);
+    if (c > 0) queue.push(i - 1);
+    if (c < cols - 1) queue.push(i + 1);
+  }
+  return g.map((v, i) => (v || !outside[i] ? 1 : 0));
+}
+
+/**
+ * The outline of a grid's filled cells, `cols` by `rows` of `cell` by
+ * `cellY` from (ox, oy): an edge wherever a filled cell meets an empty one,
+ * each loop a polygon of its corners, clockwise on screen.
+ */
+export function traceCells(grid: Uint8Array, cols: number, rows: number, ox: number, oy: number, cell: number, cellY: number): Polygon[] {
   // The cells' outline: an edge wherever a filled cell meets an empty one,
   // directed so the filled side is on the right (clockwise on screen).
   const on = (r: number, c: number) => r >= 0 && c >= 0 && r < rows && c < cols && grid[r * cols + c] === 1;

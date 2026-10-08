@@ -5,14 +5,18 @@
  * is set again: the last frame is the cover exactly as it stands, and a
  * still at any moment is the same still every time.
  *
- * - Stickery: Type and draw (each sticker laid, its plain words typed and
- *   its funky ones written: a script word traced stroke by stroke as a pen
- *   would, write-on.ts, paste piped bead by bead), and Slap (each sticker
- *   thrown on from beyond the cover, big as if near, pressed flat where it
- *   lands, the ones already down jolting).
+ * - Stickery: Type and draw (its plain words typed and its funky ones
+ *   written, a script word traced stroke by stroke as a pen would,
+ *   write-on.ts, paste piped bead by bead; the paper laid under each letter
+ *   as it comes, step by step on the grid its steps were cut on), Slap (each
+ *   sticker brought down from in front of the screen, big and blurred as if
+ *   near the eye, its shadow closing in, slapped flat where it lands, the
+ *   ones already down knocked back), Pop (each springs on), and Reveal (each
+ *   comes into focus out of nothing). The owner, 8 Oct: the paper "already
+ *   there", Slap "coming from the bottom", Rise not wanted, Pop kept.
  * - Pasty and Pasty Flat: Written live (letter after letter, each stroke
  *   piped as if by hand). All at once and Pop were cut (the owner, 7 Oct:
- *   "so bad"), as were Stickery's Pop and Rise.
+ *   "so bad").
  * - Editorial: Word by word, Typewriter, Line by line.
  * - Echo: Ripple (the words, then each echo out from them in turn), Spread
  *   (the echoes slide out from the words to their places), Cascade (every
@@ -22,8 +26,10 @@
  * An effect is worked out where it is seen (a sticker lands about its own
  * middle on the cover) and carried into each op's own frame, through the
  * turns and the owner's placement it is drawn inside; paste is moved bead
- * by bead, since its layer is made for where it lies. Any animation runs
- * at a speed of its own (half to twice as fast), its times scaled.
+ * by bead, since its layer is made for where it lies. A sticker on its way
+ * in is drawn over everything laid, its paste with it, as a thing nearer
+ * the eye is. Any animation runs at a speed of its own (half to twice as
+ * fast), its times scaled.
  *
  * Pure: the tests run it.
  */
@@ -32,10 +38,10 @@ import type { FaceId, Measurer } from "@/components/reel-cover-maker/faces";
 import type { Bead, Chain } from "@/components/reel-cover-maker/liquid";
 import { apply, invert, multiply, type Matrix, type Point } from "@/components/reel-cover-maker/place";
 import { isBackdrop, pasteKey, type LiquidOp, type Op, type Scene, type StyleId } from "@/components/reel-cover-maker/scene";
-import { insidePolygon, polygonBounds, type Polygon } from "@/components/reel-cover-maker/stepped";
+import { fillHoles, insidePolygon, polygonBounds, traceCells, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { graphemes } from "@/components/reel-cover-maker/title";
 
-export type AnimationId = "type-draw" | "slap" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade";
+export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade";
 
 export interface Animation {
   id: AnimationId;
@@ -47,6 +53,8 @@ export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
   stickery: [
     { id: "type-draw", name: "Type and draw" },
     { id: "slap", name: "Slap" },
+    { id: "pop", name: "Pop" },
+    { id: "reveal", name: "Reveal" },
   ],
   pasty: [{ id: "written", name: "Written live" }],
   "pasty-flat": [{ id: "written", name: "Written live" }],
@@ -90,6 +98,25 @@ export function speedOf(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.min(FASTEST, Math.max(SLOWEST, value)) : 1;
 }
 
+/**
+ * Where a speed sits on the speed slider, -1 to 1: half as fast at the
+ * left, its own speed in the middle, twice at the right, each doubling the
+ * same distance along (the owner, 8 Oct: 1 was not in the middle).
+ */
+export function speedPlace(speed: number): number {
+  return Math.log2(speedOf(speed));
+}
+
+/** How near the middle the slider is held at the animation's own speed, as a place on it. */
+const SPEED_CATCH = 0.04;
+
+/** The speed at a place on the slider, to the hundredth: its own speed caught a little either side of the middle. */
+export function speedAtPlace(place: number): number {
+  const v = Math.min(1, Math.max(-1, Number.isFinite(place) ? place : 0));
+  if (Math.abs(v) < SPEED_CATCH) return 1;
+  return speedOf(Math.round(2 ** v * 100) / 100);
+}
+
 export interface Plan {
   /** How long the motion runs, in seconds; from then on the cover stands as it is. */
   duration: number;
@@ -101,8 +128,11 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 /** How far through the stretch from `start`, `length` long, the time `t` is. */
 const span = (t: number, start: number, length: number) => (length <= 0 ? (t >= start ? 1 : 0) : clamp01((t - start) / length));
 const easeOut = (u: number) => 1 - (1 - clamp01(u)) ** 3;
-/** Quicker and quicker, as a hand slapping a sticker down. */
-const easeIn = (u: number) => clamp01(u) ** 2.4;
+/** Past the mark and back, as a thing thrown on settles. */
+const springy = (u: number) => {
+  const x = clamp01(u) - 1;
+  return 1 + 2.4 * x ** 3 + 1.4 * x ** 2;
+};
 /** Slow off, quick through the middle, slow to stop: a hand writing a word. */
 const easeInOut = (u: number) => {
   const x = clamp01(u);
@@ -129,15 +159,6 @@ function thrown(centre: Point, s: number, angle: number, dx: number, dy: number)
   return [a, b, -b, a, centre.x + dx - (a * centre.x - b * centre.y), centre.y + dy - (b * centre.x + a * centre.y)];
 }
 
-/** How far a sticker already down is knocked, at `t`, by others landing at `landings`: a quick shudder each, gone in `length`. */
-function joltAt(t: number, landings: readonly number[], length: number, size: number): number {
-  let dy = 0;
-  for (const at of landings) {
-    const w = span(t, at, length);
-    if (w > 0 && w < 1) dy += size * (1 - w) ** 2 * Math.sin(3 * Math.PI * w);
-  }
-  return dy;
-}
 
 /** A canvas's rotation by `angle` about (cx, cy), as a matrix. */
 function turnMatrix(cx: number, cy: number, angle: number): Matrix {
@@ -155,6 +176,8 @@ interface Look {
   typed?: number;
   /** How far a wipe has drawn it, 0 to 1. */
   drawn?: number;
+  /** A sticker's paper as far as it is laid: its outline, in its own frame. */
+  polygons?: Polygon[];
 }
 
 /** An op, its place in the scene, and the map from its own frame to the cover's. */
@@ -168,7 +191,7 @@ function leavesOf(ops: Op[], world: Matrix = IDENTITY, out: Leaf[] = []): Leaf[]
   for (const op of ops) {
     if (op.kind === "turn") leavesOf(op.ops, multiply(world, turnMatrix(op.cx, op.cy, op.angle)), out);
     else if (op.kind === "matrix") leavesOf(op.ops, multiply(world, op.m), out);
-    else if (op.kind === "fade" || op.kind === "write") leavesOf(op.ops, world, out);
+    else if (op.kind === "fade" || op.kind === "write" || op.kind === "blur") leavesOf(op.ops, world, out);
     else if (!isBackdrop(op)) out.push({ op, world });
   }
   return out;
@@ -218,6 +241,10 @@ function looked(leaf: Leaf, look: Look | null, measurer: Measurer): Op | null {
     const shown = graphemes(op.text).slice(0, Math.max(0, look.typed)).join("");
     if (!shown) return null;
     op = { ...op, text: shown };
+  }
+  if (look.polygons && op.kind === "shape") {
+    if (!look.polygons.length) return null;
+    op = { ...op, polygons: look.polygons };
   }
   if (look.drawn !== undefined && leaf.op.kind === "text") {
     if (look.drawn <= 0) return null;
@@ -351,6 +378,8 @@ interface Built {
   paste?: (op: LiquidOp, t: number) => LiquidOp | null;
   /** Ops put in place of a leaf at a time (a line set word by word); null to look it up as usual. */
   replace?: (leaf: Leaf, t: number) => Op[] | null;
+  /** The whole frame's ops at a time, where an animation sets them out itself: a sticker on its way drawn over all that is laid. */
+  ops?: (t: number) => Op[];
 }
 
 /** Times worked out at length `natural`, quickened to fit the longest a motion may run. */
@@ -369,6 +398,240 @@ function arrive(kind: "rise" | "drop" | "fade" | "settle", centre: Point, start:
   return { alpha: easeOut(u) };
 }
 
+// Paper laid under its words.
+
+/** A sticker's paper as the cells of the grid its steps were cut on: the finished sticker's, and the grid's place. */
+interface Paper {
+  cols: number;
+  rows: number;
+  ox: number;
+  oy: number;
+  cell: number;
+  cellY: number;
+  inside: Uint8Array;
+}
+
+/** The cells a sticker's outline holds, on the grid it was cut on (whose lines pass through its every corner); null with no outline. */
+export function paperCells(polygons: Polygon[], cell: number, cellY: number): Paper | null {
+  const first = polygons.find((p) => p.length >= 8);
+  if (!first || !(cell > 0) || !(cellY > 0)) return null;
+  const [x0, y0] = first;
+  let c0 = Infinity;
+  let c1 = -Infinity;
+  let r0 = Infinity;
+  let r1 = -Infinity;
+  for (const p of polygons) {
+    for (let i = 0; i + 1 < p.length; i += 2) {
+      const c = Math.round((p[i] - x0) / cell);
+      const r = Math.round((p[i + 1] - y0) / cellY);
+      c0 = Math.min(c0, c);
+      c1 = Math.max(c1, c);
+      r0 = Math.min(r0, r);
+      r1 = Math.max(r1, r);
+    }
+  }
+  // A clear cell all round, so every outline traced in it closes.
+  const ox = x0 + (c0 - 1) * cell;
+  const oy = y0 + (r0 - 1) * cellY;
+  const cols = c1 - c0 + 2;
+  const rows = r1 - r0 + 2;
+  const inside = new Uint8Array(cols * rows);
+  // Each row's middle crosses the outline at its upright edges: inside between each pair, as the even-odd rule has it.
+  for (let r = 0; r < rows; r += 1) {
+    const y = oy + (r + 0.5) * cellY;
+    const xs: number[] = [];
+    for (const p of polygons) {
+      for (let i = 0; i + 1 < p.length; i += 2) {
+        const j = (i + 2) % p.length;
+        const ya = p[i + 1];
+        const yb = p[j + 1];
+        if (ya > y !== yb > y) xs.push(p[i] + ((y - ya) / (yb - ya)) * (p[j] - p[i]));
+      }
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const from = Math.max(0, Math.round((xs[k] - ox) / cell));
+      const to = Math.min(cols, Math.round((xs[k + 1] - ox) / cell));
+      for (let c = from; c < to; c += 1) inside[r * cols + c] = 1;
+    }
+  }
+  return { cols, rows, ox, oy, cell, cellY, inside };
+}
+
+/** Something laid on a sticker: its box in the paper's own frame, and when. */
+export interface PaperSeed {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  at: number;
+}
+
+/**
+ * When each cell of a sticker's paper is laid: a cell under a letter when
+ * the letter comes, and every other cell when the letter nearest it does
+ * (nearest through the paper itself, the earlier where two are as near),
+ * so the paper reaches out round each word as it is set and the bridges
+ * between words meet halfway. Cells nothing reaches come with the last.
+ */
+export function paperTimes(paper: Paper, seeds: readonly PaperSeed[]): Float64Array {
+  const { cols, rows, ox, oy, cell, cellY, inside } = paper;
+  const n = cols * rows;
+  const time = new Float64Array(n).fill(Infinity);
+  const distance = new Float64Array(n).fill(Infinity);
+  // A small heap of [distance, time, cell], nearest first, then earliest.
+  const heap: [number, number, number][] = [];
+  const before = (a: [number, number, number], b: [number, number, number]) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+  const push = (item: [number, number, number]) => {
+    heap.push(item);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (!before(heap[i], heap[parent])) break;
+      [heap[parent], heap[i]] = [heap[i], heap[parent]];
+      i = parent;
+    }
+  };
+  const pop = (): [number, number, number] => {
+    const top = heap[0];
+    const end = heap.pop() as [number, number, number];
+    if (heap.length) {
+      heap[0] = end;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1;
+        const r = l + 1;
+        let least = i;
+        if (l < heap.length && before(heap[l], heap[least])) least = l;
+        if (r < heap.length && before(heap[r], heap[least])) least = r;
+        if (least === i) break;
+        [heap[least], heap[i]] = [heap[i], heap[least]];
+        i = least;
+      }
+    }
+    return top;
+  };
+  let last = -Infinity;
+  for (const seed of seeds) {
+    last = Math.max(last, seed.at);
+    const c0 = Math.max(0, Math.floor((seed.x0 - ox) / cell));
+    const c1 = Math.min(cols - 1, Math.ceil((seed.x1 - ox) / cell) - 1);
+    const r0 = Math.max(0, Math.floor((seed.y0 - oy) / cellY));
+    const r1 = Math.min(rows - 1, Math.ceil((seed.y1 - oy) / cellY) - 1);
+    for (let r = r0; r <= r1; r += 1) {
+      for (let c = c0; c <= c1; c += 1) {
+        const i = r * cols + c;
+        if (inside[i] && seed.at < time[i]) {
+          time[i] = seed.at;
+          distance[i] = 0;
+          push([0, seed.at, i]);
+        }
+      }
+    }
+  }
+  const done = new Uint8Array(n);
+  while (heap.length) {
+    const [d, t, i] = pop();
+    if (done[i]) continue;
+    done[i] = 1;
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const step = (j: number, by: number) => {
+      if (!inside[j] || done[j]) return;
+      const e = d + by;
+      if (e < distance[j] || (e === distance[j] && t < time[j])) {
+        distance[j] = e;
+        time[j] = t;
+        push([e, t, j]);
+      }
+    };
+    if (c > 0) step(i - 1, cell);
+    if (c < cols - 1) step(i + 1, cell);
+    if (r > 0) step(i - cols, cellY);
+    if (r < rows - 1) step(i + cols, cellY);
+  }
+  const fallback = Number.isFinite(last) ? last : 0;
+  for (let i = 0; i < n; i += 1) if (inside[i] && !Number.isFinite(time[i])) time[i] = fallback;
+  return time;
+}
+
+/**
+ * A sticker's paper at a time, as `paperTimes` lays it: the outline of the
+ * cells laid by then (none before the first, null once all are, for the
+ * sticker as it is). Each outline is worked out once.
+ */
+export function paperGrowing(paper: Paper, time: Float64Array): (t: number) => Polygon[] | null {
+  const { cols, rows, ox, oy, cell, cellY, inside } = paper;
+  const moments = [...new Set(Array.from(time).filter((v, i) => inside[i] && Number.isFinite(v)))].sort((a, b) => a - b);
+  const made = new Map<number, Polygon[]>();
+  return (t) => {
+    let lo = 0;
+    let hi = moments.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (moments[mid] <= t) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo >= moments.length) return null;
+    if (lo === 0) return [];
+    let outline = made.get(lo);
+    if (!outline) {
+      const limit = moments[lo - 1];
+      const grid = new Uint8Array(cols * rows);
+      for (let i = 0; i < grid.length; i += 1) if (inside[i] && time[i] <= limit) grid[i] = 1;
+      outline = traceCells(fillHoles(grid, cols, rows), cols, rows, ox, oy, cell, cellY);
+      made.set(lo, outline);
+    }
+    return outline;
+  };
+}
+
+/** Each letter of a text op that inks, its place in the text and its ink box, in the op's own frame. */
+function letterBoxes(op: Extract<Op, { kind: "text" }>, measurer: Measurer): { index: number; box: { x: number; y: number; w: number; h: number } }[] {
+  const out: { index: number; box: { x: number; y: number; w: number; h: number } }[] = [];
+  let before = "";
+  graphemes(op.text).forEach((g, index) => {
+    if (g.trim()) {
+      const b = measurer.bounds(op.face, g);
+      const x = op.x + measurer.width(op.face, before) * op.size;
+      out.push({ index, box: { x: x - b.left * op.size, y: op.y - b.ascent * op.size, w: (b.left + b.right) * op.size, h: (b.ascent + b.descent) * op.size } });
+    }
+    before += g;
+  });
+  return out;
+}
+
+/** How far a written word is drawn, `u` of the way through its time: at a hand's even pace, slowing only to start and stop. */
+const drawnAt = (u: number) => 0.15 * easeInOut(u) + 0.85 * clamp01(u);
+
+/** When a written word is `part` drawn, as a share of its time. */
+function whenDrawn(part: number): number {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 32; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (drawnAt(mid) < part) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** How far ahead of the pen a written word's paper is laid, as a share of the word: paper under the ink before the ink. */
+const PAPER_LEAD = 0.04;
+
+// Stickers coming on whole.
+
+/** A sticker coming on: where it is seen (a map of the cover), how solid, how out of focus, and the shadow it casts on the page. */
+interface Pose {
+  move?: Matrix;
+  alpha?: number;
+  blur?: number;
+  shadow?: { move: Matrix; alpha: number; blur: number };
+}
+
+/** A sticker at a moment: not yet come, on its way (drawn over the rest), or laid (knocked by another landing, perhaps). */
+type StickerAt = { kind: "hidden" } | { kind: "coming"; pose: Pose } | { kind: "laid"; move?: Matrix };
+
 /** Stickery: each sticker and what is on it, in reading order. */
 function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   const leaves = leavesOf(scene.ops);
@@ -384,7 +647,7 @@ function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
         return out;
       });
       const box = polygonBounds(polygons);
-      return { leaf: l, polygons, centre: centreOf(box), height: box.h, reach: Math.hypot(box.w, box.h) / 2 };
+      return { leaf: l, polygons, box, centre: centreOf(box), height: box.h };
     });
   const owner = (p: Point): number => {
     const inside = stickers.findIndex((s) => s.polygons.some((poly) => insidePolygon(poly, p.x, p.y)));
@@ -396,7 +659,9 @@ function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
     return best;
   };
   const words = leaves.filter((l) => l.op.kind === "text").map((l) => ({ leaf: l, centre: leafCentre(l, measurer), on: stickers.length ? owner(leafCentre(l, measurer)) : 0 }));
-  const paste = scene.ops.find((op): op is LiquidOp => op.kind === "liquid") ?? null;
+  const pasteLeaf = leaves.find((l): l is Leaf & { op: LiquidOp } => l.op.kind === "liquid") ?? null;
+  const paste = pasteLeaf?.op ?? null;
+  // Paste is drawn where its beads say, whatever map it sits in: its beads are on the cover as they are.
   const chainOwner = paste ? paste.chains.map((c) => (stickers.length ? owner(c[Math.floor(c.length / 2)] ?? c[0]) : 0)) : [];
   const radius = paste ? typicalRadius(paste) : 1;
 
@@ -407,13 +672,25 @@ function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   let k = 1;
 
   if (id === "type-draw") {
-    // Each sticker laid, then its words in reading order: plain ones typed, funky ones drawn.
-    const plan: { at: number; run: (k: number) => void }[] = [];
-    let t = 0;
+    // Each sticker's words in reading order, plain ones typed and funky ones
+    // drawn, the paper laid under each letter as it comes.
+    const plan: { run: (k: number) => void }[] = [];
+    const seeds: PaperSeed[][] = stickers.map(() => []);
+    /** When each sticker's first word begins, at its own speed. */
+    const begins: number[] = [];
+    // A moment of nothing first, so a video opens clear.
+    let t = 0.1;
     stickers.forEach((s, si) => {
-      const paperAt = t;
-      sheet.set(s.leaf.op, (now) => arrive("settle", s.centre, paperAt * k, 0.32 * k, now, 0));
-      t += 0.2;
+      begins[si] = t;
+      const toPaper = invert(s.leaf.world);
+      /** A box in its own frame (`world` maps it onto the cover), laid on this sticker's paper at `at`. */
+      const lay = (world: Matrix, box: { x: number; y: number; w: number; h: number }, at: number) => {
+        const m = multiply(toPaper, world);
+        const corners = [apply(m, { x: box.x, y: box.y }), apply(m, { x: box.x + box.w, y: box.y }), apply(m, { x: box.x, y: box.y + box.h }), apply(m, { x: box.x + box.w, y: box.y + box.h })];
+        const xs = corners.map((p) => p.x);
+        const ys = corners.map((p) => p.y);
+        seeds[si].push({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys), at });
+      };
       type Unit = { kind: "word"; leaf: Leaf; centre: Point; height: number } | { kind: "paste"; chains: number[]; centre: Point; height: number };
       const units: Unit[] = words
         .filter((w) => w.on === si)
@@ -427,102 +704,255 @@ function stickery(scene: Scene, id: AnimationId, measurer: Measurer): Built {
       }
       units.sort((a, b) => (Math.abs(a.centre.y - b.centre.y) > Math.min(a.height, b.height) * 0.45 ? a.centre.y - b.centre.y : a.centre.x - b.centre.x));
       for (const unit of units) {
-        if (unit.kind === "paste") {
+        if (unit.kind === "paste" && paste && pasteLeaf) {
           const at = t;
           const length = 0.5 + 0.09 * unit.chains.length;
+          // The paper under each bead as the nozzle reaches it.
+          const { piping } = pipeInTurn(paste.chains, unit.chains, at, length);
+          for (const i of unit.chains) {
+            const chain = paste.chains[i];
+            const whole = chainLength(chain) || 1;
+            let gone = 0;
+            chain.forEach((b, j) => {
+              if (j) gone += Math.hypot(b.x - chain[j - 1].x, b.y - chain[j - 1].y);
+              lay(pasteLeaf.world, { x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 }, piping.start[i] + (piping.length[i] * gone) / whole);
+            });
+          }
           plan.push({
-            at,
             run: (k) => {
-              const { piping } = pipeInTurn(paste!.chains, unit.chains, at * k, length * k);
-              for (const i of unit.chains) chainTimes[i] = { start: piping.start[i], length: piping.length[i] };
+              const scaled = pipeInTurn(paste.chains, unit.chains, at * k, length * k).piping;
+              for (const i of unit.chains) chainTimes[i] = { start: scaled.start[i], length: scaled.length[i] };
             },
           });
           t += length + 0.06;
           continue;
         }
+        if (unit.kind !== "word") continue;
         const op = unit.leaf.op as Extract<Op, { kind: "text" }>;
         const count = graphemes(op.text).length;
         const funky = op.face.startsWith("funky-");
         const at = t;
+        const letters = letterBoxes(op, measurer);
         if (funky) {
-          // Written at a hand's even pace, slowing only to start and stop.
           const length = 0.34 + 0.085 * count;
-          sheet.set(op, (now) => (now >= (at + length) * k ? null : { drawn: 0.15 * easeInOut(span(now, at * k, length * k)) + 0.85 * span(now, at * k, length * k) }));
+          sheet.set(op, (now) => (now >= (at + length) * k ? null : { drawn: drawnAt(span(now, at * k, length * k)) }));
+          // Each letter's paper as the pen comes to it, a little ahead: a script word is written left to right.
+          const word = textBox(op, measurer);
+          for (const { box } of letters) lay(unit.leaf.world, box, at + length * whenDrawn(clamp01((box.x - word.x) / Math.max(1e-6, word.w) - PAPER_LEAD)));
           t += length + 0.05;
         } else {
           const each = 0.045;
           sheet.set(op, (now) => (now >= (at + each * count) * k ? null : { typed: typedAt(now, at * k, each * count * k, count) }));
+          // Each letter's paper as its key goes down.
+          for (const { index, box } of letters) lay(unit.leaf.world, box, at + each * index);
           t += each * count + 0.07;
         }
       }
-      t += 0.1;
+      t += 0.12;
     });
     // Droplets, if any, last.
     if (paste) {
       const drops = paste.chains.map((_, i) => i).filter((i) => i >= paste.letters);
       const at = t;
-      plan.push({ at, run: (k) => drops.forEach((i, n) => (chainTimes[i] = { start: (at + n * 0.03) * k, length: 0.2 * k })) });
+      plan.push({ run: (k) => drops.forEach((i, n) => (chainTimes[i] = { start: (at + n * 0.03) * k, length: 0.2 * k })) });
       if (drops.length) t += 0.3;
     }
     natural = t;
     k = fitted(natural);
     for (const p of plan) p.run(k);
-  } else {
-    // Slap: each sticker whole, thrown on from beyond the cover in turn, big
-    // as if near the eye, turning flat as it comes, pressed down where it
-    // lands; every one already down jolts at each landing after it.
-    const fly = 0.36;
-    const press = 0.26;
-    const gap = 0.32;
-    natural = stickers.length ? (stickers.length - 1) * gap + fly + press : 0;
-    k = fitted(natural);
-    const landings = stickers.map((_, si) => (si * gap + fly) * k);
+    // The paper grown under its words, a step at a time; laid whole with its first word where its grid is not known.
     stickers.forEach((s, si) => {
-      const at = si * gap * k;
-      // From wholly below the cover, from one side and then the other, as a right hand and a left would throw.
-      const side = si % 2 ? 1 : -1;
-      const scale = 2.5;
-      const from = { dx: side * scene.width * 0.38, dy: scene.height - s.centre.y + s.reach * scale * 1.05, angle: side * 0.42, scale };
-      const look = (now: number): Look | null => {
-        if (now < at) return { alpha: 0 };
-        const u = span(now, at, fly * k);
-        if (u < 1) {
-          const e = easeIn(u);
-          return { move: thrown(s.centre, from.scale + (1 - from.scale) * e, from.angle * (1 - e), from.dx * (1 - e), from.dy * (1 - e)) };
-        }
-        const v = span(now, at + fly * k, press * k);
-        if (v < 1) {
-          // Pressed flat on landing, then a little proud of it, then still.
-          const squash = 1 - 0.075 * (1 - v) ** 2 * Math.cos(3 * Math.PI * v);
-          return { move: about(s.centre.x, s.centre.y, squash) };
-        }
-        const jolt = joltAt(now, landings.slice(si + 1), 0.2 * k, s.height * 0.035);
-        return jolt ? { move: about(s.centre.x, s.centre.y, 1, 0, jolt) } : null;
-      };
-      sheet.set(s.leaf.op, look);
-      for (const w of words) if (w.on === si) sheet.set(w.leaf.op, look);
-      paste?.chains.forEach((_, i) => {
-        if (chainOwner[i] === si) chainTimes[i] = { start: at, length: 0, move: (now) => look(now)?.move };
+      const grid = s.leaf.op.grid;
+      const paper = grid ? paperCells(s.leaf.op.polygons, grid.cell, grid.cellY) : null;
+      if (!paper || !seeds[si].length) {
+        const from = (begins[si] ?? 0) * k;
+        sheet.set(s.leaf.op, (now) => (now >= from ? null : { alpha: 0 }));
+        return;
+      }
+      const grown = paperGrowing(paper, paperTimes(paper, seeds[si].map((seed) => ({ ...seed, at: seed.at * k }))));
+      sheet.set(s.leaf.op, (now) => {
+        const polygons = grown(now);
+        return polygons ? { polygons } : null;
       });
     });
+    return {
+      duration: natural * k,
+      look: (leaf, now) => sheet.get(leaf.op)?.(now) ?? null,
+      paste: (op, now) =>
+        pasteAt(op, radius, (i) => {
+          const c = chainTimes[i];
+          return c ? { part: span(now, c.start, c.length) } : { part: 1 };
+        }),
+    };
   }
+
+  // Each sticker whole, in turn: worked out as where it is seen at each moment.
+  const W = scene.width;
+  const H = scene.height;
+  const n = stickers.length;
+  let at: (si: number, t: number) => StickerAt;
+  /** When each sticker starts coming on. */
+  let starts: number[];
+
+  if (id === "slap") {
+    // Brought down from in front of the screen (the owner, 8 Oct: "coming
+    // from ahead of the screen", not from below it): first seen big and
+    // soft as a thing near the eye, bigger than the cover, as a hand holds
+    // it up to the lens; then down onto the page faster and faster, its
+    // shadow closing in under it and darkening, turning flat as it comes;
+    // slapped flat where it lands, and everything already down knocked
+    // back into the page a moment.
+    const fly = 0.4;
+    const press = 0.3;
+    const gap = 0.4;
+    natural = n ? (n - 1) * gap + fly + press : 0;
+    k = fitted(natural);
+    starts = stickers.map((_, si) => si * gap * k);
+    const landings = starts.map((s) => s + fly * k);
+    const eye = { x: W / 2, y: H / 2 };
+    const flights = stickers.map((s, si) => {
+      const side = si % 2 ? 1 : -1;
+      // As big as it must be to pass the cover's sides, as near the eye as that, and no nearer than seven times.
+      const near = Math.min(7, Math.max(3, (W * 1.1) / Math.max(1, s.box.w), (H * 0.85) / Math.max(1, s.box.h)));
+      // First seen a little to the side its hand comes from, below the middle; its offset from the eye's line shrinks as it nears.
+      const first = { x: eye.x + side * W * 0.1, y: eye.y + H * 0.06 };
+      return { near, from: { x: (first.x - eye.x) / near, y: (first.y - eye.y) / near }, to: { x: s.centre.x - eye.x, y: s.centre.y - eye.y }, angle: side * 0.42 };
+    });
+    at = (si, t) => {
+      const s = stickers[si];
+      const f = flights[si];
+      if (t < starts[si]) return { kind: "hidden" };
+      const u = span(t, starts[si], fly * k);
+      if (u < 1) {
+        // How far from the eye to the page it has come, quicker and quicker; how big that makes it, as perspective has it.
+        const z = u ** 1.3;
+        const scale = 1 / (1 / f.near + (1 - 1 / f.near) * z);
+        const seen = { x: eye.x + (f.from.x + (f.to.x - f.from.x) * z) * scale, y: eye.y + (f.from.y + (f.to.y - f.from.y) * z) * scale };
+        const angle = f.angle * (1 - z);
+        const alpha = clamp01(u / 0.12);
+        const dx = seen.x - s.centre.x;
+        const dy = seen.y - s.centre.y;
+        return {
+          kind: "coming",
+          pose: {
+            move: thrown(s.centre, scale, angle, dx, dy),
+            alpha,
+            // Out of focus as near the eye, sharp on the page.
+            blur: Math.min(36, W * 0.012 * (scale - 1)),
+            // On the page where it will land, cast away from a light above left: the further off the sticker, the further out, larger, softer and fainter.
+            shadow: {
+              move: thrown(s.centre, 1 + 0.3 * (1 - z), angle, W * 0.045 * (1 - z), H * 0.06 * (1 - z)),
+              alpha: 0.42 * z * alpha,
+              blur: 4 + 28 * (1 - z),
+            },
+          },
+        };
+      }
+      const v = span(t, landings[si], press * k);
+      if (v < 1) {
+        // Slapped flat, then a little proud of the page, then still; its shadow gone under it.
+        const squash = 1 - 0.07 * (1 - v) ** 2 * Math.cos(3 * Math.PI * v);
+        const move = about(s.centre.x, s.centre.y, squash);
+        return { kind: "coming", pose: { move, shadow: v < 0.35 ? { move, alpha: 0.42 * (1 - v / 0.35), blur: 4 } : undefined } };
+      }
+      // Laid: knocked back into the page by each landing after it, toward where that one lands.
+      let move: Matrix | undefined;
+      for (let j = si + 1; j < n; j += 1) {
+        const w = span(t, landings[j], 0.24 * k);
+        if (w <= 0 || w >= 1) continue;
+        const give = 1 - 0.022 * (1 - w) ** 2 * Math.sin(3 * Math.PI * w);
+        const knock = about(stickers[j].centre.x, stickers[j].centre.y, give);
+        move = move ? multiply(knock, move) : knock;
+      }
+      return { kind: "laid", move };
+    };
+  } else if (id === "pop") {
+    // Each sprung on, one after another.
+    const each = 0.5;
+    const gap = 0.17;
+    natural = n ? (n - 1) * gap + each : 0;
+    k = fitted(natural);
+    starts = stickers.map((_, si) => si * gap * k);
+    at = (si, t) => {
+      if (t < starts[si]) return { kind: "hidden" };
+      const u = span(t, starts[si], each * k);
+      if (u >= 1) return { kind: "laid" };
+      const c = stickers[si].centre;
+      return { kind: "coming", pose: { alpha: clamp01(u / 0.45), move: about(c.x, c.y, 0.35 + 0.65 * springy(u)) } };
+    };
+  } else {
+    // Reveal: each comes into being out of nothing (the owner's ask, 8
+    // Oct), slowly: out of focus and see-through, a little larger, then
+    // drawn together, solid and sharp, where it is.
+    const each = 1.1;
+    const gap = 0.5;
+    natural = n ? (n - 1) * gap + each : 0;
+    k = fitted(natural);
+    starts = stickers.map((_, si) => si * gap * k);
+    at = (si, t) => {
+      if (t < starts[si]) return { kind: "hidden" };
+      const u = span(t, starts[si], each * k);
+      if (u >= 1) return { kind: "laid" };
+      const s = stickers[si];
+      const haze = (1 - u) ** 2;
+      return { kind: "coming", pose: { alpha: easeInOut(clamp01(u / 0.75)), blur: Math.min(40, s.height * 0.16) * haze, move: about(s.centre.x, s.centre.y, 1 + 0.06 * haze) } };
+    };
+  }
+
+  /** Which sticker each leaf is on, and the map from its frame to the cover's. */
+  const worldOf = new Map<Op, Matrix>(leaves.map((l) => [l.op, l.world]));
+  const onSticker = new Map<Op, number>();
+  stickers.forEach((s, si) => onSticker.set(s.leaf.op, si));
+  for (const w of words) onSticker.set(w.leaf.op, w.on);
+
   return {
     duration: natural * k,
-    look: (leaf, t) => {
-      const at = sheet.get(leaf.op);
-      return at ? at(t) : null;
-    },
-    paste: (op, t) =>
-      pasteAt(op, radius, (i) => {
-        const c = chainTimes[i];
-        if (!c) return { part: 1 };
-        if (c.move) {
-          if (t < c.start) return null;
-          const move = c.move(t);
-          return move ? { part: 1, move } : { part: 1 };
+    look: () => null,
+    ops: (t) => {
+      const states = stickers.map((_, si) => at(si, t));
+      // What is laid, in the cover's own order, each knocked as it is.
+      const laid = mapLeaves(scene.ops, (op) => {
+        if (op.kind === "liquid") {
+          return pasteAt(op, radius, (i) => {
+            const state = states[chainOwner[i]];
+            if (!state || state.kind !== "laid") return null;
+            return state.move ? { part: 1, move: state.move } : { part: 1 };
+          });
         }
-        return { part: span(t, c.start, c.length) };
-      }),
+        const si = onSticker.get(op);
+        if (si === undefined) return op;
+        const state = states[si];
+        if (state.kind !== "laid") return null;
+        return looked({ op, world: worldOf.get(op) ?? IDENTITY }, state.move ? { move: state.move } : null, measurer);
+      });
+      // Then each sticker on its way, the last to start nearest: its shadow on the page, then the sticker, its words and its paste, out of focus and faded as one.
+      const coming = states
+        .map((state, si) => ({ state, si }))
+        .filter((c): c is { state: Extract<StickerAt, { kind: "coming" }>; si: number } => c.state.kind === "coming")
+        .sort((a, b) => starts[a.si] - starts[b.si]);
+      const over: Op[] = [];
+      for (const { state, si } of coming) {
+        const { pose } = state;
+        const s = stickers[si];
+        const through = (leaf: Leaf): Op => ({ kind: "matrix", m: pose.move ? multiply(pose.move, leaf.world) : leaf.world, ops: [leaf.op] });
+        if (pose.shadow && pose.shadow.alpha > 0.004) {
+          over.push({ kind: "fade", alpha: pose.shadow.alpha, ops: [{ kind: "blur", radius: pose.shadow.blur, tint: "#000000", ops: [{ kind: "matrix", m: multiply(pose.shadow.move, s.leaf.world), ops: [s.leaf.op] }] }] });
+        }
+        const group: Op[] = [through(s.leaf), ...words.filter((w) => w.on === si).map((w) => through(w.leaf))];
+        if (paste) {
+          const own = pasteAt(paste, radius, (i) => (chainOwner[i] === si ? (pose.move ? { part: 1, move: pose.move } : { part: 1 }) : null));
+          if (own) group.push(own);
+        }
+        let made: Op[] = group;
+        if (pose.blur !== undefined && pose.blur > 0.25) made = [{ kind: "blur", radius: pose.blur, ops: made }];
+        if (pose.alpha !== undefined && pose.alpha < 1) {
+          if (pose.alpha <= 0) continue;
+          made = [{ kind: "fade", alpha: pose.alpha, ops: made }];
+        }
+        over.push(...made);
+      }
+      return [...laid, ...over];
+    },
   };
 }
 
@@ -735,6 +1165,7 @@ export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Me
     frame(at: number): Scene {
       const t = at * pace;
       if (t >= built.duration) return scene;
+      if (built.ops) return { ...scene, ops: built.ops(t) };
       const ops = mapLeaves(scene.ops, (op) => {
         const leaf: Leaf = { op, world: leafWorld.get(op) ?? IDENTITY };
         if (op.kind === "liquid") return built.paste ? built.paste(op, t) : op;

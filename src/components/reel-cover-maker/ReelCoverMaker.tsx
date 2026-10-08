@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DeviceMobile, DownloadSimple, Export, Moon, Shuffle, Sparkle, Sun } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DeviceMobile, DownloadSimple, Moon, Shuffle, Sparkle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { sliderColour } from "@/components/reel-cover-maker/colour";
@@ -809,7 +809,7 @@ export default function ReelCoverMaker() {
     if (videoFile && dialog && !dialog.open) dialog.showModal();
   }, [videoFile]);
 
-  // Animated, or about to be: the video's encoder fetched and compiled now, so Export does not wait on it.
+  // Animated, or about to be: the video's encoder fetched and compiled now, so Download does not wait on it.
   useEffect(() => {
     if (design.animated || animateOpen) prepareVideo();
   }, [design.animated, animateOpen]);
@@ -967,9 +967,10 @@ export default function ReelCoverMaker() {
 
   const stickery = design.style === "stickery";
   const frameStyle = { "--rcm-ratio": `${format.width} / ${format.height}`, "--rcm-ratio-n": format.width / format.height } as CSSProperties;
-  /** What Export makes: a PNG, or animated, a see-through MOV (an MP4 over a photo). */
+  /** What Download makes: a PNG, or animated, a see-through MOV (an MP4 over a photo). */
   const exportKind = design.animated ? (photo ? "MP4" : "MOV") : "PNG";
-  const saveLabel = method === "share" ? "Save" : "Export";
+  /** Download, wherever the file ends up (the owner, 8 Oct: not "Export"); a phone's share sheet saves it the same. */
+  const saveLabel = "Download";
   const exportDetail = !filled
     ? "Type a title first"
     : design.animated
@@ -1293,14 +1294,14 @@ export default function ReelCoverMaker() {
                 onClick={() => void save()}
                 disabled={making === null && (!scene || !filled || !pictureReady)}
                 aria-busy={making !== null || (filled && !pictureReady)}
-                aria-label={making !== null ? "Stop exporting" : `${saveLabel} the ${design.animated ? "video" : "cover"} as ${exportKind}`}
+                aria-label={making !== null ? "Stop making the video" : `${saveLabel} the ${design.animated ? "video" : "cover"} as ${exportKind}`}
                 aria-keyshortcuts={apple ? "Meta+S" : "Control+S"}
                 data-making={making !== null || undefined}
                 style={{ "--rcm-made": `${Math.round((making ?? 0) * 100)}%` } as CSSProperties}
                 title={making !== null ? "Press to stop" : exportDetail}
               >
-                <Export size={19} weight="bold" aria-hidden="true" />
-                <span className={styles.exportWord}>{making !== null ? `Exporting ${Math.round(making * 100)}%` : saveLabel}</span>
+                <DownloadSimple size={19} weight="bold" aria-hidden="true" />
+                <span className={styles.exportWord}>{making !== null ? `Preparing ${Math.round(making * 100)}%` : saveLabel}</span>
                 <span className={styles.exportKind}>{making !== null ? "Stop" : exportKind}</span>
               </button>
             </div>

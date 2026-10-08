@@ -14,7 +14,7 @@ itself, with a row of tools across the top of its column (undo and redo
 at the left; the background, shuffle and reset text in the middle;
 animate and the phone view at the right, each an icon that names itself
 on hover) and the styles in a row under it; on the right a card of the
-photo and its adjustments, with **Export** at its foot. The keyboard
+photo and its adjustments, with **Download** at its foot. The keyboard
 shortcuts are behind the **?** at the top right (or press **?**). In a
 narrower window the
 photo goes under the left column and the page scrolls past it while the
@@ -136,15 +136,20 @@ on a label's row.
   word typed is one step.
 - **Animate** the cover with the sparkle by the phone button: a card
   opens with the cover playing in each of its style's animations; pick
-  one, set its **Speed** (half as fast to twice), and **Save**, and the
+  one, slide its **Speed** (its own in the middle, half as fast at the
+  left, twice at the right), and **Save**, and the
   cover plays it, in the preview and on the phone, sharp at the screen's
   own pixels, until the sparkle is pressed again to stop. Each lays the
   cover down over a few seconds and ends on it exactly:
-  - Stickery: **Type and draw** (each sticker laid, its plain words typed,
-    its funky words written as a pen writes them, stroke by stroke, traced
-    from the letters themselves, or piped bead by bead in Goo) and
-    **Slap** (each sticker thrown on from beyond the cover, big as if near,
-    pressed flat where it lands, the ones already down jolting).
+  - Stickery: **Type and draw** (its plain words typed, its funky words
+    written as a pen writes them, stroke by stroke, traced from the letters
+    themselves, or piped bead by bead in Goo, and the sticker's paper laid
+    step by step under each letter as it comes), **Slap** (each sticker
+    brought down from in front of the screen, bigger than the cover and out
+    of focus as if near the eye, its shadow closing in under it, slapped
+    flat where it lands and the ones already down knocked back), **Pop**
+    (each springs on) and **Reveal** (each comes into focus out of
+    nothing).
   - Pasty and Pasty Flat: **Written live** (letter after letter, each
     stroke piped as if by hand, the light on what is laid unchanged as more
     comes).
@@ -155,7 +160,7 @@ on a label's row.
   - Mono: **Typewriter**, its cursor following the letters, and **Word by
     word**.
 
-  Animated, **Export** saves a video at 1080 wide and 30 frames a second,
+  Animated, **Download** saves a video at 1080 wide and 30 frames a second,
   the motion and then the cover held for a second and a half. With no
   photo it is a QuickTime movie (.mov) in ProRes 4444 with its
   transparency, so it lays over a video in any editor (Final Cut,
@@ -212,11 +217,11 @@ on a label's row.
     were are carried with the pointer, and drawn sharp when you let go. On
     a photo, a press between the letters (not on them) still moves the
     photo; once they are selected, the whole box moves them.
-- **Export** (or Cmd/Ctrl+S), at the foot of the photo's card (held at the
-  foot of the screen on a phone); its tag says what it makes, PNG, or MOV
-  or MP4 when animated. On an iPhone or iPad the button reads **Save**
-  and opens the share sheet, where **Save Image** puts the cover in
-  Photos. Android downloads it, and Instagram's picker finds it there.
+- **Download** (or Cmd/Ctrl+S), at the foot of the photo's card (held at
+  the foot of the screen on a phone); its tag says what it makes, PNG, or
+  MOV or MP4 when animated, and while a video is made it reads Preparing
+  and how far, and a press stops it. On an iPhone or iPad it opens the
+  share sheet, where **Save Image** puts the cover in Photos. Android downloads it, and Instagram's picker finds it there.
   Inside an app's own browser (Instagram's, when the link is opened from a
   bio), the cover opens on its own: press and hold it to save it.
 
@@ -397,7 +402,7 @@ Only the plain face chosen is loaded.
 | `platform.ts` | Whether this is a Mac or an iPhone, for Cmd or Ctrl |
 | `PhoneView.tsx`, `phone.ts` | The phone view: a whole iPhone to scale, the cover in the middle of @eshaan.tm's profile grid |
 | `ColourField.tsx` | A colour's sliders and its hex chip, and Stickery's Text colour field |
-| `animate.ts` | Each style's animations, as a function of time on the cover's own scene |
+| `animate.ts` | Each style's animations, as a function of time on the cover's own scene, and a sticker's paper laid under its words |
 | `write-on.ts`, `writer.ts` | A script word written as a pen would: its strokes traced from its ink, and drawn part written |
 | `Motion.tsx`, `AnimateCard.tsx` | An animation played on the page, painted live at the screen's pixels (paste made ahead), and the card to pick one and its speed in |
 | `animation-frames.ts` | A video's frames, drawn at full size |
@@ -412,7 +417,7 @@ Only the plain face chosen is loaded.
 | `liquid-gl.ts` | The same light, in a WebGL 2 shader |
 | `liquid.worker.ts`, `liquid-client.ts` | The workers that make the fields, and the page's queue (draft, preview, thumbnails, ahead) and lighting of them |
 | `strokes/` | The single-line fonts, Drip and Goo, from `scripts/drip-font.mjs` and `scripts/goo-font.mjs`, with their licences |
-| `stepped.ts` | Stickery's stepped sticker outline |
+| `stepped.ts` | Stickery's stepped sticker outline, and the outline of any cells of its grid |
 | `scene.ts` | Each style, as a list of fills, the photo, grain, shapes, text and liquid layers; and the letters placed (`placeScene`) |
 | `place.ts` | Where the text is placed: the matrix, the handles, and what each drag does |
 | `CoverSurface.tsx` | The cover as an illustration program's canvas: selecting, moving, scaling and turning the text, and framing the photo |
@@ -420,7 +425,7 @@ Only the plain face chosen is loaded.
 | `photo-gl.ts`, `photo-store.ts` | The adjustments on the GPU, and the photo kept in IndexedDB |
 | `PhotoControls.tsx`, `Camera.tsx` | The photo's column (its slot, zoom and adjustments), and the computer's camera |
 | `Dropdown.tsx` | The Lettering and Plain words lists: a select of the maker's own, each option in its own type |
-| `paint.ts` | Draws a scene on a canvas at any scale, from any origin |
+| `paint.ts` | Draws a scene on a canvas at any scale, from any origin, blurred where a frame asks (with shadows, in every engine) |
 | `colour.ts`, `palettes.ts` | The sliders' colours in OKLCH, the roles a style reads, Stickery's text colour, and WCAG contrast |
 | `noise.ts`, `grain.ts` | Seeded randomness, smooth noise, and film grain |
 | `fonts.ts`, `font-gate.ts` | The web faces, served by next/font, and whether every character of the title has its file yet |

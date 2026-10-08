@@ -7,7 +7,7 @@ import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 interface Props {
   /** A Mac, iPhone or iPad: Cmd's glyphs rather than Ctrl's names. */
   apple: boolean;
-  /** What saving the cover is called here: Download, or Save image where it is shared. */
+  /** What saving the cover is called: Download. */
   saveLabel: string;
 }
 

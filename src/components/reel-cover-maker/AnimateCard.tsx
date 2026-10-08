@@ -3,7 +3,7 @@
 import { X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
-import { FASTEST, SLOWEST, type Animation, type AnimationId } from "@/components/reel-cover-maker/animate";
+import { speedAtPlace, speedPlace, type Animation, type AnimationId } from "@/components/reel-cover-maker/animate";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
 import { PlayCanvas, usePaste, type PlayRequest } from "@/components/reel-cover-maker/Motion";
 import type { Ground } from "@/components/reel-cover-maker/palettes";
@@ -37,9 +37,13 @@ function speedLabel(speed: number): string {
 /**
  * The card Animate opens, in the middle of the page (the owner's asks, 7
  * Oct): the cover playing in each of its style's animations, to pick one
- * of, a speed for it (a throttle, half as fast to twice), and Save. Cancel,
- * Escape or the cross leave the cover as it was; a double click on one
- * picks it and saves.
+ * of, a speed for it, and Save. Cancel, Escape or the cross leave the cover
+ * as it was; a double click on one picks it and saves.
+ *
+ * The speed is a throttle that slides smoothly (the owner, 8 Oct: not set
+ * steps), its own speed in the middle, half as fast at the left and twice
+ * at the right; it catches in the middle on the way past, and a double
+ * click puts it back there.
  */
 export function AnimateCard({ options, current, speed, requestFor, target, still, ratio, clear, ground, onSave, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -51,7 +55,8 @@ export function AnimateCard({ options, current, speed, requestFor, target, still
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
 
-  const fill = (v: number) => `${((v - SLOWEST) / (FASTEST - SLOWEST)) * 100}%`;
+  const place = speedPlace(pace);
+  const along = (v: number) => `${((v + 1) / 2) * 100}%`;
 
   return (
     <dialog
@@ -80,18 +85,20 @@ export function AnimateCard({ options, current, speed, requestFor, target, still
       <div className={styles.animateFoot}>
         <label className={styles.speed}>
           <span className={styles.speedName}>Speed</span>
-          <input
-            type="range"
-            className={styles.thinSlider}
-            min={SLOWEST}
-            max={FASTEST}
-            step={0.25}
-            value={pace}
-            onChange={(event) => setPace(Number(event.target.value))}
-            onDoubleClick={() => setPace(1)}
-            style={{ "--rcm-from": fill(Math.min(1, pace)), "--rcm-to": fill(Math.max(1, pace)) } as CSSProperties}
-            aria-valuetext={speedLabel(pace)}
-          />
+          <span className={styles.speedTrack}>
+            <input
+              type="range"
+              className={styles.thinSlider}
+              min={-1}
+              max={1}
+              step={0.01}
+              value={place}
+              onChange={(event) => setPace(speedAtPlace(Number(event.target.value)))}
+              onDoubleClick={() => setPace(1)}
+              style={{ "--rcm-from": along(Math.min(0, place)), "--rcm-to": along(Math.max(0, place)) } as CSSProperties}
+              aria-valuetext={speedLabel(pace)}
+            />
+          </span>
           <span className={styles.value}>{speedLabel(pace)}</span>
         </label>
         <span className={styles.animateButtons}>
