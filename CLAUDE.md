@@ -29,7 +29,7 @@ npm run build   # the static site, in out/
   hard-code `/reel-cover-maker` in a URL. It is no longer served by
   eshaanm.net, which only redirects to it.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
-  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `noise`,
+  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `noise`,
   `strokes`, `scene`, `colour`, `palettes`, `grain`, `save`, `design`,
   `photo`, `place` and `font-gate` never touch the DOM and are tested in
   `scripts/reel-cover.test.mjs`. `paint` takes a context, so it is tested
@@ -65,6 +65,22 @@ npm run build   # the static site, in out/
   with `clearMarks` keeps dots and marks a clear gap however its letters
   touch. Pasty's spacing is the one its covers were made with: a rule for
   Goo goes behind a flag of Goo's, or Pasty's lines break somewhere new.
+- **Inkblot is a typeface printed, not set** (the owner's ask, 19 Oct:
+  Editorial out, Onehart's inkblot script in its place, "the roughness
+  around the edges", "everything tiny about the fonts"). Pinyon Script is
+  the face (the closest open one to Onehart's roundhand, capitals and all);
+  the page traces each word's outline from its ink (`Measurer.outline`,
+  fonts.ts), and `ink.ts` prints it: a signed distance field about a pixel
+  of the cover apart, bled by `PRINT.bleed`, its weight wandering along
+  the word, the edge moved by noise (a wander, chipped notches, grit) and
+  bitten now and then, traced again where the field is nought. The numbers
+  were matched against Onehart's specimen; a heavier bleed closes Pinyon's
+  narrow h and l loops. A word is seeded by its text and the shuffle and
+  printed once (`printedWord`), so it prints the same wherever it goes.
+  Lines are broken at `INK_SET`, each centred by its ink, let down only as
+  far as keeps `INK_LINE_GAP` between one line's printed ink and the
+  next's, then the block grows by its ink up to `INK_MAX`. An emoji is
+  text. Saved Editorial designs open on Inkblot (`readDesign`).
 - **A layer is known by its paste** (`pasteKey`), never its colours and
   never the title: a layer made before a face arrived is otherwise reused
   where the paste no longer is.
@@ -156,7 +172,9 @@ npm run build   # the static site, in out/
   fast at the left, its own in the middle, twice at the right, on a log
   scale (`speedPlace`, `speedAtPlace`), caught at 1 near the middle.
   Stickery has Type and draw, Slap, Pop and Reveal; Pasty and Pasty Flat
-  Written live. All at once, Pasty's Pop and Rise were cut ("so bad"; 8
+  Written live; Inkblot Written (each printed word traced as a pen writes
+  it, word after word), Word by word and Line by line (into focus out of
+  nothing, as ink soaks in). All at once, Pasty's Pop and Rise were cut ("so bad"; 8
   Oct: "I don't want rise"), so do not bring them back; Stickery's Pop
   came back on the owner's ask of 8 Oct ("keep pop"). Every
   animation (`animate.ts`, pure, tested) is a function of time on the

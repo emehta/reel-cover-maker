@@ -2,16 +2,17 @@
  * A word written on, in the page: its ink drawn once at a working size and
  * traced (write-on.ts), then at each frame drawn again at the size it is
  * shown, every pixel as much as the pen has reached it. Each word's trace
- * is kept, and each size's ink, so a frame only reveals.
+ * is kept, and each size's ink, so a frame only reveals. A word is a
+ * typeface's text, or Inkblot's printed outline, drawn as the cover draws it.
  */
 
-import type { FaceId } from "@/components/reel-cover-maker/faces";
 import { fontCss } from "@/components/reel-cover-maker/fonts";
+import { loopBounds } from "@/components/reel-cover-maker/ink";
 import { rgb } from "@/components/reel-cover-maker/palettes";
 import type { Op } from "@/components/reel-cover-maker/scene";
 import { revealAt, revealMap, type RevealMap } from "@/components/reel-cover-maker/write-on";
 
-type TextOp = Extract<Op, { kind: "text" }>;
+type WordOp = Extract<Op, { kind: "text" | "ink" }>;
 
 /** The size a word is traced at, in pixels to the em: strokes a dozen pixels or so across, enough to find their middles. */
 const TRACE_SIZE = 180;
@@ -24,7 +25,7 @@ const LARGEST = 2400;
 
 interface Traced {
   map: RevealMap;
-  /** The box the trace is of, in em from the word's start on its baseline. */
+  /** The box the trace is of, in em from the word's anchor. */
   x: number;
   y: number;
   w: number;
@@ -35,29 +36,68 @@ const traced = new Map<string, Traced | null>();
 /** Each word's ink at a size it was shown at, and a canvas to draw it written on. */
 const inked = new Map<string, { alpha: Uint8ClampedArray; canvas: HTMLCanvasElement; image: ImageData }>();
 
-function trace(face: FaceId, text: string): Traced | null {
-  const key = `${face}|${text}`;
+/**
+ * What a word's trace is measured from, in pixels of the picture: a text's
+ * start on its baseline, or the top left of printed ink, so the same word
+ * printed in two places is traced once. With its pixels to the em, and what
+ * its trace is kept by.
+ */
+function anchor(op: WordOp): { x: number; y: number; size: number; key: string } {
+  if (op.kind === "text") return { x: op.x, y: op.y, size: op.size, key: `${op.face}|${op.text}` };
+  const b = loopBounds(op.polygons);
+  return { x: b?.x0 ?? 0, y: b?.y0 ?? 0, size: op.size, key: `ink|${op.key}` };
+}
+
+/** A word's ink drawn black into `ctx`, `scale` canvas pixels to its em, its anchor at (x, y). */
+function drawInk(ctx: CanvasRenderingContext2D, op: WordOp, scale: number, x: number, y: number) {
+  ctx.fillStyle = "#000";
+  if (op.kind === "text") {
+    ctx.font = fontCss(op.face, scale);
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
+    ctx.fillText(op.text, x, y);
+    return;
+  }
+  const at = anchor(op);
+  const k = scale / op.size;
+  ctx.beginPath();
+  for (const p of op.polygons) {
+    ctx.moveTo(x + (p[0] - at.x) * k, y + (p[1] - at.y) * k);
+    for (let i = 2; i < p.length; i += 2) ctx.lineTo(x + (p[i] - at.x) * k, y + (p[i + 1] - at.y) * k);
+    ctx.closePath();
+  }
+  ctx.fill();
+}
+
+/** How far a word's ink reaches from its anchor, in em: left of it and above it, right of it and below it. */
+function inkBox(op: WordOp, probe: CanvasRenderingContext2D): { left: number; top: number; right: number; bottom: number } {
+  if (op.kind === "text") {
+    probe.font = fontCss(op.face, TRACE_SIZE);
+    const m = probe.measureText(op.text);
+    return { left: m.actualBoundingBoxLeft / TRACE_SIZE, top: m.actualBoundingBoxAscent / TRACE_SIZE, right: m.actualBoundingBoxRight / TRACE_SIZE, bottom: m.actualBoundingBoxDescent / TRACE_SIZE };
+  }
+  const b = loopBounds(op.polygons);
+  return b ? { left: 0, top: 0, right: (b.x1 - b.x0) / op.size, bottom: (b.y1 - b.y0) / op.size } : { left: 0, top: 0, right: 0, bottom: 0 };
+}
+
+function trace(op: WordOp): Traced | null {
+  const key = anchor(op).key;
   if (traced.has(key)) return traced.get(key) ?? null;
   let made: Traced | null = null;
   const probe = document.createElement("canvas").getContext("2d");
   if (probe) {
-    probe.font = fontCss(face, TRACE_SIZE);
-    const m = probe.measureText(text);
+    const box = inkBox(op, probe);
     const pad = PAD * TRACE_SIZE;
-    const left = Math.ceil(m.actualBoundingBoxLeft + pad);
-    const top = Math.ceil(m.actualBoundingBoxAscent + pad);
-    const w = Math.max(1, Math.ceil(left + m.actualBoundingBoxRight + pad));
-    const h = Math.max(1, Math.ceil(top + m.actualBoundingBoxDescent + pad));
+    const left = Math.ceil(box.left * TRACE_SIZE + pad);
+    const top = Math.ceil(box.top * TRACE_SIZE + pad);
+    const w = Math.max(1, Math.ceil(left + box.right * TRACE_SIZE + pad));
+    const h = Math.max(1, Math.ceil(top + box.bottom * TRACE_SIZE + pad));
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (ctx) {
-      ctx.font = fontCss(face, TRACE_SIZE);
-      ctx.textBaseline = "alphabetic";
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#000";
-      ctx.fillText(text, left, top);
+      drawInk(ctx, op, TRACE_SIZE, left, top);
       const data = ctx.getImageData(0, 0, w, h).data;
       const alpha = new Uint8ClampedArray(w * h);
       for (let i = 0; i < alpha.length; i += 1) alpha[i] = data[i * 4 + 3];
@@ -74,17 +114,18 @@ function trace(face: FaceId, text: string): Traced | null {
  * `pixelScale` of its pixels to one of the picture's: a picture, and where
  * it goes in the op's own frame. Null where the page cannot trace it.
  */
-export function written(op: TextOp, at: number, pixelScale: number): { image: HTMLCanvasElement; x: number; y: number; w: number; h: number } | null {
-  const t = trace(op.face, op.text);
+export function written(op: WordOp, at: number, pixelScale: number): { image: HTMLCanvasElement; x: number; y: number; w: number; h: number } | null {
+  const t = trace(op);
   if (!t) return null;
-  const x = op.x + t.x * op.size;
-  const y = op.y + t.y * op.size;
-  const w = t.w * op.size;
-  const h = t.h * op.size;
+  const from = anchor(op);
+  const x = from.x + t.x * from.size;
+  const y = from.y + t.y * from.size;
+  const w = t.w * from.size;
+  const h = t.h * from.size;
   const scale = Math.min(pixelScale, LARGEST / Math.max(w, h));
   const W = Math.max(1, Math.round(w * scale));
   const H = Math.max(1, Math.round(h * scale));
-  const key = `${op.face}|${op.text}|${W}x${H}`;
+  const key = `${from.key}|${W}x${H}`;
   let ink = inked.get(key);
   if (!ink) {
     const canvas = document.createElement("canvas");
@@ -92,12 +133,8 @@ export function written(op: TextOp, at: number, pixelScale: number): { image: HT
     canvas.height = H;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
-    const size = (op.size * W) / w;
-    ctx.font = fontCss(op.face, size);
-    ctx.textBaseline = "alphabetic";
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#000";
-    ctx.fillText(op.text, -t.x * size, -t.y * size);
+    const size = (from.size * W) / w;
+    drawInk(ctx, op, size, -t.x * size, -t.y * size);
     const data = ctx.getImageData(0, 0, W, H).data;
     const alpha = new Uint8ClampedArray(W * H);
     for (let i = 0; i < alpha.length; i += 1) alpha[i] = data[i * 4 + 3];

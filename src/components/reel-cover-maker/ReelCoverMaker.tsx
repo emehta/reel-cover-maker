@@ -74,11 +74,15 @@ const AHEAD_DELAY_MS = 120;
 
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
 
-/** The type a style sets its words in where it offers no choice of lettering, shown where the choice would be. */
-const FIXED_FACES: Record<"editorial" | "echo" | "mono", { face: FaceId; name: string }> = {
-  editorial: { face: "serif", name: "Instrument Serif" },
-  echo: { face: "wide", name: "Archivo Black" },
-  mono: { face: "mono", name: "Space Mono" },
+/**
+ * The type a style sets its words in where it offers no choice of lettering,
+ * shown where the choice would be, at a size that reads as the others do (a
+ * script's small letters are a small share of its em).
+ */
+const FIXED_FACES: Record<"inkblot" | "echo" | "mono", { face: FaceId; name: string; size: number }> = {
+  inkblot: { face: "script", name: "Pinyon Script", size: 25 },
+  echo: { face: "wide", name: "Archivo Black", size: 17 },
+  mono: { face: "mono", name: "Space Mono", size: 17 },
 };
 
 /** The longest side a photo is kept at: sharp at a reel cover's size zoomed in twice, without holding a phone camera's 48 megapixels. */
@@ -1049,7 +1053,7 @@ export default function ReelCoverMaker() {
                   Lettering
                 </span>
                 {/* Set by the style, not chosen: shown in its own type, as a fact. */}
-                <span className={styles.fixedFace} aria-labelledby="rcm-fixed-face" style={{ font: fontCss(FIXED_FACES[design.style].face, 17) }}>
+                <span className={styles.fixedFace} aria-labelledby="rcm-fixed-face" style={{ font: fontCss(FIXED_FACES[design.style].face, FIXED_FACES[design.style].size) }}>
                   {FIXED_FACES[design.style].name}
                 </span>
               </div>

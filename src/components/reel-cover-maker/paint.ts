@@ -71,7 +71,7 @@ export interface PaintOptions {
    * where it goes in the word's own frame. Absent or null, the word is
    * wiped on instead.
    */
-  written?: (op: Extract<Op, { kind: "text" }>, at: number, pixelScale: number) => { image: CanvasImageSource; x: number; y: number; w: number; h: number } | null;
+  written?: (op: Extract<Op, { kind: "text" | "ink" }>, at: number, pixelScale: number) => { image: CanvasImageSource; x: number; y: number; w: number; h: number } | null;
 }
 
 function roundedRect(ctx: PaintTarget, x: number, y: number, w: number, h: number, radius: number) {
@@ -218,6 +218,17 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       }
       return;
     }
+    case "ink": {
+      // Printed letters: their outline filled, holes and all, by the nonzero rule.
+      const fill = () => {
+        outline(ctx, op.polygons);
+        ctx.fillStyle = haze?.tint ? "#000" : op.color;
+        ctx.fill();
+      };
+      if (haze) hazed(ctx, haze, op.color, fill);
+      else fill();
+      return;
+    }
     case "liquid": {
       // A shadow cast is of the stickers' shape: paste lies on them.
       if (haze?.tint) return;
@@ -321,11 +332,12 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       return;
     }
     case "write": {
-      const word = op.ops.length === 1 && op.ops[0].kind === "text" ? op.ops[0] : null;
+      const only = op.ops.length === 1 ? op.ops[0] : null;
+      const word = only && (only.kind === "text" || only.kind === "ink") ? only : null;
       const made = word && op.at > 0 && op.at < 1 ? options.written?.(word, op.at, pixelsPerUnit(ctx, options.scale)) : null;
       if (word && made) {
         ctx.save();
-        ctx.globalAlpha *= word.alpha ?? 1;
+        ctx.globalAlpha *= word.kind === "text" ? (word.alpha ?? 1) : 1;
         const lay = () => ctx.drawImage(made.image, made.x, made.y, made.w, made.h);
         if (haze) hazed(ctx, haze, word.color, lay);
         else lay();

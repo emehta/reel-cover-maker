@@ -56,7 +56,7 @@ on a label's row.
   it sets the rest. Every shortcut is listed behind the **?** at the top
   right.
 - **Pick a style** from the row of thumbnails under the cover: Stickery,
-  Pasty, Pasty Flat, Editorial, Echo and Mono. Each thumbnail is your whole
+  Pasty, Pasty Flat, Inkblot, Echo and Mono. Each thumbnail is your whole
   cover in that style, in the cover's own shape, so nothing of it is cut
   off; all six fit in one row however narrow the window (three by two on
   a phone), never scrolled. Once the cover is drawn, it is drawn in every
@@ -101,8 +101,16 @@ on a label's row.
   - A style's own choices sit under the text: Stickery's Lettering and
     Plain words, Pasty's Lettering, and for the other three the typeface
     they are set in, in one row of the same height for every style.
-  - **Editorial**, **Echo** and **Mono**: a big serif, wide capitals echoed in
-    outline, and a typewriter with its cursor.
+  - **Inkblot**: a roundhand script printed in ink that has bled into the
+    cloth, after Onehart's "Inkblot Script" (screen printing on denim): the
+    letters joined, slanted and looped, their edges rough and chipped, each
+    letter a little heavier or lighter than the next. The script is Pinyon
+    Script; the print is made from its outlines for every word (below), so
+    the same word prints the same wherever it goes, until you shuffle.
+    Lines are as large as the cover allows, each centred by its ink, and let
+    down only as far as keeps a descender clear of the line under it.
+  - **Echo** and **Mono**: wide capitals echoed in outline, and a typewriter
+    with its cursor.
 - **Shuffle**, over the cover, draws the letters another way: every random choice a style
   makes (each letter's hand, the drips, where the stickers sit) is seeded by
   the title and the shuffle together, so what you see is exactly what
@@ -122,7 +130,7 @@ on a label's row.
   coloured, outlined and lit for.
 - **With no photo, the cover is a clear PNG**: the letters alone, with
   whatever is theirs (Stickery's stickers and their borders, Pasty's gel
-  and the soft shadow it casts, Pasty Flat's paste, Editorial's, Echo's and
+  and the soft shadow it casts, Pasty Flat's paste, Inkblot's ink, Echo's and
   Mono's type), and nothing behind them, to lay over a video or anything
   else. The page shows it on a check in the background's tone, as a picture
   with no background is shown; the check is never in the file. Pasty's
@@ -153,7 +161,9 @@ on a label's row.
   - Pasty and Pasty Flat: **Written live** (letter after letter, each
     stroke piped as if by hand, the light on what is laid unchanged as more
     comes).
-  - Editorial: **Word by word**, **Typewriter**, **Line by line**.
+  - Inkblot: **Written** (each word traced as a pen writes it, word after
+    word), **Word by word** and **Line by line** (each comes into focus out
+    of nothing, as ink soaks in).
   - Echo: **Ripple** (the words, then each echo out from them), **Spread**
     (the echoes slide out from the words to their places), **Cascade**
     (every line drops in, top to bottom).
@@ -307,6 +317,33 @@ the photo and the grain stay put. What each handle does is pure and
 tested: a corner keeps the opposite corner where it was, a side the
 opposite side, two fingers keep their points of the letters under them.
 
+### Inkblot's ink
+
+Inkblot's words are a typeface printed, not set. Each word's outline is
+traced from Pinyon Script's own ink (drawn at 192 pixels to the em and
+followed where it is half on, so its joins, kerning and accents are the
+face's), and printed from that outline (`ink.ts`):
+
+1. **A field.** On a grid about a pixel of the cover apart, each point
+   holds how far it is inside the ink (negative outside), exactly, from the
+   outline's own edges.
+2. **Bleed.** The ink spreads past the outline by a sixtieth of an em, more
+   in some letters and less in others as the weight wanders along the word,
+   by about a third either way: Onehart's "random weights".
+3. **The edge.** Noise at three scales moves it: a slow wander, notches
+   chipped a fortieth of an em apart, and grit finer than that, with a
+   bite taken out here and there where the ink missed the weave.
+4. **The print** is where that field crosses nought, traced again as
+   closed outlines (marching squares), so two strokes that bleed into each
+   other merge as ink does, a counter too small for the bleed fills in, and
+   nothing crosses itself. It is filled by the nonzero rule, holes and all.
+
+The numbers were matched against Onehart's own specimen at the size of its
+title. Every word is seeded by its text and the shuffle and kept once
+printed, so typing prints only the word being typed. An emoji is set as
+text in its own colours, and where nothing can be traced the word is set
+as plain Pinyon Script, so nothing typed is lost.
+
 ### The liquid letters
 
 Pasty, Pasty Flat and Stickery's liquid words are not a font. They are paste,
@@ -418,6 +455,7 @@ Only the plain face chosen is loaded.
 | `liquid.worker.ts`, `liquid-client.ts` | The workers that make the fields, and the page's queue (draft, preview, thumbnails, ahead) and lighting of them |
 | `strokes/` | The single-line fonts, Drip and Goo, from `scripts/drip-font.mjs` and `scripts/goo-font.mjs`, with their licences |
 | `stepped.ts` | Stickery's stepped sticker outline, and the outline of any cells of its grid |
+| `ink.ts` | Inkblot's print: contours of a field, and a word's outline bled, its weight varied and its edge roughened |
 | `scene.ts` | Each style, as a list of fills, the photo, grain, shapes, text and liquid layers; and the letters placed (`placeScene`) |
 | `place.ts` | Where the text is placed: the matrix, the handles, and what each drag does |
 | `CoverSurface.tsx` | The cover as an illustration program's canvas: selecting, moving, scaling and turning the text, and framing the photo |
@@ -441,7 +479,7 @@ for any family installed on the computer. A character no stroke font can
 draw (an emoji) is set as plain text in the liquid styles, so nothing typed
 is lost.
 
-The web typefaces are Instrument Serif, Inter Tight, Archivo Black and Space
+The web typefaces are Pinyon Script, Inter Tight, Archivo Black and Space
 Mono, from Google Fonts under the SIL Open Font License, served from the
 page's own origin. The stroke fonts' licences are in
 `src/components/reel-cover-maker/strokes/LICENSE.md`.

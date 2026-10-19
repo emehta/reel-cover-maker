@@ -16,7 +16,6 @@ import {
   Archivo_Narrow,
   Crimson_Pro,
   Fraunces,
-  Instrument_Serif,
   Inter_Tight,
   Damion,
   Jost,
@@ -24,14 +23,17 @@ import {
   Libre_Caslon_Text,
   Newsreader,
   Outfit,
+  Pinyon_Script,
   Sofia_Sans_Condensed,
   Space_Mono,
   Yesteryear,
 } from "next/font/google";
 import { CORE_FACE_IDS, type FaceId, type InkColumn, type Measurer } from "@/components/reel-cover-maker/faces";
 import { createFontGate, type FontGate } from "@/components/reel-cover-maker/font-gate";
+import { contours, simplify, type Loop } from "@/components/reel-cover-maker/ink";
 
-const instrumentSerif = Instrument_Serif({ weight: "400", subsets: ["latin"] });
+/** Inkblot's script, a roundhand much like Onehart's, printed from its outlines (ink.ts). */
+const pinyon = Pinyon_Script({ weight: "400", subsets: ["latin"] });
 const archivoBlack = Archivo_Black({ weight: "400", subsets: ["latin"] });
 const spaceMono = Space_Mono({ weight: "400", subsets: ["latin"] });
 
@@ -54,7 +56,7 @@ const leckerli = Leckerli_One({ weight: "400", subsets: ["latin"] });
 const damion = Damion({ weight: "400", subsets: ["latin"] });
 
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
-  serif: { family: instrumentSerif.style.fontFamily, weight: 400, italic: false },
+  script: { family: pinyon.style.fontFamily, weight: 400, italic: false },
   sans: { family: interTight.style.fontFamily, weight: 600, italic: false },
   wide: { family: archivoBlack.style.fontFamily, weight: 400, italic: false },
   mono: { family: spaceMono.style.fontFamily, weight: 400, italic: false },
@@ -155,6 +157,9 @@ export function requestFonts(title: string, faces: readonly FaceId[]): void {
 /** Text is measured at this size and scaled, which canvas text does in proportion. */
 const MEASURE_SIZE = 100;
 
+/** Outlines are traced from ink drawn this many pixels to the em: a hairline is a few pixels across. */
+const TRACE_SIZE = 192;
+
 let measurer: { loads: number; measurer: Measurer } | null = null;
 
 /** A measurer for the faces as loaded now; one per load, so its cache never outlives a face it measured in fallback. */
@@ -166,6 +171,8 @@ export function measurerFor(loadsSeen: number): Measurer {
   const sheet = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
   const metrics = new Map<FaceId, { cap: number; ascent: number; descent: number }>();
   const bounds = new Map<string, { ascent: number; descent: number; left: number; right: number }>();
+  const outlines = new Map<string, readonly Loop[]>();
+  const tracer = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
   const measure = (face: FaceId, text: string) => {
     if (!ctx) return null;
     ctx.font = fontCss(face, MEASURE_SIZE);
@@ -232,6 +239,42 @@ export function measurerFor(loadsSeen: number): Measurer {
         shapes.set(key, cols);
       }
       return cols;
+    },
+    outline(face, text) {
+      const key = `${face}\u0000${text}`;
+      let loops = outlines.get(key);
+      if (!loops) {
+        loops = [];
+        const b = made.bounds(face, text);
+        if (tracer && text.trim()) {
+          // Drawn at the tracing size with a clear border, read back, and its
+          // edge followed where the ink is half on (the face's own edge, to a
+          // fraction of a pixel), then brought back to em.
+          const pad = 4;
+          const left = Math.ceil(b.left * TRACE_SIZE) + pad;
+          const above = Math.ceil(b.ascent * TRACE_SIZE) + pad;
+          const width = Math.max(1, Math.ceil((b.left + b.right) * TRACE_SIZE) + pad * 2);
+          const height = Math.max(1, above + Math.ceil(b.descent * TRACE_SIZE) + pad);
+          tracer.canvas.width = width;
+          tracer.canvas.height = height;
+          tracer.font = fontCss(face, TRACE_SIZE);
+          tracer.textBaseline = "alphabetic";
+          tracer.textAlign = "left";
+          tracer.fillStyle = "#000";
+          tracer.fillText(text, left, above);
+          const data = tracer.getImageData(0, 0, width, height).data;
+          const alpha = new Uint8Array(width * height);
+          for (let i = 0; i < alpha.length; i += 1) alpha[i] = data[i * 4 + 3];
+          loops = contours(alpha, width, height, 127.5).map((loop) =>
+            simplify(
+              loop.map((v, i) => (i % 2 ? v + 0.5 - above : v + 0.5 - left) / TRACE_SIZE),
+              0.12 / TRACE_SIZE,
+            ),
+          );
+        }
+        outlines.set(key, loops);
+      }
+      return loops;
     },
     bounds(face, text) {
       const key = `${face}\u0000${text}`;

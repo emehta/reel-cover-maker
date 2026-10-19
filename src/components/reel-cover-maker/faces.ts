@@ -5,10 +5,12 @@
  * next/font serves, and a test binds it to a measurer of its own.
  */
 
-/** The faces every cover may need: loaded up front. */
-export type CoreFaceId = "serif" | "sans" | "wide" | "mono";
+import type { Loop } from "@/components/reel-cover-maker/ink";
 
-export const CORE_FACE_IDS: readonly CoreFaceId[] = ["serif", "sans", "wide", "mono"];
+/** The faces every cover may need: loaded up front. Inkblot's script is printed from its outlines (ink.ts), never drawn as text but where it cannot be traced. */
+export type CoreFaceId = "script" | "sans" | "wide" | "mono";
+
+export const CORE_FACE_IDS: readonly CoreFaceId[] = ["script", "sans", "wide", "mono"];
 
 /**
  * The faces Stickery may set its plain words in: the owner's four (Outfit
@@ -88,6 +90,14 @@ export interface Measurer {
    * into the dips between its tall letters, rather than to its box.
    */
   columns?(face: FaceId, text: string): readonly InkColumn[];
+  /**
+   * The ink of `text` as closed outlines, in em from a start point on the
+   * baseline (y down), the ink on each one's left as it runs (ink.ts's
+   * `Loop`), the face's own joins, kerning and accents in them: what
+   * Inkblot prints from. The same object each time for the same text, so
+   * its print is made once. Absent where there is no page to trace in.
+   */
+  outline?(face: FaceId, text: string): readonly Loop[];
 }
 
 export interface InkColumn {

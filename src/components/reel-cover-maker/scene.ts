@@ -11,6 +11,7 @@
 
 import { DEFAULT_PLAIN_FACE, type FaceId, type FunkyFaceId, type Measurer, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { formatById, type FormatId, type Rect } from "@/components/reel-cover-maker/formats";
+import { printedWord, printReach, printSeed, loopBounds, type Loop } from "@/components/reel-cover-maker/ink";
 import { flow, type Block } from "@/components/reel-cover-maker/layout";
 import { boundsOf, pasteGlyph, type Chain, type PasteRecipe } from "@/components/reel-cover-maker/liquid";
 import { strokeMetrics } from "@/components/reel-cover-maker/strokes";
@@ -22,19 +23,23 @@ import { polygonBounds, steppedOutline, type Polygon } from "@/components/reel-c
 import { apply, isHome, mappedBounds, placeMatrix, strokeScale, type Matrix, type Place } from "@/components/reel-cover-maker/place";
 import { graphemes, parseTitle, type Paragraph } from "@/components/reel-cover-maker/title";
 
-export type StyleId = "stickery" | "pasty" | "pasty-flat" | "editorial" | "echo" | "mono";
+export type StyleId = "stickery" | "pasty" | "pasty-flat" | "inkblot" | "echo" | "mono";
 
 export interface Style {
   id: StyleId;
   name: string;
 }
 
-/** In the order the style picker shows them, the owner's of 7 Oct. Spread was taken out that day. */
+/**
+ * In the order the style picker shows them, the owner's of 7 Oct. Spread
+ * was taken out that day; Inkblot took Editorial's place on 19 Oct (the
+ * owner's ask, after Onehart's inkblot script).
+ */
 export const STYLES: readonly Style[] = [
   { id: "stickery", name: "Stickery" },
   { id: "pasty", name: "Pasty" },
   { id: "pasty-flat", name: "Pasty Flat" },
-  { id: "editorial", name: "Editorial" },
+  { id: "inkblot", name: "Inkblot" },
   { id: "echo", name: "Echo" },
   { id: "mono", name: "Mono" },
 ];
@@ -118,7 +123,16 @@ export type Op =
       alpha?: number;
       /** Drawn as an outline of this width rather than filled. */
       outline?: number;
+      /** Which line of Inkblot's it is on (an emoji set among its printed words), for an animation that brings each line in. */
+      line?: number;
     }
+  /**
+   * A word of Inkblot's script as printed (ink.ts): its outline in pixels of
+   * the picture, filled by the nonzero rule. `size` is its pixels to the em,
+   * `line` the line it is on, and `key` what its print is, so a pen's path
+   * traced on it (writer.ts) is traced once.
+   */
+  | { kind: "ink"; text: string; polygons: Polygon[]; color: string; size: number; line: number; key: string }
   | LiquidOp
   | { kind: "turn"; cx: number; cy: number; angle: number; ops: Op[] }
   /** The owner's photo, framed to cover the whole picture: drawn by the page, which holds it. */
@@ -220,14 +234,274 @@ function union(rects: Rect[]): Rect {
   return { x: left, y: top, w: right - left, h: bottom - top };
 }
 
-/** A big serif on paper grain. */
-function editorial(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer) {
-  const block = flow(paragraphs, { box: safe, face: "serif", emphasisFace: "serif", maxSize: 230, minSize: 40, leading: 0.98, align: "center" }, measurer);
-  return {
-    block,
-    ops: [{ kind: "grain", alpha: 0.075 } as Op, ...textOps(block, () => palette.ink)],
-    readable: block.bounds,
+/**
+ * The largest Inkblot's lines are set at, in pixels to the em, while they
+ * are broken: larger, and a short title breaks into a word a line to fill a
+ * reel's height.
+ */
+const INK_SET = 320;
+
+/**
+ * Inkblot's script at its largest once set, as the block grows to fill the
+ * safe area by its ink: its small letters are under a third of its em, so a
+ * short word grows to about 130 pixels to the x-height.
+ */
+const INK_MAX = 430;
+
+/** Room added to each of Inkblot's word spaces, in em: Pinyon's own is narrow beside a word's long exit stroke. */
+const INK_WORD_SPACE = 0.09;
+
+/** Inkblot's lines' baselines at least this far apart, in em; a line is let down further where its ink would come too near the one above. */
+const INK_LEADING = 0.74;
+
+/** The least clear gap between one line's printed ink and the next's, in em. */
+export const INK_LINE_GAP = 0.07;
+
+/** How wide a slice of a line its ink is measured in, for keeping lines apart, in em. */
+const INK_SLICE = 0.04;
+
+const PICTOGRAPH = /^[\p{Extended_Pictographic}\p{Regional_Indicator}]/u;
+
+/** A run of Inkblot's words: printed from its outline, or (an emoji, or where nothing can be traced) set as text. */
+interface InkPiece {
+  text: string;
+  line: number;
+  /** Its start on its baseline, and its size, in pixels of the picture. */
+  x: number;
+  y: number;
+  size: number;
+  /** Its clean outline, in em from its start on the baseline; null for text. */
+  outline: readonly Loop[] | null;
+  /** Its ink's box in em from its start, the print's reach not included. */
+  box: { x0: number; y0: number; x1: number; y1: number };
+}
+
+/** A piece's ink on the cover, `pad` em round it. */
+function pieceRect(p: InkPiece, pad = 0): Rect {
+  return { x: p.x + (p.box.x0 - pad) * p.size, y: p.y + (p.box.y0 - pad) * p.size, w: (p.box.x1 - p.box.x0 + 2 * pad) * p.size, h: (p.box.y1 - p.box.y0 + 2 * pad) * p.size };
+}
+
+/** Where a piece's ink begins and ends across each row of a band `rows` high from `top`, `slice` pixels a row; a row it does not reach is infinite. */
+function rowEnds(p: InkPiece, top: number, slice: number, rows: number): { left: Float64Array; right: Float64Array } {
+  const left = new Float64Array(rows).fill(Infinity);
+  const right = new Float64Array(rows).fill(-Infinity);
+  const mark = (x: number, y: number) => {
+    const r = Math.floor((y - top) / slice);
+    if (r < 0 || r >= rows) return;
+    if (x < left[r]) left[r] = x;
+    if (x > right[r]) right[r] = x;
   };
+  if (!p.outline) {
+    const box = pieceRect(p);
+    for (let y = box.y; y <= box.y + box.h; y += slice / 2) {
+      mark(box.x, y);
+      mark(box.x + box.w, y);
+    }
+    return { left, right };
+  }
+  for (const loop of p.outline) {
+    const n = loop.length;
+    for (let i = 0; i < n; i += 2) {
+      const ax = p.x + loop[i] * p.size;
+      const ay = p.y + loop[i + 1] * p.size;
+      const bx = p.x + loop[(i + 2) % n] * p.size;
+      const by = p.y + loop[(i + 3) % n] * p.size;
+      const steps = Math.max(1, Math.ceil(Math.abs(by - ay) / (slice / 2)));
+      for (let k = 0; k <= steps; k += 1) mark(ax + ((bx - ax) * k) / steps, ay + ((by - ay) * k) / steps);
+    }
+  }
+  return { left, right };
+}
+
+/**
+ * Inkblot: a roundhand script printed in ink that bled into the cloth
+ * (Onehart's, the owner's reference of 19 Oct): set in lines as large as
+ * the safe area allows, each line centred by its own ink, and let down only
+ * as far as keeps its ink clear of the line above, so a descender may hang
+ * between the next line's tall letters but never touch them. Each word is
+ * printed from the face's own outline (ink.ts), seeded by the word and the
+ * shuffle; the paper grain a print is pulled on lies over a photo.
+ */
+function inkblot(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, seed: number) {
+  const reach = printReach();
+  const block = flow(
+    paragraphs,
+    { box: safe, face: "script", emphasisFace: "script", maxSize: INK_SET, minSize: 34, leading: INK_LEADING, align: "center", padX: reach, padY: reach, wordSpace: INK_WORD_SPACE },
+    measurer,
+  );
+  // The paper's grain is there before anything is printed on it.
+  if (!block.lines.length) return { block, ops: [{ kind: "grain", alpha: 0.075 }] as Op[], readable: block.bounds };
+
+  // Each word in runs: an emoji is set as text, everything else traced. A
+  // word typed with a star in it comes in more than one segment, set alike:
+  // it is traced whole, so the face's own joins and kerning cross the star.
+  const pieces: InkPiece[] = [];
+  block.lines.forEach((line, li) => {
+    const words: { x: number; size: number; text: string }[] = [];
+    for (const seg of line.segments) {
+      const last = words[words.length - 1];
+      if (last && !seg.startsWord) last.text += seg.text;
+      else words.push({ x: seg.x, size: seg.size, text: seg.text });
+    }
+    for (const seg of words) {
+      let before = "";
+      let run = "";
+      let runIsText = false;
+      const close = () => {
+        if (!run) return;
+        const x = seg.x + measurer.width("script", before) * seg.size;
+        const outline = !runIsText && measurer.outline ? measurer.outline("script", run) : null;
+        const box = outline && outline.length ? loopBounds(outline) : null;
+        if (box) pieces.push({ text: run, line: li, x, y: line.baseline, size: seg.size, outline, box });
+        else {
+          const b = measurer.bounds("script", run);
+          pieces.push({ text: run, line: li, x, y: line.baseline, size: seg.size, outline: null, box: { x0: -b.left, y0: -b.ascent, x1: b.right, y1: b.descent } });
+        }
+        before += run;
+        run = "";
+      };
+      for (const g of graphemes(seg.text)) {
+        const pictograph = PICTOGRAPH.test(g);
+        if (run && pictograph !== runIsText) close();
+        runIsText = pictograph;
+        run += g;
+      }
+      close();
+    }
+  });
+  const lines = block.lines.map((_, li) => pieces.filter((p) => p.line === li));
+  const size = block.size;
+  const slice = INK_SLICE * size;
+
+  // Words in a line kept clear of each other: a swash capital (Pinyon's T,
+  // N and W) reaches past its word's space, and its ink would run into the
+  // next word's. Each word is moved on, with all after it, as far as keeps
+  // its ink the gap from every word before it, row by row.
+  const keepApart = INK_LINE_GAP + 2 * reach;
+  for (const line of lines) {
+    const top = Math.min(...line.map((p) => p.y + p.box.y0 * p.size)) - keepApart * size;
+    const bottom = Math.max(...line.map((p) => p.y + p.box.y1 * p.size)) + keepApart * size;
+    const rows = Math.max(1, Math.ceil((bottom - top) / slice));
+    const right = new Float64Array(rows).fill(-Infinity);
+    for (const [i, p] of line.entries()) {
+      const ends = rowEnds(p, top, slice, rows);
+      if (i) {
+        let need = 0;
+        const spread = Math.ceil((keepApart * size) / slice);
+        for (let r = 0; r < rows; r += 1) {
+          if (!Number.isFinite(ends.left[r])) continue;
+          for (let q = Math.max(0, r - spread); q <= Math.min(rows - 1, r + spread); q += 1) {
+            if (Number.isFinite(right[q])) need = Math.max(need, right[q] + keepApart * size - ends.left[r]);
+          }
+        }
+        if (need > 0) {
+          for (const later of line.slice(i)) later.x += need;
+          for (let r = 0; r < rows; r += 1) ends.right[r] += need;
+        }
+      }
+      for (let r = 0; r < rows; r += 1) right[r] = Math.max(right[r], ends.right[r]);
+    }
+  }
+
+  // Each line centred by its own ink, then each let down clear of the one
+  // above: their ink compared slice by slice across the cover, each widened
+  // by the gap so a stroke beside another counts too.
+  const centre = safe.x + safe.w / 2;
+  for (const line of lines) {
+    const ink = union(line.map((p) => pieceRect(p)));
+    const dx = centre - (ink.x + ink.w / 2);
+    for (const p of line) p.x += dx;
+  }
+  const left = safe.x - safe.w;
+  const slices = Math.ceil((safe.w * 3) / slice);
+  const profile = (line: InkPiece[]) => {
+    const top = new Float64Array(slices).fill(Infinity);
+    const bottom = new Float64Array(slices).fill(-Infinity);
+    const mark = (x: number, y: number) => {
+      const i = Math.floor((x - left) / slice);
+      if (i < 0 || i >= slices) return;
+      if (y < top[i]) top[i] = y;
+      if (y > bottom[i]) bottom[i] = y;
+    };
+    for (const p of line) {
+      if (!p.outline) {
+        const r = pieceRect(p);
+        for (let x = r.x; x <= r.x + r.w; x += slice / 2) {
+          mark(x, r.y);
+          mark(x, r.y + r.h);
+        }
+        continue;
+      }
+      for (const loop of p.outline) {
+        const n = loop.length;
+        for (let i = 0; i < n; i += 2) {
+          const ax = p.x + loop[i] * p.size;
+          const ay = p.y + loop[i + 1] * p.size;
+          const bx = p.x + loop[(i + 2) % n] * p.size;
+          const by = p.y + loop[(i + 3) % n] * p.size;
+          const steps = Math.max(1, Math.ceil(Math.abs(bx - ax) / (slice / 2)));
+          for (let k = 0; k <= steps; k += 1) mark(ax + ((bx - ax) * k) / steps, ay + ((by - ay) * k) / steps);
+        }
+      }
+    }
+    // Its foot widened by the gap and the print's reach either way, so a stroke beside another's counts as one under it.
+    const spread = Math.ceil(((INK_LINE_GAP + 2 * reach) * size) / slice);
+    const foot = new Float64Array(slices).fill(-Infinity);
+    for (let i = 0; i < slices; i += 1) {
+      for (let k = Math.max(0, i - spread); k <= Math.min(slices - 1, i + spread); k += 1) if (bottom[k] > foot[i]) foot[i] = bottom[k];
+    }
+    return { top, bottom: foot };
+  };
+  const profiles = lines.map(profile);
+  for (let li = 1; li < lines.length; li += 1) {
+    const above = profiles[li - 1];
+    const below = profiles[li];
+    let need = 0;
+    for (let i = 0; i < slices; i += 1) {
+      if (!Number.isFinite(below.top[i]) || !Number.isFinite(above.bottom[i])) continue;
+      need = Math.max(need, above.bottom[i] + (INK_LINE_GAP + 2 * reach) * size - below.top[i]);
+    }
+    if (!need) continue;
+    for (const p of lines[li]) p.y += need;
+    // The next line is measured against this one where it now is.
+    for (let i = 0; i < slices; i += 1) {
+      below.top[i] += need;
+      below.bottom[i] += need;
+    }
+  }
+
+  // Then the whole as large as it fits, the print's reach round it, centred in the safe area.
+  const all = union(pieces.map((p) => pieceRect(p, p.outline ? reach : 0)));
+  const k = Math.min(safe.w / Math.max(1, all.w), safe.h / Math.max(1, all.h), INK_MAX / size) * 0.999;
+  const cx = all.x + all.w / 2;
+  const cy = all.y + all.h / 2;
+  for (const p of pieces) {
+    p.x = centre + (p.x - cx) * k;
+    p.y = safe.y + safe.h / 2 + (p.y - cy) * k;
+    p.size *= k;
+  }
+
+  const ops: Op[] = [{ kind: "grain", alpha: 0.075 }];
+  const inked: Rect[] = [];
+  for (const p of pieces) {
+    if (!p.outline) {
+      ops.push({ kind: "text", text: p.text, face: "script", size: p.size, x: p.x, y: p.y, color: palette.ink, line: p.line });
+      inked.push(pieceRect(p));
+      continue;
+    }
+    // Worked out about a pixel of the picture apart, in steps, so a word set again at nearly its size is printed once.
+    const grid = Math.min(280, Math.max(120, Math.round(p.size / 40) * 40));
+    const wordSeed = printSeed(p.text, seed);
+    const loops = printedWord(p.outline, wordSeed, grid);
+    const polygons = loops.map((loop) => loop.map((v, i) => (i % 2 ? p.y + v * p.size : p.x + v * p.size)));
+    if (!polygons.length) continue;
+    const b = loopBounds(polygons);
+    if (b) inked.push({ x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 });
+    // Keyed by the print itself too: a word traced again in another face (one that arrived late) is another print.
+    const points = loops.reduce((sum, loop) => sum + loop.length, 0);
+    ops.push({ kind: "ink", text: p.text, polygons, color: palette.ink, size: p.size, line: p.line, key: `${wordSeed}|${grid}|${p.size.toFixed(3)}|${loops.length}.${points}|${p.text}` });
+  }
+  return { block, ops, readable: inked.length ? union(inked) : block.bounds };
 }
 
 /** Heavy wide capitals, repeated in outline above and below to the cover's edges. */
@@ -911,7 +1185,7 @@ function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palet
 /** Every op moved by (dx, dy). */
 function moveOp(op: Op, dx: number, dy: number): Op {
   if (op.kind === "text" || op.kind === "box") return { ...op, x: op.x + dx, y: op.y + dy };
-  if (op.kind === "shape") return { ...op, polygons: op.polygons.map((p) => p.map((v, i) => v + (i % 2 ? dy : dx))) };
+  if (op.kind === "shape" || op.kind === "ink") return { ...op, polygons: op.polygons.map((p) => p.map((v, i) => v + (i % 2 ? dy : dx))) };
   if (op.kind === "turn") return { ...op, cx: op.cx + dx, cy: op.cy + dy, ops: op.ops.map((inner) => moveOp(inner, dx, dy)) };
   return op;
 }
@@ -1598,7 +1872,7 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
       case "mono":
         return mono(paragraphs, safe, palette, measurer);
       default:
-        return editorial(paragraphs, safe, palette, measurer);
+        return inkblot(paragraphs, safe, palette, measurer, seed);
     }
   })();
 

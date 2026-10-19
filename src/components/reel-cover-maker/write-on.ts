@@ -7,7 +7,7 @@
  * 1. The ink is thinned to its middle line (Zhang and Suen's thinning), and
  *    the short spurs thinning leaves at a stroke's corners are cut back.
  * 2. Each piece of that line is followed as a pen goes: from its leftmost
- *    end, straight on through a crossing rather than round a corner, the
+ *    end (or its leftmost point, where its left is a closed loop), straight on through a crossing rather than round a corner, the
  *    other way at a fork begun a moment after (so a bowl fills in as the
  *    pen passes it), piece after piece left to right (an i's dot, an
  *    apostrophe, after the word they sit over has begun). How far the pen
@@ -219,7 +219,12 @@ export function revealMap(alpha: ArrayLike<number>, w: number, h: number): Revea
   pieces.forEach((p, k) => {
     if (k) pen += lift;
     const ends = p.pixels.filter((i) => neighbours(line, w, h, i).length === 1);
-    const start = (ends.length ? ends : p.pixels).reduce((best, i) => (xy(i)[0] < xy(best)[0] || (xy(i)[0] === xy(best)[0] && xy(i)[1] > xy(best)[1]) ? i : best));
+    const leftmost = (of: number[]) => of.reduce((best, i) => (xy(i)[0] < xy(best)[0] || (xy(i)[0] === xy(best)[0] && xy(i)[1] > xy(best)[1]) ? i : best));
+    // A word is begun at its left: at its leftmost loose end, unless that is
+    // well into the word, as where ink has closed an entry stroke into a
+    // loop (Inkblot's bleed does), when the pen starts at the loop's left.
+    const end = ends.length ? leftmost(ends) : -1;
+    const start = end >= 0 && xy(end)[0] - p.left <= width * 3 ? end : leftmost(p.pixels);
     let latest = pen;
     push([pen, start, -1]);
     while (heap.length) {

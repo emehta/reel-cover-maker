@@ -17,7 +17,9 @@
  * - Pasty and Pasty Flat: Written live (letter after letter, each stroke
  *   piped as if by hand). All at once and Pop were cut (the owner, 7 Oct:
  *   "so bad").
- * - Editorial: Word by word, Typewriter, Line by line.
+ * - Inkblot: Written (each printed word traced as a pen writes it, word
+ *   after word in reading order), Word by word and Line by line (each comes
+ *   into focus out of nothing, as ink soaks into the cloth).
  * - Echo: Ripple (the words, then each echo out from them in turn), Spread
  *   (the echoes slide out from the words to their places), Cascade (every
  *   line drops in, top to bottom).
@@ -35,6 +37,7 @@
  */
 
 import type { FaceId, Measurer } from "@/components/reel-cover-maker/faces";
+import { loopBounds } from "@/components/reel-cover-maker/ink";
 import type { Bead, Chain } from "@/components/reel-cover-maker/liquid";
 import { apply, invert, multiply, type Matrix, type Point } from "@/components/reel-cover-maker/place";
 import { isBackdrop, pasteKey, type LiquidOp, type Op, type Scene, type StyleId } from "@/components/reel-cover-maker/scene";
@@ -58,9 +61,9 @@ export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
   ],
   pasty: [{ id: "written", name: "Written live" }],
   "pasty-flat": [{ id: "written", name: "Written live" }],
-  editorial: [
+  inkblot: [
+    { id: "written", name: "Written" },
     { id: "words", name: "Word by word" },
-    { id: "typewriter", name: "Typewriter" },
     { id: "lines", name: "Line by line" },
   ],
   echo: [
@@ -220,6 +223,12 @@ function textBox(op: Extract<Op, { kind: "text" }>, measurer: Measurer) {
   return { x: op.x - b.left * op.size, y: op.y - b.ascent * op.size, w: (b.left + b.right) * op.size, h: (b.ascent + b.descent) * op.size };
 }
 
+/** Printed ink's box, in its own frame. */
+function inkRect(op: Extract<Op, { kind: "ink" }>) {
+  const b = loopBounds(op.polygons);
+  return b ? { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 } : { x: 0, y: 0, w: 0, h: 0 };
+}
+
 function centreOf(rect: { x: number; y: number; w: number; h: number }): Point {
   return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
 }
@@ -230,6 +239,7 @@ function leafCentre(leaf: Leaf, measurer: Measurer): Point {
   if (op.kind === "text") return apply(leaf.world, centreOf(textBox(op, measurer)));
   if (op.kind === "box") return apply(leaf.world, centreOf(op));
   if (op.kind === "shape") return apply(leaf.world, centreOf(polygonBounds(op.polygons)));
+  if (op.kind === "ink") return apply(leaf.world, centreOf(inkRect(op)));
   return { x: 0, y: 0 };
 }
 
@@ -246,10 +256,10 @@ function looked(leaf: Leaf, look: Look | null, measurer: Measurer): Op | null {
     if (!look.polygons.length) return null;
     op = { ...op, polygons: look.polygons };
   }
-  if (look.drawn !== undefined && leaf.op.kind === "text") {
+  if (look.drawn !== undefined && (leaf.op.kind === "text" || leaf.op.kind === "ink")) {
     if (look.drawn <= 0) return null;
     if (look.drawn < 1) {
-      const box = textBox(leaf.op, measurer);
+      const box = leaf.op.kind === "text" ? textBox(leaf.op, measurer) : inkRect(leaf.op);
       op = { kind: "write", ...box, at: look.drawn, ops: [op] };
     }
   }
@@ -1004,7 +1014,7 @@ function wordsOf(op: Extract<Op, { kind: "text" }>, measurer: Measurer): Extract
   return out.length ? out : [op];
 }
 
-/** Editorial and Mono: the lines' words, characters or lines, in reading order; Mono's cursor following its typing. */
+/** Mono: the lines' words or characters, in reading order, its cursor following its typing. */
 function typeset(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   const leaves = leavesOf(scene.ops);
   const lines = leaves.filter((l): l is Leaf & { op: Extract<Op, { kind: "text" }> } => l.op.kind === "text");
@@ -1097,6 +1107,75 @@ function typeset(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   };
 }
 
+/** Something coming into focus out of nothing, `start` on, over `length`: how see-through, how soft and how large at `t`. */
+function soak(centre: Point, start: number, length: number, t: number, size: number): { alpha: number; blur: number; move: Matrix } | null {
+  const u = span(t, start, length);
+  if (u >= 1) return null;
+  const haze = (1 - u) ** 2;
+  return { alpha: easeInOut(clamp01(u / 0.8)), blur: size * 0.09 * haze, move: about(centre.x, centre.y, 1 + 0.035 * haze) };
+}
+
+/**
+ * Inkblot: its printed words in reading order. Written traces each as a pen
+ * writes it, word after word, a pen's lift between them and a longer one
+ * between lines (an emoji, which is no pen's, fades in at its turn); Word by
+ * word and Line by line bring each word, or each line, into focus out of
+ * nothing, as ink soaks into the cloth.
+ */
+function inkblot(scene: Scene, id: AnimationId, measurer: Measurer): Built {
+  const words = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "ink" | "text" }> } => l.op.kind === "ink" || l.op.kind === "text");
+  // An emoji, set as text, carries its line as a printed word does.
+  const lines = words.map((w) => w.op.line ?? 0);
+
+  if (id === "written") {
+    const times = new Map<Op, { at: number; length: number }>();
+    let t = 0;
+    words.forEach((w, i) => {
+      if (i) t += lines[i] !== lines[i - 1] ? 0.16 : 0.07;
+      const length = 0.3 + 0.08 * graphemes(w.op.text).length;
+      times.set(w.op, { at: t, length });
+      t += length;
+    });
+    const k = fitted(t);
+    return {
+      duration: t * k,
+      look: (leaf, now) => {
+        const c = times.get(leaf.op);
+        if (!c || now >= (c.at + c.length) * k) return null;
+        const u = span(now, c.at * k, c.length * k);
+        return leaf.op.kind === "ink" ? { drawn: drawnAt(u) } : { alpha: easeOut(u) };
+      },
+    };
+  }
+
+  // Each word, or each line, its own moment.
+  const groups = id === "lines" ? [...new Set(lines)].map((line) => words.filter((_, i) => lines[i] === line)) : words.map((w) => [w]);
+  const gap = id === "lines" ? 0.3 : Math.min(0.14, 2.6 / Math.max(1, groups.length));
+  const each = id === "lines" ? 0.85 : 0.7;
+  const natural = groups.length ? (groups.length - 1) * gap + each : 0;
+  const k = fitted(natural);
+  const when = new Map<Op, { start: number; centre: Point; size: number }>();
+  groups.forEach((group, g) => {
+    const centres = group.map((w) => leafCentre(w, measurer));
+    const centre = { x: centres.reduce((a, c) => a + c.x, 0) / centres.length, y: centres.reduce((a, c) => a + c.y, 0) / centres.length };
+    for (const w of group) when.set(w.op, { start: g * gap * k, centre, size: w.op.size });
+  });
+  return {
+    duration: natural * k,
+    look: () => null,
+    replace: (leaf, t) => {
+      const c = when.get(leaf.op);
+      if (!c) return null;
+      const s = soak(c.centre, c.start, each * k, t, c.size);
+      if (!s) return null;
+      const made = looked(leaf, { alpha: s.alpha, move: s.move }, measurer);
+      if (!made) return [];
+      // An emoji only fades: out of focus it would be cast in one colour, as a shadow is.
+      return s.blur > 0.25 && leaf.op.kind === "ink" ? [{ kind: "blur", radius: s.blur, ops: [made] }] : [made];
+    },
+  };
+}
+
 /** Echo: the words and their echoes, rings out from the middle. */
 function echo(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   const leaves = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "text" }> } => l.op.kind === "text");
@@ -1157,7 +1236,9 @@ export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Me
         ? pasty(scene)
         : style === "echo"
           ? echo(scene, id, measurer)
-          : typeset(scene, id, measurer);
+          : style === "inkblot"
+            ? inkblot(scene, id, measurer)
+            : typeset(scene, id, measurer);
   const leafWorld = new Map<Op, Matrix>();
   for (const leaf of leavesOf(scene.ops)) leafWorld.set(leaf.op, leaf.world);
   return {

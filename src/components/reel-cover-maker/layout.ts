@@ -60,6 +60,8 @@ export interface Faces {
   emphasisFace: FaceId;
   /** An emphasised segment's size against its line's, for a face that runs small. */
   emphasisScale?: number;
+  /** Room added to every word space, in em: a joined script's own space is narrow beside its long exit strokes. */
+  wordSpace?: number;
 }
 
 export interface FlowSpec extends Faces {
@@ -141,7 +143,7 @@ function measureWord(word: Word, faces: Faces, measurer: Measurer): MeasuredWord
   return {
     segments,
     width: segments.reduce((sum, s) => sum + s.width, 0),
-    space: measurer.width(last.face, " ") * last.scale,
+    space: measurer.width(last.face, " ") * last.scale + (faces.wordSpace ?? 0),
     ...inkEnds(segments, measurer),
   };
 }

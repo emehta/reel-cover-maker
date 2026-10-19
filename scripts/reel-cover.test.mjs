@@ -39,6 +39,7 @@ const { prepaintScript } = await import("@/components/reel-cover-maker/theme");
 const AN = await import("@/components/reel-cover-maker/animate");
 const VID = await import("@/components/reel-cover-maker/video");
 const WO = await import("@/components/reel-cover-maker/write-on");
+const INKM = await import("@/components/reel-cover-maker/ink");
 
 let passed = 0;
 const check = (name, fn) => {
@@ -52,6 +53,8 @@ const near = (a, b, e = 1e-6) => Math.abs(a - b) <= e;
 /* A measurer that stands in for the canvas: every face has its own widths, wide letters are wide. */
 
 const FACE_WIDTH = {
+  // Inkblot's script, narrow and tall, its swashes reaching high and low.
+  script: 0.36,
   serif: 0.44,
   "serif-italic": 0.41,
   condensed: 0.36,
@@ -74,6 +77,7 @@ const FACE_WIDTH = {
   "funky-leckerli": 0.62,
 };
 const FACE_METRICS = {
+  script: { cap: 0.62, ascent: 0.96, descent: 0.42 },
   serif: { cap: 0.66, ascent: 0.92, descent: 0.24 },
   "serif-italic": { cap: 0.66, ascent: 0.93, descent: 0.25 },
   condensed: { cap: 0.73, ascent: 0.98, descent: 0.18 },
@@ -136,8 +140,32 @@ function letterInk(face, ch) {
   return { top: -(small ? m.cap * 0.68 : tall && /[a-z]/.test(ch) ? m.ascent : m.cap), bottom: /[gjpqyQ,;]/u.test(ch) ? m.descent : 0 };
 }
 
+/** Each text's outline, kept, as the page's measurer keeps it: the same word is the same outline. */
+const outlines = new Map();
+
 const measurer = {
   width: advance,
+  // A box a letter, each a little narrower than its advance and as tall as its ink, running with the ink on its left.
+  outline: (face, text) => {
+    const key = `${face}\u0000${text}`;
+    if (!outlines.has(key)) {
+      const loops = [];
+      let x = 0;
+      for (const ch of T.graphemes(text)) {
+        const w = charWidth(face, ch);
+        if (ch.trim()) {
+          const { top, bottom } = letterInk(face, ch);
+          const x0 = x + w * 0.06;
+          const x1 = x + w * 0.94;
+          const y1 = Math.max(bottom, 0.02);
+          loops.push([x0, top, x0, y1, x1, y1, x1, top]);
+        }
+        x += w;
+      }
+      outlines.set(key, loops);
+    }
+    return outlines.get(key);
+  },
   // Ink in slices a twenty-fifth of an em wide, letter by letter, as the page's own measurer cuts it.
   columns: (face, text) => {
     const out = [];
@@ -257,6 +285,9 @@ function readableInk(scene) {
         out.push({ op, rect: applyTurn({ x: op.x, y: op.y, w: op.w, h: op.h }, turn) });
       } else if (op.kind === "shape") {
         out.push({ op, rect: SP.polygonBounds(op.polygons) });
+      } else if (op.kind === "ink") {
+        const b = INKM.loopBounds(op.polygons);
+        out.push({ op, rect: { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 } });
       } else if (op.kind === "liquid") {
         // The letters' paste, bead by bead; the droplets after them are ornament.
         for (const chain of op.chains.slice(0, op.letters)) {
@@ -287,7 +318,7 @@ function mainText(scene) {
   const walk = (ops) => {
     for (const op of ops) {
       if (op.kind === "turn") walk(op.ops);
-      else if (op.kind === "text" && !op.outline) out.push(op.text);
+      else if ((op.kind === "text" && !op.outline) || op.kind === "ink") out.push(op.text);
     }
   };
   walk(scene.ops);
@@ -645,8 +676,8 @@ check("with no photo a cover is clear but for its letters, a PNG with no ground 
       assert.deepEqual(onPhoto.ops.slice(0, 2), [{ kind: "fill", color: P.GROUNDS[ground] }, { kind: "photo" }]);
     }
   }
-  // Editorial's paper grain is a ground's: on a photo it stays, over the photo.
-  assert.ok(cover("x", "editorial", "post-4x5", { photo: true }).ops.some((op) => op.kind === "grain"));
+  // Inkblot's paper grain is a ground's: on a photo it stays, over the photo.
+  assert.ok(cover("x", "inkblot", "post-4x5", { photo: true }).ops.some((op) => op.kind === "grain"));
 });
 
 console.log("colour");
@@ -774,6 +805,12 @@ check("whatever storage holds, the maker opens with something it understands", (
   const old = D.readDesign(JSON.stringify({ text: "kept", style: "poster", palette: "cobalt", format: "reel" }));
   assert.deepEqual(old, { ...D.DEFAULT_DESIGN, text: "kept" });
   for (const style of ["glow", "sticker"]) assert.equal(D.readDesign(JSON.stringify({ style })).style, D.DEFAULT_DESIGN.style);
+  // Editorial was taken out for Inkblot, in its place (19 Oct): a design on it is on Inkblot, its words kept.
+  assert.deepEqual(D.readDesign(JSON.stringify({ text: "kept", style: "editorial", animations: { editorial: "typewriter" } })), { ...D.DEFAULT_DESIGN, text: "kept", style: "inkblot" });
+  // Its animation too, where Inkblot has it; one picked for Inkblot itself comes first.
+  assert.deepEqual(D.readDesign(JSON.stringify({ style: "editorial", animations: { editorial: "lines", mono: "words" } })).animations, { inkblot: "lines", mono: "words" });
+  assert.deepEqual(D.readDesign(JSON.stringify({ animations: { editorial: "lines", inkblot: "words" } })).animations, { inkblot: "words" });
+  assert.deepEqual(S.STYLES.map((st) => st.name), ["Stickery", "Pasty", "Pasty Flat", "Inkblot", "Echo", "Mono"]);
   assert.equal(D.readDesign(JSON.stringify({ text: "x".repeat(500) })).text.length, T.MAX_TITLE_LENGTH);
 });
 
@@ -928,6 +965,8 @@ function recorder() {
       m[1] * n[4] + m[3] * n[5] + m[5],
     ];
   };
+  /** The points of the path being made, where they land. */
+  let path = [];
   const ctx = {
     calls,
     fillStyle: "",
@@ -961,13 +1000,15 @@ function recorder() {
     fillRect: (x, y, w, h) => calls.push({ kind: "fillRect", at: point(x, y), w, h, style: ctx.fillStyle }),
     fillText: (text, x, y) => calls.push({ kind: "fillText", text, at: point(x, y), font: ctx.font, alpha: ctx.globalAlpha, align: ctx.textAlign, baseline: ctx.textBaseline, style: ctx.fillStyle, shadow: shadowOf() }),
     strokeText: (text, x, y) => calls.push({ kind: "strokeText", text, at: point(x, y), width: ctx.lineWidth, alpha: ctx.globalAlpha }),
-    beginPath: () => {},
-    moveTo: () => {},
-    lineTo: () => {},
+    beginPath: () => {
+      path = [];
+    },
+    moveTo: (x, y) => path.push(point(x, y)),
+    lineTo: (x, y) => path.push(point(x, y)),
     arcTo: () => {},
     closePath: () => {},
     clip: () => calls.push({ kind: "clip" }),
-    fill: () => calls.push({ kind: "fill", style: ctx.fillStyle, shadow: shadowOf(), m: [...m], alpha: ctx.globalAlpha }),
+    fill: () => calls.push({ kind: "fill", style: ctx.fillStyle, shadow: shadowOf(), m: [...m], alpha: ctx.globalAlpha, points: [...path] }),
     stroke: () => calls.push({ kind: "stroke", style: ctx.strokeStyle, width: ctx.lineWidth, shadow: shadowOf(), m: [...m] }),
     drawImage: (image, ...args) => calls.push({ kind: "drawImage", image, at: args.length > 2 ? args.slice(4, 6) : args, from: args.length > 2 ? args.slice(0, 4) : null, m: [...m] }),
     createRadialGradient: () => ({ stops: [], addColorStop(o, c) { this.stops.push([o, c]); } }),
@@ -1018,6 +1059,24 @@ check("every word is drawn where the scene puts it, at any scale and from any or
   }
 });
 
+check("printed ink is filled as its own outline, every point where the scene puts it, in its colour, at any scale", () => {
+  const scene = cover("rate my setup", "inkblot", "reel", COLOURS.green);
+  const inks = scene.ops.filter((op) => op.kind === "ink");
+  assert.equal(inks.length, 3);
+  for (const [scale, origin] of [[1, { x: 0, y: 0 }], [0.25, { x: 0, y: 240 }]]) {
+    const ctx = recorder();
+    paint(ctx, scene, { scale, origin, font, grain: null });
+    const fills = ctx.calls.filter((c) => c.kind === "fill");
+    assert.equal(fills.length, inks.length);
+    fills.forEach((call, i) => {
+      assert.equal(call.style, inks[i].color);
+      const flat = inks[i].polygons.flatMap((p) => Array.from({ length: p.length / 2 }, (_, k) => [(p[k * 2] - origin.x) * scale, (p[k * 2 + 1] - origin.y) * scale]));
+      assert.equal(call.points.length, flat.length);
+      call.points.forEach((q, k) => assert.ok(near(q[0], flat[k][0], 1e-6) && near(q[1], flat[k][1], 1e-6)));
+    });
+  }
+});
+
 check("a liquid layer is copied from its part of the lit canvas to its place, without the scene's scale", () => {
   const scene = cover("kite", "pasty");
   const ctx = recorder();
@@ -1031,8 +1090,8 @@ check("a liquid layer is copied from its part of the lit canvas to its place, wi
 });
 
 check("grain is drawn only when there is a tile to draw", () => {
-  // Editorial's paper grain, over a photo: a clear cover has none.
-  const scene = cover("grain", "editorial", "reel", { ...COLOURS.green, photo: true });
+  // Inkblot's paper grain, over a photo: a clear cover has none.
+  const scene = cover("grain", "inkblot", "reel", { ...COLOURS.green, photo: true });
   const without = recorder();
   paint(without, scene, { scale: 1, font, grain: null });
   const withTile = recorder();
@@ -1631,7 +1690,7 @@ check("Stickery's text colour: every letter on every sticker takes it, paste and
     assert.deepEqual(cover(title, "stickery", "reel", { ...COLOURS.green, lettering, textColour: null }), auto);
   }
   // Every other style's letters are the chosen colour, whatever Stickery's text colour is.
-  for (const style of ["pasty", "pasty-flat", "editorial", "echo", "mono"]) {
+  for (const style of ["pasty", "pasty-flat", "inkblot", "echo", "mono"]) {
     assert.deepEqual(cover("How I *plan* my week", style, "reel", { ...COLOURS.blue, textColour: pick }), cover("How I *plan* my week", style, "reel", COLOURS.blue), `${style} read the text colour`);
   }
 });
@@ -2109,6 +2168,263 @@ check("a clear cover's paste and its shadow's stain, laid on the ground chosen, 
   assert.ok(tinted.rgb.every((v) => v >= 0 && v <= tinted.alpha + 1e-12));
 });
 
+console.log("ink");
+
+/** How many times the loops wind round a point, by the crossings of a ray to its right (y down, as the screen is). */
+function winding(loops, x, y) {
+  let w = 0;
+  for (const loop of loops) {
+    const n = loop.length;
+    for (let i = 0; i < n; i += 2) {
+      const ax = loop[i];
+      const ay = loop[i + 1];
+      const bx = loop[(i + 2) % n];
+      const by = loop[(i + 3) % n];
+      if ((ay <= y) === (by <= y)) continue;
+      const cx = ax + ((y - ay) / (by - ay)) * (bx - ax);
+      if (cx > x) w += by > ay ? 1 : -1;
+    }
+  }
+  return w;
+}
+
+/** The distance from a point to the nearest edge of some loops. */
+function edgeDistance(loops, x, y) {
+  let best = Infinity;
+  for (const loop of loops) {
+    const n = loop.length;
+    for (let i = 0; i < n; i += 2) {
+      const ax = loop[i];
+      const ay = loop[i + 1];
+      const dx = loop[(i + 2) % n] - ax;
+      const dy = loop[(i + 3) % n] - ay;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 > 0 ? Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
+      best = Math.min(best, Math.hypot(x - ax - dx * t, y - ay - dy * t));
+    }
+  }
+  return best;
+}
+
+/** A box as a loop with its ink on the left as it runs, as contours runs one. */
+const boxLoop = (x0, y0, x1, y1) => [x0, y0, x0, y1, x1, y1, x1, y0];
+/** A hole in one, running the other way. */
+const holeLoop = (x0, y0, x1, y1) => [x0, y0, x1, y0, x1, y1, x0, y1];
+
+check("contours close round the ink with it on their left, so the nonzero rule fills exactly the ink: saddles, holes and the grid's edge included", () => {
+  const random = G.seeded(20261019);
+  for (let trial = 0; trial < 60; trial += 1) {
+    const w = 3 + Math.floor(random() * 14);
+    const h = 3 + Math.floor(random() * 14);
+    // Some fields of noughts and ones (every saddle there is), some smooth.
+    const values = Float64Array.from({ length: w * h }, () => (trial % 2 ? Math.round(random()) : random()));
+    const loops = INKM.contours(values, w, h, 0.5);
+    for (const loop of loops) assert.ok(loop.length >= 6 && loop.length % 2 === 0);
+    for (let j = 0; j < h; j += 1) {
+      for (let i = 0; i < w; i += 1) {
+        const ink = values[j * w + i] >= 0.5;
+        assert.equal(winding(loops, i, j) !== 0, ink, `trial ${trial}: point ${i},${j}`);
+        assert.ok(Math.abs(winding(loops, i, j)) <= 1);
+      }
+    }
+  }
+  // A ring: its outline ink, its hole the other way round.
+  const ring = new Float64Array(64);
+  for (let j = 1; j < 7; j += 1) for (let i = 1; i < 7; i += 1) ring[j * 8 + i] = i === 1 || i === 6 || j === 1 || j === 6 ? 1 : 0;
+  const areas = INKM.contours(ring, 8, 8, 0.5).map(INKM.loopArea).sort((a, b) => a - b);
+  assert.equal(areas.length, 2);
+  assert.ok(areas[0] < 0 && areas[1] > 0 && areas[1] > -areas[0]);
+});
+
+check("a loop is straightened only where it runs within the tolerance of a line, and stays closed", () => {
+  const circle = Array.from({ length: 2000 }, (_, i) => [Math.cos((i / 1000) * Math.PI), Math.sin((i / 1000) * Math.PI)]).flat();
+  const kept = INKM.simplify(circle, 0.002);
+  assert.ok(kept.length < circle.length / 4 && kept.length >= 6);
+  for (let i = 0; i < circle.length; i += 2) assert.ok(edgeDistance([kept], circle[i], circle[i + 1]) <= 0.002 + 1e-9);
+  assert.ok(near(INKM.loopArea(kept), INKM.loopArea(circle), 0.01));
+});
+
+check("a word is printed by its outline: bled exactly as far as the print says, and no further than its reach", () => {
+  const outline = [boxLoop(0, -0.5, 0.6, 0), boxLoop(0.8, -0.7, 1.1, 0.2)];
+  // Bleed alone: every point of the edge that far out from the outline, to a fraction of the grid.
+  const even = { ...INKM.PRINT, weight: 0, rough: [], bite: { ...INKM.PRINT.bite, amount: 0 } };
+  for (const grid of [120, 240]) {
+    const printed = INKM.printLoops(outline, 7, even, grid);
+    assert.equal(printed.length, 2);
+    for (const loop of printed) {
+      for (let i = 0; i < loop.length; i += 2) {
+        const d = edgeDistance(outline, loop[i], loop[i + 1]);
+        assert.ok(Math.abs(d - even.bleed) < 0.6 / grid, `grid ${grid}: ${d} from the outline, not ${even.bleed}`);
+        assert.equal(winding(outline, loop[i], loop[i + 1]), 0, "the edge inside the outline");
+      }
+    }
+  }
+  // Every print: never further out than its reach, never further in than its bites and roughness take it.
+  const reach = INKM.printReach();
+  const inward = INKM.PRINT.rough.reduce((sum, r) => sum + r.amount, 0) + INKM.PRINT.bite.amount - INKM.PRINT.bleed * (1 - INKM.PRINT.weight);
+  for (const seed of [1, 2, 3, 99]) {
+    const printed = INKM.printLoops(outline, seed);
+    assert.deepEqual(printed, INKM.printLoops(outline, seed), "the same seed prints the same");
+    for (const loop of printed) {
+      for (let i = 0; i < loop.length; i += 2) {
+        const d = edgeDistance(outline, loop[i], loop[i + 1]);
+        const out = winding(outline, loop[i], loop[i + 1]) === 0;
+        if (out) assert.ok(d <= reach + 1.5 / INKM.PRINT.grid, `seed ${seed}: ${d} past the outline`);
+        else assert.ok(d <= inward + 1.5 / INKM.PRINT.grid, `seed ${seed}: ${d} into the ink`);
+      }
+    }
+    // It bleeds: more ink than the outline holds, and a rough edge, longer than a smooth one.
+    const area = (loops) => loops.reduce((sum, l) => sum + INKM.loopArea(l), 0);
+    assert.ok(area(printed) > area(outline) * 1.05);
+    const length = (loops) => loops.reduce((sum, l) => sum + Array.from({ length: l.length / 2 }, (_, k) => Math.hypot(l[(k * 2 + 2) % l.length] - l[k * 2], l[(k * 2 + 3) % l.length] - l[k * 2 + 1])).reduce((a, b) => a + b, 0), 0);
+    // Measured: about 8% longer, from the chipped notches mostly.
+    assert.ok(length(printed) > length(INKM.printLoops(outline, seed, even)) * 1.05, "the edge is not rough");
+  }
+  assert.notDeepEqual(INKM.printLoops(outline, 1), INKM.printLoops(outline, 2), "another seed prints the same");
+});
+
+check("ink runs together as ink does: strokes nearer than twice the bleed join, a counter narrower than that fills in, wider ones stay open", () => {
+  const even = { ...INKM.PRINT, weight: 0, rough: [], bite: { ...INKM.PRINT.bite, amount: 0 } };
+  const b = even.bleed;
+  const strokes = (gap) => [boxLoop(0, -0.5, 0.1, 0), boxLoop(0.1 + gap, -0.5, 0.2 + gap, 0)];
+  assert.equal(INKM.printLoops(strokes(b * 1.5), 1, even).length, 1, "two strokes a bleed and a half apart print apart");
+  assert.equal(INKM.printLoops(strokes(b * 3), 1, even).length, 2, "two strokes three bleeds apart print as one");
+  const counter = (hole) => [boxLoop(0, -0.5, 0.5, 0), holeLoop(0.25 - hole / 2, -0.25 - hole / 2, 0.25 + hole / 2, -0.25 + hole / 2)];
+  const holes = (loops) => loops.filter((l) => INKM.loopArea(l) < 0).length;
+  assert.equal(holes(INKM.printLoops(counter(b * 1.5), 1, even)), 0, "a counter a bleed and a half wide stays open");
+  assert.equal(holes(INKM.printLoops(counter(b * 4), 1, even)), 1, "a counter four bleeds wide fills in");
+  // A word's print is kept by its outline, seed and grid: the same word is printed once.
+  const outline = strokes(0.3);
+  assert.equal(INKM.printedWord(outline, 5, 200), INKM.printedWord(outline, 5, 200));
+  assert.notEqual(INKM.printedWord(outline, 5, 200), INKM.printedWord(outline, 6, 200));
+  assert.equal(INKM.printSeed("word", 0), INKM.printSeed("word", 0));
+  assert.notEqual(INKM.printSeed("word", 0), INKM.printSeed("word", 1));
+  assert.notEqual(INKM.printSeed("word", 0), INKM.printSeed("ward", 0));
+});
+
+/** Each line's printed words on an Inkblot cover, top to bottom. */
+const inkLines = (scene) => {
+  const lines = new Map();
+  for (const op of scene.ops) if (op.kind === "ink") lines.set(op.line, [...(lines.get(op.line) ?? []), op]);
+  return [...lines.keys()].sort((a, b) => a - b).map((k) => lines.get(k));
+};
+
+check("Inkblot prints every word but an emoji, which it sets as text, and the same word the same wherever it goes, until Shuffle is pressed", () => {
+  const scene = cover("la vie la 👍", "inkblot", "reel", COLOURS.green);
+  assert.deepEqual(scene.ops.filter((op) => op.kind === "ink").map((op) => op.text), ["la", "vie", "la"]);
+  assert.deepEqual(scene.ops.filter((op) => op.kind === "text").map((op) => op.text), ["👍"]);
+  const [a, , b] = scene.ops.filter((op) => op.kind === "ink");
+  // The two "la"s: one print, moved.
+  const dx = b.polygons[0][0] - a.polygons[0][0];
+  const dy = b.polygons[0][1] - a.polygons[0][1];
+  assert.equal(a.polygons.length, b.polygons.length);
+  a.polygons.forEach((p, i) => p.forEach((v, k) => assert.ok(near(b.polygons[i][k], v + (k % 2 ? dy : dx), 1e-6))));
+  assert.equal(a.key, b.key);
+  // Shuffled, the words print anew in the same places.
+  const shuffled = cover("la vie la 👍", "inkblot", "reel", { ...COLOURS.green, seed: 12 });
+  const again = shuffled.ops.filter((op) => op.kind === "ink");
+  assert.notDeepEqual(again[0].polygons, a.polygons);
+  assert.ok(Math.abs(INKM.loopBounds(again[0].polygons).x0 - INKM.loopBounds(a.polygons).x0) < a.size * INKM.printReach() * 2 + 1);
+  // Each word is its colour; with no photo there is nothing else on the cover.
+  for (const op of scene.ops) assert.equal(op.color, P.paletteFor({ hue: COLOURS.green.hue, shade: COLOURS.green.shade, ground: "light" }).ink);
+});
+
+check("Inkblot traces a word whole however it was typed: a star inside it, a space, an emoji's line, and the grain before a word", () => {
+  // A star typed inside a word splits it into segments, which every other style sets alike; Inkblot prints it as one word.
+  assert.deepEqual(cover("un*believ*able", "inkblot", "reel").ops.filter((op) => op.kind === "ink").map((op) => op.text), ["unbelievable"]);
+  assert.deepEqual(cover("un*believ*able day", "inkblot", "reel").ops, cover("unbelievable day", "inkblot", "reel").ops);
+  // An emoji on a line of its own is on that line, for Line by line.
+  const scene = cover("hello\n👍\nworld", "inkblot", "reel");
+  assert.deepEqual(scene.ops.filter((op) => op.kind === "ink" || op.kind === "text").map((op) => `${op.text}:${op.line}`), ["hello:0", "👍:1", "world:2"]);
+  // On a photo, the paper's grain is there before anything is typed, as it is after.
+  assert.ok(cover("", "inkblot", "reel", { photo: true }).ops.some((op) => op.kind === "grain"));
+  assert.ok(!cover("", "inkblot", "reel").ops.some((op) => op.kind === "grain"));
+});
+
+check("Inkblot keeps the words of a line clear of each other, a swash reaching past its space moving the next word on", () => {
+  // A face whose capitals reach far past their advance, as Pinyon's T, N and W do, and whose j reaches back before its start.
+  const swash = {
+    ...measurer,
+    outline: (face, text) => {
+      const key = `swash\u0000${face}\u0000${text}`;
+      if (!outlines.has(key)) {
+        const loops = [];
+        let x = 0;
+        for (const ch of T.graphemes(text)) {
+          const w = charWidth(face, ch);
+          if (ch.trim()) {
+            const { top, bottom } = letterInk(face, ch);
+            const x0 = x + w * 0.06 - (ch === "j" ? 0.55 : 0);
+            const x1 = x + w * 0.94 + (/[TNW]/.test(ch) ? 0.65 : 0);
+            loops.push([x0, top, x0, Math.max(bottom, 0.02), x1, Math.max(bottom, 0.02), x1, top]);
+          }
+          x += w;
+        }
+        outlines.set(key, loops);
+      }
+      return outlines.get(key);
+    },
+  };
+  for (const title of ["To Wit Now", "Wait jam", "NNN jjj TTT"]) {
+    const scene = cover(title, "inkblot", "reel", {}, swash);
+    const safe = F.formatById("reel").safe;
+    for (const line of inkLines(scene)) {
+      const size = line[0].size;
+      for (let i = 1; i < line.length; i += 1) {
+        const before = line.slice(0, i).flatMap((op) => op.polygons);
+        let nearest = Infinity;
+        for (const loop of line[i].polygons) for (let k = 0; k < loop.length; k += 2) nearest = Math.min(nearest, winding(before, loop[k], loop[k + 1]) ? 0 : edgeDistance(before, loop[k], loop[k + 1]));
+        assert.ok(nearest >= S.INK_LINE_GAP * size * 0.8, `"${title}": "${line[i].text}" ${nearest.toFixed(1)}px from the word before`);
+      }
+      for (const op of line) {
+        const b = INKM.loopBounds(op.polygons);
+        assert.ok(b.x0 >= safe.x - 0.5 && b.x1 <= safe.x + safe.w + 0.5, `"${title}": "${op.text}" leaves the safe area`);
+      }
+    }
+  }
+});
+
+check("Inkblot centres each line by its ink and lets each down only as far as keeps it clear of the line above", () => {
+  for (const format of F.FORMATS) {
+    for (const title of ["things aren't\nwhat they seem", "5 things I wish I knew before moving to Lisbon", "Ygg jjj\nÅÉ hhh\nyyy"]) {
+      const scene = cover(title, "inkblot", format.id);
+      const lines = inkLines(scene);
+      assert.ok(lines.length >= 2, `${format.id} "${title}" on one line`);
+      const size = lines[0][0].size;
+      for (const line of lines) {
+        const b = INKM.loopBounds(line.flatMap((op) => op.polygons));
+        const centre = (b.x0 + b.x1) / 2;
+        assert.ok(Math.abs(centre - (format.safe.x + format.safe.w / 2)) < size * INKM.printReach() + 1, `${format.id} "${title}": a line off centre by ${centre - format.safe.x - format.safe.w / 2}`);
+      }
+      // No line's ink comes within the gap of the next one's.
+      for (let i = 1; i < lines.length; i += 1) {
+        const above = lines[i - 1].flatMap((op) => op.polygons);
+        const below = lines[i].flatMap((op) => op.polygons);
+        const ba = INKM.loopBounds(above);
+        let nearest = Infinity;
+        for (const loop of below) {
+          for (let k = 0; k < loop.length; k += 2) {
+            if (loop[k + 1] > ba.y1 + size) continue;
+            nearest = Math.min(nearest, edgeDistance(above, loop[k], loop[k + 1]));
+          }
+        }
+        assert.ok(nearest >= S.INK_LINE_GAP * size * 0.8, `${format.id} "${title}": lines ${i - 1} and ${i} ${nearest.toFixed(1)}px apart`);
+      }
+    }
+  }
+});
+
+check("one short word in Inkblot is set larger than the lines are broken at, as far as its ink fits", () => {
+  const hi = cover("hi", "inkblot", "reel");
+  const [op] = hi.ops.filter((o) => o.kind === "ink");
+  assert.ok(op.size > 320 && op.size <= 430 + 1e-6, `"hi" set at ${op.size}`);
+  // A word wider than the safe area at that size is held to it by its ink.
+  const wide = cover("unbelievably", "inkblot", "reel");
+  const safe = F.formatById("reel").safe;
+  const b = INKM.loopBounds(wide.ops.filter((o) => o.kind === "ink").flatMap((o) => o.polygons));
+  assert.ok(b.x1 - b.x0 > safe.w * 0.9, "a long word does not fill the width");
+});
+
 console.log("photo");
 
 check("a photo always covers the whole cover: fitted by its shorter side, zoomed into a window that never runs off it", () => {
@@ -2429,7 +2745,7 @@ console.log("placing");
   });
 
   check("placed letters are painted through the map: each word where the map takes it", () => {
-    const base = cover("Placed here", "editorial", "reel");
+    const base = cover("Placed here", "mono", "reel");
     const place = { x: 120, y: -300, angle: -0.7, sx: 1.25, sy: 1.25 };
     const at = (scene) => {
       const ctx = recorder();
@@ -2493,6 +2809,7 @@ function shown(scene) {
       else if (op.kind === "blur") walk(op.ops, op.tint ? 0 : alpha);
       else if (op.kind === "write") walk(op.ops, alpha * op.at);
       else if (op.kind === "text") out.chars += T.graphemes(op.text).length * alpha * (op.alpha ?? 1);
+      else if (op.kind === "ink") out.chars += T.graphemes(op.text).length * alpha;
       else if (op.kind === "shape") out.shapes += alpha;
       else if (op.kind === "box") out.boxes += alpha;
       else if (op.kind === "liquid") for (const c of op.chains) for (let i = 1; i < c.length; i += 1) out.paste += Math.hypot(c[i].x - c[i - 1].x, c[i].y - c[i - 1].y) + 0.001;
@@ -2508,7 +2825,7 @@ const ANIMATED = [
   ["pasty", { pastyLettering: "goo" }],
   ["pasty", { pastyLettering: "drip" }],
   ["pasty-flat", { pastyLettering: "goo-even" }],
-  ["editorial", {}],
+  ["inkblot", {}],
   ["echo", {}],
   ["mono", {}],
 ];
@@ -2543,7 +2860,7 @@ check("every animation of every style starts with less than the cover and ends o
 });
 
 check("typing and piping only ever add: characters typed, paste laid, never taken back, and every chain only ever a first part of its own", () => {
-  for (const [style, extra, id] of [["editorial", {}, "typewriter"], ["mono", {}, "typewriter"], ["stickery", { lettering: "yesteryear" }, "type-draw"], ["stickery", { lettering: "goo" }, "type-draw"], ["pasty", { pastyLettering: "goo" }, "written"], ["pasty", { pastyLettering: "drip" }, "written"]]) {
+  for (const [style, extra, id] of [["inkblot", {}, "written"], ["mono", {}, "typewriter"], ["stickery", { lettering: "yesteryear" }, "type-draw"], ["stickery", { lettering: "goo" }, "type-draw"], ["pasty", { pastyLettering: "goo" }, "written"], ["pasty", { pastyLettering: "drip" }, "written"]]) {
     const scene = cover("things *aren't*\n*what* they seem", style, "reel", extra);
     const p = AN.plan(scene, style, id, measurer);
     let last = { chars: 0, paste: 0 };
@@ -2565,6 +2882,59 @@ check("typing and piping only ever add: characters typed, paste laid, never take
       assert.equal(mid.chains.length, mid.colourOf.length);
       assert.equal(mid.chains.length, mid.tone.length);
     }
+  }
+});
+
+check("Inkblot's Written writes each printed word as a pen does, word after word in reading order, and ends on the cover", () => {
+  const scene = cover("things aren't\nwhat they seem", "inkblot", "reel");
+  const words = scene.ops.filter((op) => op.kind === "ink");
+  const p = AN.plan(scene, "inkblot", "written", measurer);
+  const begun = new Map();
+  const done = new Map();
+  for (let t = 0; t <= p.duration + 1e-9; t += 1 / 60) {
+    const walk = (ops, writing) => {
+      for (const op of ops) {
+        if (op.kind === "write") walk(op.ops, op);
+        else if (op.kind === "fade" || op.kind === "matrix" || op.kind === "turn") walk(op.ops, writing);
+        else if (op.kind === "ink") {
+          if (!begun.has(op.text + op.line)) begun.set(op.text + op.line, t);
+          if (!writing && !done.has(op.text + op.line)) done.set(op.text + op.line, t);
+          // Written in the box its ink fills.
+          if (writing) {
+            const b = INKM.loopBounds(op.polygons);
+            assert.ok(near(writing.x, b.x0, 1e-6) && near(writing.w, b.x1 - b.x0, 1e-6) && writing.at > 0 && writing.at < 1);
+          }
+        }
+      }
+    };
+    walk(p.frame(t).ops, null);
+  }
+  const order = words.map((w) => begun.get(w.text + w.line));
+  for (let i = 1; i < order.length; i += 1) assert.ok(order[i] > order[i - 1], `"${words[i].text}" begun before "${words[i - 1].text}"`);
+  // Each word is finished before the next is begun.
+  for (let i = 1; i < words.length; i += 1) assert.ok(done.get(words[i - 1].text + words[i - 1].line) <= order[i] + 1 / 60);
+  assert.equal(p.frame(p.duration), scene);
+  assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.name), ["Written", "Word by word", "Line by line"]);
+  // An emoji comes in faded, never out of focus (a blur casts it in one colour), and with its own line.
+  const emoji = cover("hello\n👍\nworld", "inkblot", "reel");
+  for (const id of ["words", "lines"]) {
+    const q = AN.plan(emoji, "inkblot", id, measurer);
+    let seen = null;
+    let hello = null;
+    for (let t = 0; t <= q.duration; t += 1 / 60) {
+      const walk = (ops, blurred) => {
+        for (const op of ops) {
+          if (op.kind === "blur") walk(op.ops, true);
+          else if (op.kind === "fade" || op.kind === "matrix" || op.kind === "turn") walk(op.ops, blurred);
+          else if (op.kind === "text") {
+            assert.ok(!blurred, `${id}: the emoji drawn out of focus at ${t.toFixed(2)}`);
+            seen ??= t;
+          } else if (op.kind === "ink" && op.text === "hello") hello ??= t;
+        }
+      };
+      walk(q.frame(t).ops, false);
+    }
+    if (id === "lines") assert.ok(seen > hello, "the emoji's line comes in with the line above it");
   }
 });
 
@@ -2928,6 +3298,9 @@ check("a word is written as a pen goes: a bar from its left end to its right, an
   assert.ok(at(L, 9, 6) < at(L, 9, 22) && at(L, 9, 22) < at(L, 40, 33) && at(L, 40, 33) < at(L, 66, 33), "an L is not written down and then along");
   const two = WO.revealMap(image((x, y) => Math.hypot(x - 20, y - 20) < 8 || Math.hypot(x - 60, y - 20) < 8), w, h);
   assert.ok(at(two, 20, 20) < at(two, 60, 20), "the right piece is written first");
+  // A loop at a word's left, with its only loose end far right (an entry stroke the ink has closed): still begun at the left.
+  const looped = WO.revealMap(image((x, y) => (Math.hypot(x - 16, y - 20) < 10 && Math.hypot(x - 16, y - 20) >= 5) || (x >= 24 && x < 75 && y >= 17 && y < 23)), w, h);
+  assert.ok(at(looped, 7, 20) < at(looped, 45, 20) && at(looped, 45, 20) < at(looped, 72, 20), "a word with a loop at its left is written from its right");
   for (const map of [bar, L, two]) {
     for (let i = 0; i < w * h; i += 1) {
       const t = map.time[i];

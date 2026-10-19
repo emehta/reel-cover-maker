@@ -104,8 +104,10 @@ export function animationOf(design: Pick<Design, "style" | "animations">): Anima
 function readAnimations(value: unknown): Partial<Record<StyleId, AnimationId>> {
   const out: Partial<Record<StyleId, AnimationId>> = {};
   if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  const stored = value as Record<string, unknown>;
   for (const style of STYLES) {
-    const id = (value as Record<string, unknown>)[style.id];
+    // Editorial's pick is Inkblot's, where Inkblot offers it too (Word by word, Line by line).
+    const id = stored[style.id] ?? (style.id === "inkblot" ? stored.editorial : undefined);
     if (offers(style.id, id)) out[style.id] = id;
   }
   return out;
@@ -125,7 +127,8 @@ export function readDesign(raw: string | null): Design {
   }
   return {
     text: typeof stored.text === "string" ? clipMarked(stored.text, MAX_TITLE_LENGTH) : DEFAULT_DESIGN.text,
-    style: isStyleId(stored.style) ? stored.style : DEFAULT_DESIGN.style,
+    // Editorial was a design's style until Inkblot took its place (19 Oct): such a design is on Inkblot.
+    style: isStyleId(stored.style) ? stored.style : stored.style === "editorial" ? "inkblot" : DEFAULT_DESIGN.style,
     lettering: isLetteringId(stored.lettering) ? stored.lettering : DEFAULT_DESIGN.lettering,
     plainFace: isPlainFaceId(stored.plainFace) ? stored.plainFace : DEFAULT_DESIGN.plainFace,
     pastyLettering:
