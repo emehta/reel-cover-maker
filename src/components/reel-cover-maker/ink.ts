@@ -372,6 +372,155 @@ export function printLoops(outline: readonly Loop[], seed: number, print: Print 
   return loops;
 }
 
+/** A grid of points `1 / G` em apart over loops' box, `pad` em round it. */
+interface Grid {
+  ox: number;
+  oy: number;
+  W: number;
+  H: number;
+  G: number;
+}
+
+function gridOver(loops: readonly Loop[], pad: number, G: number): Grid | null {
+  const box = loopBounds(loops);
+  if (!box) return null;
+  const ox = box.x0 - pad - 2 / G;
+  const oy = box.y0 - pad - 2 / G;
+  return { ox, oy, G, W: Math.ceil((box.x1 - box.x0 + 2 * pad) * G) + 5, H: Math.ceil((box.y1 - box.y0 + 2 * pad) * G) + 5 };
+}
+
+/** Each grid point's distance to the nearest edge of `loops`, in em, held to at most `band`. */
+function edgeDistances(loops: readonly Loop[], g: Grid, band: number): Float32Array {
+  const { ox, oy, W, H, G } = g;
+  const reach = band * G;
+  const dist2 = new Float32Array(W * H).fill(reach * reach);
+  for (const loop of loops) {
+    const n = loop.length;
+    for (let s = 0; s < n; s += 2) {
+      const ax = (loop[s] - ox) * G;
+      const ay = (loop[s + 1] - oy) * G;
+      const dx = (loop[(s + 2) % n] - ox) * G - ax;
+      const dy = (loop[(s + 3) % n] - oy) * G - ay;
+      const len2 = dx * dx + dy * dy;
+      const inv = len2 > 0 ? 1 / len2 : 0;
+      const i0 = Math.max(0, Math.floor(Math.min(ax, ax + dx) - reach));
+      const i1 = Math.min(W - 1, Math.ceil(Math.max(ax, ax + dx) + reach));
+      const j0 = Math.max(0, Math.floor(Math.min(ay, ay + dy) - reach));
+      const j1 = Math.min(H - 1, Math.ceil(Math.max(ay, ay + dy) + reach));
+      for (let j = j0; j <= j1; j += 1) {
+        const row = j * W;
+        const py = j - ay;
+        for (let i = i0; i <= i1; i += 1) {
+          const qx = i - ax;
+          let t = (qx * dx + py * dy) * inv;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const ex = qx - dx * t;
+          const ey = py - dy * t;
+          const d2 = ex * ex + ey * ey;
+          if (d2 < dist2[row + i]) dist2[row + i] = d2;
+        }
+      }
+    }
+  }
+  const out = new Float32Array(W * H);
+  for (let i = 0; i < out.length; i += 1) out[i] = Math.sqrt(dist2[i]) / G;
+  return out;
+}
+
+/** 1 where a grid point is inside `loops` by the nonzero rule, as a canvas fills them, else 0. */
+function insideOf(loops: readonly Loop[], g: Grid): Uint8Array {
+  const { ox, oy, W, H, G } = g;
+  const crossings: { x: number; dir: number }[][] = Array.from({ length: H }, () => []);
+  for (const loop of loops) {
+    const n = loop.length;
+    for (let s = 0; s < n; s += 2) {
+      const ax = loop[s];
+      const ay = loop[s + 1];
+      const bx = loop[(s + 2) % n];
+      const by = loop[(s + 3) % n];
+      if (ay === by) continue;
+      const lo = Math.min(ay, by);
+      const hi = Math.max(ay, by);
+      const j0 = Math.max(0, Math.ceil((lo - oy) * G));
+      const j1 = Math.min(H - 1, Math.ceil((hi - oy) * G) - 1);
+      for (let j = j0; j <= j1; j += 1) {
+        const y = oy + j / G;
+        if (y < lo || y >= hi) continue;
+        crossings[j].push({ x: ax + ((y - ay) / (by - ay)) * (bx - ax), dir: by > ay ? 1 : -1 });
+      }
+    }
+  }
+  const out = new Uint8Array(W * H);
+  for (let j = 0; j < H; j += 1) {
+    const xs = crossings[j].sort((p, q) => p.x - q.x);
+    let k = 0;
+    let winding = 0;
+    for (let i = 0; i < W; i += 1) {
+      const x = ox + i / G;
+      while (k < xs.length && xs[k].x <= x) winding += xs[k++].dir;
+      if (winding !== 0) out[j * W + i] = 1;
+    }
+  }
+  return out;
+}
+
+/** Contours of a field on a grid, at nought, back in em and smoothed, specks left out. */
+function loopsOfField(field: Float32Array, g: Grid): Loop[] {
+  const out: Loop[] = [];
+  for (const loop of contours(field, g.W, g.H, 0)) {
+    const em = loop.map((v, i) => (i % 2 ? g.oy + v / g.G : g.ox + v / g.G));
+    if (Math.abs(loopArea(em)) < 4 / (g.G * g.G)) continue;
+    out.push(simplify(em, 0.25 / g.G));
+  }
+  return out;
+}
+
+/**
+ * The shape a word of script takes out of what is under it, as Find Your
+ * Niche's black Your takes its whole shape out of the red capitals: its
+ * ink with every gap narrower than twice `reach` closed (a loop, the space
+ * a swash sweeps round), then `margin` round all of it, smooth. In em, as
+ * the outline is; loops as `contours` gives them.
+ */
+export function silhouetteLoops(outline: readonly Loop[], reach: number, margin: number, grid = 64): Loop[] {
+  const G = grid;
+  const R = Math.max(reach, margin);
+  const g = gridOver(outline, R + margin + 4 / G, G);
+  if (!g) return [];
+  // Dilated by the reach: every point within it of the ink.
+  const near = edgeDistances(outline, g, R + 3 / G);
+  const ink = insideOf(outline, g);
+  const dilated = new Float32Array(g.W * g.H);
+  for (let i = 0; i < dilated.length; i += 1) dilated[i] = ink[i] ? R : R - near[i];
+  const edge = loopsOfField(dilated, g);
+  if (!edge.length) return [];
+  // Then worn back to the margin from the dilated shape's edge: gaps it closed stay closed.
+  const fromEdge = edgeDistances(edge, g, R + 3 / G);
+  const field = new Float32Array(g.W * g.H);
+  for (let i = 0; i < field.length; i += 1) field[i] = dilated[i] >= 0 ? fromEdge[i] - (R - margin) : -(fromEdge[i] + (R - margin));
+  return loopsOfField(field, g);
+}
+
+/** Silhouettes made, kept by the outline and what was asked of it. */
+const silhouettes = new WeakMap<readonly Loop[], Map<string, Loop[]>>();
+
+/** `silhouetteLoops`, kept for an outline the measurer hands out again for the same word. */
+export function silhouetteOf(outline: readonly Loop[], reach: number, margin: number): Loop[] {
+  let byAsk = silhouettes.get(outline);
+  if (!byAsk) {
+    byAsk = new Map();
+    silhouettes.set(outline, byAsk);
+  }
+  const key = `${reach.toFixed(4)}:${margin.toFixed(4)}`;
+  let made = byAsk.get(key);
+  if (!made) {
+    made = silhouetteLoops(outline, reach, margin);
+    byAsk.set(key, made);
+    while (byAsk.size > 6) byAsk.delete(byAsk.keys().next().value as string);
+  }
+  return made;
+}
+
 /** Printed words, kept by the outline they were printed from, their seed and grid: the same word is printed once. */
 const printed = new WeakMap<readonly Loop[], Map<string, Loop[]>>();
 

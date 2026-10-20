@@ -29,7 +29,7 @@ npm run build   # the static site, in out/
   hard-code `/reel-cover-maker` in a URL. It is no longer served by
   eshaanm.net, which only redirects to it.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
-  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `noise`,
+  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `renaissance`, `noise`,
   `strokes`, `scene`, `colour`, `palettes`, `grain`, `save`, `design`,
   `photo`, `place` and `font-gate` never touch the DOM and are tested in
   `scripts/reel-cover.test.mjs`. `paint` takes a context, so it is tested
@@ -100,11 +100,40 @@ npm run build   # the static site, in out/
   lettering's own grid (`steps`); `stepped.ts` steps every long run and
   each piece's outer sides. The tests hold all of it over every lettering,
   face and shuffle.
-- **Bold is Stickery's alone.** Bold is kept as stars in `design.text`
-  (`readMarked`/`writeMarked` in title.ts, a typed star or backslash
-  escaped); `buildScene` reads every other style's title with its bold as
-  plain words (the owner's ask, 7 Oct): no accent colour, italic or
-  highlight anywhere else.
+- **Bold is Stickery's and Renaissance's alone.** Bold is kept as stars in
+  `design.text` (`readMarked`/`writeMarked` in title.ts, a typed star or
+  backslash escaped): Stickery's funky words, Renaissance's script;
+  `buildScene` reads every other style's title with its bold as plain
+  words (the owner's ask, 7 Oct): no accent colour, italic or highlight
+  anywhere else.
+- **Renaissance is a lockup** (the owner's ask, 20 Oct, after three
+  posters: THE ART *of* SUMMERTIME, FIND *Your* NICHE, TRAVEL *The*
+  WORLD; `renaissance.ts`, pure). Its **Look** is one poster, capitals
+  and script matched (the owner, 20 Oct: never two free lists, after a
+  thin script on heavy capitals looked wrong), the owner's picks from
+  previews against the posters: Summertime (Playfair Display SC, squeezed
+  to 0.59, Luxurious Script), Niche (Anton at 1.05, Pinyon Script, black)
+  and Travel (Big Shoulders 900 at 0.8, Luxurious Script). Scripts were
+  chosen from all 357 Google Fonts handwriting families set as of, Your
+  and The beside the posters; the owner rejected Great Vibes' f (no top
+  hook, a folded bottom loop) and its The outright. Capitals are drawn
+  squeezed (`sx`, measured so the poster's word is its width); a script
+  has a broad pen's weight (`nib`: copies across, a canvas pixel apart,
+  so downstrokes thicken and hairlines do not; uniform stroking flattened
+  the contrast). Lines a tenth of a cap height apart; a join opens only
+  as far as keeps the script's reach into each line to 0.86 cap heights
+  for a narrow one (the of), 0.22 for a wide one (the The). The script's
+  small letters 0.56 of a cap height, raised for a short word (to, in) to
+  cover 0.28 of its lines (the owner: "to" was too small, after it had
+  been too big), at most 1.5 cap heights tall, at most 0.9 of the lines'
+  width. In the capitals' colour it carries `knock` (a thin gap); in
+  another, `knockShape` too (`silhouetteLoops`: its ink, loops and the
+  gaps its swashes sweep closed, a margin round it), as the second
+  poster's black Your takes its whole shape out of the red. The lockup is
+  a `knockout` op, drawn as a layer of its own so nothing is cut from the
+  photo. With no word bold the linking word nearest the middle is the
+  script (`scriptWords`); at either end of the title a script tucks
+  lightly (the owner's pick).
 - **The Text field draws its own letters.** `TextField.tsx` is a textarea
   whose letters are clear, under a mirror of the same text in plain and
   bold runs; bold is a text stroke, never a bolder weight, which would be
@@ -178,7 +207,9 @@ npm run build   # the static site, in out/
   (the owner, 8 Oct: not fixed steps, and 1 not in the middle): half as
   fast at the left, its own in the middle, twice at the right, on a log
   scale (`speedPlace`, `speedAtPlace`), caught at 1 near the middle.
-  Stickery has Type and draw, Slap, Pop and Reveal; Pasty and Pasty Flat
+  Renaissance has Written (capitals rise in line by line, then the script
+  is penned across them, its gap cut round what the pen has written:
+  `cutAround`), Word by word and Line by line; Stickery has Type and draw, Slap, Pop and Reveal; Pasty and Pasty Flat
   Written live; Inkblot Written (each printed word traced as a pen writes
   it, word after word), Word by word and Line by line (into focus out of
   nothing, as ink soaks in). All at once, Pasty's Pop and Rise were cut ("so bad"; 8
@@ -285,8 +316,10 @@ npm run build   # the static site, in out/
   `uHasUnder` in the shader), not a multiply: laid on the ground picked it
   is the old drawn shadow to within 3 levels in 255 (tested, and measured
   against the previous build's PNGs).
-- **The style thumbnails are the whole cover**, in its own shape, six to a
-  row as wide as fits (three by two under 900): never the profile grid's
+- **The style thumbnails are the whole cover**, in its own shape, seven to
+  a row as wide as fits (four over three, centred, under 900; the owner's
+  order of 20 Oct: Stickery, Renaissance, Inkblot, Pasty, Pasty Flat,
+  Echo, Mono): never the profile grid's
   crop, which cut a reel cover's sides off (the owner's ask, 7 Oct), and
   never a row that scrolls. Grid crop shows the grid's window on the
   cover itself.

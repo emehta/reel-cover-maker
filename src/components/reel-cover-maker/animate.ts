@@ -17,6 +17,10 @@
  * - Pasty and Pasty Flat: Written live (letter after letter, each stroke
  *   piped as if by hand). All at once and Pop were cut (the owner, 7 Oct:
  *   "so bad").
+ * - Renaissance: Written (the capitals rise in line by line, then the
+ *   script is written across them as a pen writes it, its gap in them
+ *   following the pen), Word by word and Line by line (each rises in, in
+ *   the order the lockup is read, the script where it falls).
  * - Inkblot: Written (each printed word traced as a pen writes it, word
  *   after word in reading order), Word by word and Line by line (each comes
  *   into focus out of nothing, as ink soaks into the cloth).
@@ -61,6 +65,11 @@ export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
   ],
   pasty: [{ id: "written", name: "Written live" }],
   "pasty-flat": [{ id: "written", name: "Written live" }],
+  renaissance: [
+    { id: "written", name: "Written" },
+    { id: "words", name: "Word by word" },
+    { id: "lines", name: "Line by line" },
+  ],
   inkblot: [
     { id: "written", name: "Written" },
     { id: "words", name: "Word by word" },
@@ -194,7 +203,7 @@ function leavesOf(ops: Op[], world: Matrix = IDENTITY, out: Leaf[] = []): Leaf[]
   for (const op of ops) {
     if (op.kind === "turn") leavesOf(op.ops, multiply(world, turnMatrix(op.cx, op.cy, op.angle)), out);
     else if (op.kind === "matrix") leavesOf(op.ops, multiply(world, op.m), out);
-    else if (op.kind === "fade" || op.kind === "write" || op.kind === "blur") leavesOf(op.ops, world, out);
+    else if (op.kind === "fade" || op.kind === "write" || op.kind === "blur" || op.kind === "knockout") leavesOf(op.ops, world, out);
     else if (!isBackdrop(op)) out.push({ op, world });
   }
   return out;
@@ -204,7 +213,7 @@ function leavesOf(ops: Op[], world: Matrix = IDENTITY, out: Leaf[] = []): Leaf[]
 function mapLeaves(ops: Op[], at: (op: Op) => Op | null): Op[] {
   const out: Op[] = [];
   for (const op of ops) {
-    if (op.kind === "turn" || op.kind === "matrix") {
+    if (op.kind === "turn" || op.kind === "matrix" || op.kind === "knockout") {
       const inner = mapLeaves(op.ops, at);
       if (inner.length) out.push({ ...op, ops: inner });
     } else if (isBackdrop(op)) {
@@ -220,7 +229,9 @@ function mapLeaves(ops: Op[], at: (op: Op) => Op | null): Op[] {
 /** A text op's ink box, in its own frame. */
 function textBox(op: Extract<Op, { kind: "text" }>, measurer: Measurer) {
   const b = measurer.bounds(op.face, op.text);
-  return { x: op.x - b.left * op.size, y: op.y - b.ascent * op.size, w: (b.left + b.right) * op.size, h: (b.ascent + b.descent) * op.size };
+  const sx = op.sx ?? 1;
+  const pad = (op.bold ?? 0) / 2;
+  return { x: op.x - b.left * op.size * sx - pad, y: op.y - b.ascent * op.size - pad, w: (b.left + b.right) * op.size * sx + 2 * pad + (op.nib ?? 0), h: (b.ascent + b.descent) * op.size + 2 * pad };
 }
 
 /** Printed ink's box, in its own frame. */
@@ -1008,7 +1019,7 @@ function wordsOf(op: Extract<Op, { kind: "text" }>, measurer: Measurer): Extract
   const parts = op.text.split(/( +)/u);
   let before = "";
   for (const part of parts) {
-    if (part.trim()) out.push({ ...op, text: part, x: op.x + measurer.width(op.face as FaceId, before) * op.size });
+    if (part.trim()) out.push({ ...op, text: part, x: op.x + measurer.width(op.face as FaceId, before) * op.size * (op.sx ?? 1) });
     before += part;
   }
   return out.length ? out : [op];
@@ -1176,6 +1187,87 @@ function inkblot(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   };
 }
 
+/**
+ * Renaissance: its lines of capitals and its scripts, in the order the
+ * lockup is read (top to bottom, a script where it falls between two
+ * lines). Written brings the capitals in line by line and then writes each
+ * script across them as a pen would; Word by word and Line by line bring
+ * each word, or each line, in as it is read.
+ */
+function renaissanceIn(scene: Scene, id: AnimationId, measurer: Measurer): Built {
+  const texts = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "text" }> } => l.op.kind === "text");
+  const isCaps = (l: { op: Extract<Op, { kind: "text" }> }) => l.op.face.startsWith("caps-");
+  const read = <T extends Leaf>(leaves: T[]) => [...leaves].sort((a, b) => {
+    const ca = leafCentre(a, measurer);
+    const cb = leafCentre(b, measurer);
+    return Math.abs(ca.y - cb.y) > 1 ? ca.y - cb.y : ca.x - cb.x;
+  });
+  const caps = read(texts.filter(isCaps));
+  const scripts = read(texts.filter((l) => !isCaps(l)));
+  const sheet = new Map<Op, (t: number) => Look | null>();
+
+  if (id === "written") {
+    const each = 0.55;
+    const gap = Math.min(0.16, 1.6 / Math.max(1, caps.length));
+    let t = caps.length ? (caps.length - 1) * gap + each * 0.8 : 0;
+    const starts = scripts.map((l) => {
+      const at = t;
+      t += 0.35 + 0.085 * graphemes(l.op.text).length + 0.08;
+      return at;
+    });
+    const natural = Math.max(t, caps.length ? (caps.length - 1) * gap + each : 0);
+    const k = fitted(natural);
+    caps.forEach((l, i) => {
+      const centre = leafCentre(l, measurer);
+      sheet.set(l.op, (now) => arrive("rise", centre, i * gap * k, each * k, now, l.op.size * 0.12));
+    });
+    scripts.forEach((l, i) => {
+      const length = 0.35 + 0.085 * graphemes(l.op.text).length;
+      sheet.set(l.op, (now) => (now >= (starts[i] + length) * k ? null : { drawn: drawnAt(span(now, starts[i] * k, length * k)) }));
+    });
+    return { duration: natural * k, look: (leaf, now) => sheet.get(leaf.op)?.(now) ?? null };
+  }
+
+  if (id === "lines") {
+    const order = read([...caps, ...scripts]);
+    const gap = Math.min(0.22, 2.4 / Math.max(1, order.length));
+    const natural = order.length ? (order.length - 1) * gap + 0.7 : 0;
+    const k = fitted(natural);
+    order.forEach((l, i) => {
+      const centre = leafCentre(l, measurer);
+      sheet.set(l.op, (now) => arrive("rise", centre, i * gap * k, 0.7 * k, now, l.op.size * 0.14));
+    });
+    return { duration: natural * k, look: (leaf, now) => sheet.get(leaf.op)?.(now) ?? null };
+  }
+
+  // Word by word: each line of capitals as its words while any is still coming, a script as one.
+  const split = caps.map((l) => ({ leaf: l as Leaf, words: wordsOf(l.op, measurer).map((w): Leaf => ({ op: w, world: l.world })) }));
+  const items = read([...split.flatMap((s) => s.words), ...scripts]);
+  const gap = Math.min(0.13, 2.6 / Math.max(1, items.length));
+  const natural = items.length ? (items.length - 1) * gap + 0.6 : 0;
+  const k = fitted(natural);
+  const startOf = new Map<Op, number>();
+  items.forEach((item, i) => startOf.set(item.op, i * gap * k));
+  const look = (leaf: Leaf, now: number) => {
+    const start = startOf.get(leaf.op);
+    if (start === undefined || leaf.op.kind !== "text") return null;
+    return arrive("rise", leafCentre(leaf, measurer), start, 0.6 * k, now, leaf.op.size * (isCaps(leaf as Leaf & { op: Extract<Op, { kind: "text" }> }) ? 0.18 : 0.12));
+  };
+  const lastOf = new Map(split.map((s) => [s.leaf.op, Math.max(...s.words.map((w) => startOf.get(w.op) ?? 0)) + 0.6 * k]));
+  return {
+    duration: natural * k,
+    look: (leaf, now) => (startOf.has(leaf.op) ? look(leaf, now) : null),
+    replace: (leaf, now) => {
+      const s = split.find((x) => x.leaf.op === leaf.op);
+      if (!s || now >= (lastOf.get(leaf.op) ?? 0)) return null;
+      return s.words.flatMap((w) => {
+        const made = looked(w, look(w, now), measurer);
+        return made ? [made] : [];
+      });
+    },
+  };
+}
+
 /** Echo: the words and their echoes, rings out from the middle. */
 function echo(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   const leaves = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "text" }> } => l.op.kind === "text");
@@ -1238,7 +1330,9 @@ export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Me
           ? echo(scene, id, measurer)
           : style === "inkblot"
             ? inkblot(scene, id, measurer)
-            : typeset(scene, id, measurer);
+            : style === "renaissance"
+              ? renaissanceIn(scene, id, measurer)
+              : typeset(scene, id, measurer);
   const leafWorld = new Map<Op, Matrix>();
   for (const leaf of leavesOf(scene.ops)) leafWorld.set(leaf.op, leaf.world);
   return {

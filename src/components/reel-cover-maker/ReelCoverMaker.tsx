@@ -46,6 +46,7 @@ import {
   type CoverInput,
   type Scene,
 } from "@/components/reel-cover-maker/scene";
+import { lookOf, RENAISSANCE_LOOKS, renaissanceFaces } from "@/components/reel-cover-maker/renaissance";
 import { Shortcuts } from "@/components/reel-cover-maker/Shortcuts";
 import { TextField } from "@/components/reel-cover-maker/TextField";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
@@ -167,9 +168,10 @@ function grain(): HTMLCanvasElement | null {
 const scenes = new Map<string, Scene>();
 
 function sceneFor(input: CoverInput, loads: number): Scene {
-  // The text colour is Stickery's alone: picking one builds no other style again.
+  // The text colour is Stickery's alone, the script's faces and colour Renaissance's: picking one builds no other style again.
   const text = input.style === "stickery" ? input.textColour ?? null : null;
-  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, loads]);
+  const renaissance = input.style === "renaissance" ? [input.renaissanceLook, input.scriptColour ?? null] : null;
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, renaissance, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, loads]);
   let scene = scenes.get(key);
   if (!scene) {
     scene = buildScene(input, measurerFor(loads));
@@ -434,7 +436,7 @@ export default function ReelCoverMaker() {
   const title = filled ? design.text : PLACEHOLDER_TITLE;
   const format = formatById(design.format);
 
-  const faces = facesFor(design.plainFace, letteringFace(design.lettering));
+  const faces = facesFor(design.plainFace, letteringFace(design.lettering), ...renaissanceFaces(design.renaissanceLook));
   const loads = useSyncExternalStore(subscribeFonts, () => fontsSnapshot(title, faces), () => -1);
   const method = useSyncExternalStore<SaveMethod>(subscribeTouch, currentSaveMethod, () => "download");
   const apple = useSyncExternalStore(subscribeNothing, isApple, () => true);
@@ -442,6 +444,8 @@ export default function ReelCoverMaker() {
   const measurer = loads >= 0 ? measurerFor(loads) : null;
   /** Stickery's letters' colour, as picked; null for auto, each sticker's own black or white. */
   const letterColour = textColour(design.textMode, design.textHue, design.textShade, design.textHex);
+  /** Renaissance's script's colour, as picked; null for the colour's own, when it cuts its gap in the capitals. */
+  const scriptColour = textColour(design.scriptMode, design.scriptHue, design.scriptShade, design.scriptHex);
   const input: CoverInput = {
     title,
     style: design.style,
@@ -449,6 +453,8 @@ export default function ReelCoverMaker() {
     plainFace: design.plainFace,
     textColour: letterColour,
     pastyLettering: design.pastyLettering,
+    renaissanceLook: design.renaissanceLook,
+    scriptColour,
     hue: design.hue,
     shade: design.shade,
     hex: design.hex,
@@ -485,6 +491,7 @@ export default function ReelCoverMaker() {
     design.hex,
     design.ground,
     design.style === "stickery" ? letterColour : null,
+    design.style === "renaissance" ? [design.renaissanceLook, scriptColour] : null,
     design.format,
     design.seed,
     loads,
@@ -578,7 +585,13 @@ export default function ReelCoverMaker() {
    */
   const pickText = (change: TextColourChange) => {
     const { textMode, textHue, textShade, textHex } = designRef.current;
-    update({ textMode, textHue, textShade, textHex, ...change });
+    update({ textMode: change.mode ?? textMode, textHue: change.hue ?? textHue, textShade: change.shade ?? textShade, textHex: change.hex !== undefined ? change.hex : textHex });
+  };
+
+  /** A change to Renaissance's script colour, every part of it named, as the text colour's is. */
+  const pickScript = (change: TextColourChange) => {
+    const { scriptMode, scriptHue, scriptShade, scriptHex } = designRef.current;
+    update({ scriptMode: change.mode ?? scriptMode, scriptHue: change.hue ?? scriptHue, scriptShade: change.shade ?? scriptShade, scriptHex: change.hex !== undefined ? change.hex : scriptHex });
   };
 
   /** The animation the cover is on, picked or its style's first, whether or not it is animated. */
@@ -602,7 +615,8 @@ export default function ReelCoverMaker() {
 
   const plainFace = design.plainFace;
   const funkyFace = letteringFace(design.lettering);
-  useEffect(() => requestFonts(title, facesFor(plainFace, funkyFace)), [title, plainFace, funkyFace]);
+  const { renaissanceLook } = design;
+  useEffect(() => requestFonts(title, facesFor(plainFace, funkyFace, ...renaissanceFaces(renaissanceLook))), [title, plainFace, funkyFace, renaissanceLook]);
 
   // The page and the browser's bars in the maker's light or dark, handed back on the way out.
   useEffect(() => {
@@ -1045,6 +1059,14 @@ export default function ReelCoverMaker() {
                   onChange={(plainFace) => update({ plainFace })}
                 />
               </>
+            ) : design.style === "renaissance" ? (
+              // A look is one poster's capitals and script, matched (the owner, 20 Oct); picking one puts its script in the poster's colour too.
+              <Dropdown
+                label="Look"
+                value={design.renaissanceLook}
+                options={RENAISSANCE_LOOKS.map((l) => ({ value: l.id, label: l.name, font: fontCss(l.caps, 17) }))}
+                onChange={(renaissanceLook) => update({ renaissanceLook, scriptMode: lookOf(renaissanceLook).scriptMode })}
+              />
             ) : design.style === "pasty" || design.style === "pasty-flat" ? (
               <Dropdown
                 label="Lettering"
@@ -1066,7 +1088,23 @@ export default function ReelCoverMaker() {
           </div>
 
           {/* The colour of Stickery's letters on its stickers, under its type. */}
-          {stickery && <TextColourField mode={design.textMode} hue={design.textHue} shade={design.textShade} hex={design.textHex} onPick={pickText} />}
+          {stickery && <TextColourField label="Text colour" id="rcm-text-colour" mode={design.textMode} hue={design.textHue} shade={design.textShade} hex={design.textHex} onPick={pickText} />}
+          {/* Renaissance's script: the colour's own (cutting its gap), or black, white or its own laid over the capitals. */}
+          {design.style === "renaissance" && (
+            <TextColourField
+              label="Script colour"
+              id="rcm-script-colour"
+              mode={design.scriptMode}
+              hue={design.scriptHue}
+              shade={design.scriptShade}
+              hex={design.scriptHex}
+              autoName="Same"
+              autoSwatch={hex}
+              autoColour={hex}
+              names={["Script hue", "Script shade"]}
+              onPick={pickScript}
+            />
+          )}
 
           <div className={styles.field}>
             <div className={styles.labelRow}>

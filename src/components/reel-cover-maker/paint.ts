@@ -174,6 +174,77 @@ function softLayer(ctx: PaintTarget, layer: { image: CanvasImageSource; sx: numb
   return true;
 }
 
+/** Whether any text in `ops` cuts a gap round itself. */
+function cuts(ops: Op[]): boolean {
+  return ops.some((op) => (op.kind === "text" ? !!(op.knock || op.knockShape) : "ops" in op && cuts(op.ops)));
+}
+
+/** A text's letters drawn by `how` where it is, squeezed across from its start if it is. */
+function lettered(ctx: PaintTarget, op: Extract<Op, { kind: "text" }>, how: (x: number, y: number) => void, fallbackScale = 1) {
+  // A broad pen's weight: the letters drawn again and again a little further right, a canvas pixel apart at most, so a downstroke thickens and a hairline along the pen's way does not.
+  const nib = op.nib ?? 0;
+  const steps = nib > 0 ? Math.min(64, Math.max(2, Math.ceil(nib * pixelsPerUnit(ctx, fallbackScale)))) : 0;
+  const each = (x: number, y: number) => {
+    how(x, y);
+    for (let i = 1; i <= steps; i += 1) how(x + (nib * i) / steps, y);
+  };
+  if (!op.sx || op.sx === 1) {
+    each(op.x, op.y);
+    return;
+  }
+  ctx.save();
+  ctx.translate(op.x, op.y);
+  ctx.scale(op.sx, 1);
+  each(0, 0);
+  ctx.restore();
+}
+
+/** One canvas reused for every knockout layer, grown to the largest asked for and never shrunk, so it is not made again for each canvas painted. */
+let knockCanvas: HTMLCanvasElement | null = null;
+
+/**
+ * A clear layer the size of the canvas `ctx` draws on, under the same
+ * transform and text settings, to draw a knockout group in; null where
+ * there is no page to make one (the tests' stand-in).
+ */
+function knockoutLayer(ctx: PaintTarget): { ctx: CanvasRenderingContext2D; w: number; h: number } | null {
+  const target = (ctx as Partial<CanvasRenderingContext2D>).canvas as { width: number; height: number } | undefined;
+  const m = (ctx as Partial<Pick<CanvasRenderingContext2D, "getTransform">>).getTransform?.();
+  if (typeof document === "undefined" || !target || !m) return null;
+  const w = Math.max(1, target.width);
+  const h = Math.max(1, target.height);
+  knockCanvas ??= document.createElement("canvas");
+  if (knockCanvas.width < w) knockCanvas.width = w;
+  if (knockCanvas.height < h) knockCanvas.height = h;
+  const layer = knockCanvas.getContext("2d");
+  if (!layer) return null;
+  layer.setTransform(1, 0, 0, 1, 0, 0);
+  layer.globalAlpha = 1;
+  layer.globalCompositeOperation = "source-over";
+  layer.clearRect(0, 0, w, h);
+  layer.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+  layer.textAlign = "left";
+  layer.textBaseline = "alphabetic";
+  return { ctx: layer, w, h };
+}
+
+/**
+ * A gap cut round a word written part way (writer.ts's picture of it): the
+ * picture taken out of the layer at a ring of places `r` round its own, and
+ * at its own, so the gap follows the pen.
+ */
+function cutAround(ctx: PaintTarget, made: { image: CanvasImageSource; x: number; y: number; w: number; h: number }, r: number) {
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  const around = 12;
+  for (let i = 0; i < around; i += 1) {
+    const a = (i / around) * Math.PI * 2;
+    ctx.drawImage(made.image, made.x + Math.cos(a) * r, made.y + Math.sin(a) * r, made.w, made.h);
+  }
+  ctx.drawImage(made.image, made.x, made.y, made.w, made.h);
+  ctx.restore();
+}
+
 function outline(ctx: PaintTarget, polygons: number[][]) {
   ctx.beginPath();
   for (const polygon of polygons) {
@@ -183,7 +254,7 @@ function outline(ctx: PaintTarget, polygons: number[][]) {
   }
 }
 
-function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haze?: Haze) {
+function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haze?: Haze, inLayer = false) {
   switch (op.kind) {
     case "fill":
       ctx.fillStyle = op.color;
@@ -287,19 +358,59 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       // Its own alpha within whatever fade it is in.
       ctx.globalAlpha *= op.alpha ?? 1;
       const colour = haze?.tint ? "#000" : op.color;
-      const set = () => {
-        if (op.outline) {
-          ctx.strokeStyle = colour;
-          ctx.lineWidth = op.outline;
-          ctx.lineJoin = "round";
-          ctx.strokeText(op.text, op.x, op.y);
+      // In a knockout layer, the gap first, taken out of what the layer holds: a shape of its own, or the text's, wider all round.
+      if (inLayer && (op.knock || op.knockShape) && !haze) {
+        ctx.save();
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "#000";
+        ctx.fillStyle = "#000";
+        if (op.knockShape) {
+          outline(ctx, op.knockShape);
+          ctx.fill();
         } else {
-          ctx.fillStyle = colour;
-          ctx.fillText(op.text, op.x, op.y);
+          ctx.lineWidth = (op.knock ?? 0) * 2 + (op.bold ?? 0);
+          ctx.lineJoin = "round";
+          lettered(ctx, op, (x, y) => {
+            ctx.strokeText(op.text, x, y);
+            ctx.fillText(op.text, x, y);
+          }, options.scale);
         }
-      };
+        ctx.restore();
+      }
+      const set = () =>
+        lettered(ctx, op, (x, y) => {
+          if (op.outline) {
+            ctx.strokeStyle = colour;
+            ctx.lineWidth = op.outline;
+            ctx.lineJoin = "round";
+            ctx.strokeText(op.text, x, y);
+            return;
+          }
+          ctx.fillStyle = colour;
+          ctx.fillText(op.text, x, y);
+          if (op.bold) {
+            ctx.strokeStyle = colour;
+            ctx.lineWidth = op.bold;
+            ctx.lineJoin = "round";
+            ctx.strokeText(op.text, x, y);
+          }
+        }, options.scale);
       if (haze) hazed(ctx, haze, op.color, set);
       else set();
+      ctx.restore();
+      return;
+    }
+    case "knockout": {
+      // Drawn as a layer of its own only where it has a gap to cut, and only once: a layer in a layer is drawn plainly.
+      const into = !inLayer && !haze && cuts(op.ops) ? knockoutLayer(ctx) : null;
+      if (!into) {
+        for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
+        return;
+      }
+      for (const inner of op.ops) draw(into.ctx, scene, inner, options, undefined, true);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(into.ctx.canvas, 0, 0, into.w, into.h, 0, 0, into.w, into.h);
       ctx.restore();
       return;
     }
@@ -308,27 +419,27 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       ctx.translate(op.cx, op.cy);
       ctx.rotate(op.angle);
       ctx.translate(-op.cx, -op.cy);
-      for (const inner of op.ops) draw(ctx, scene, inner, options, haze);
+      for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
       ctx.restore();
       return;
     case "matrix":
       ctx.save();
       ctx.transform(...op.m);
-      for (const inner of op.ops) draw(ctx, scene, inner, options, haze);
+      for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
       ctx.restore();
       return;
     case "fade":
       if (op.alpha <= 0) return;
       ctx.save();
       ctx.globalAlpha *= Math.min(1, op.alpha);
-      for (const inner of op.ops) draw(ctx, scene, inner, options, haze);
+      for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
       ctx.restore();
       return;
     case "blur": {
       // A shadow's blur is twice the spread asked for, in canvas pixels; two in a row add as spreads do.
       const blur = Math.max(0, op.radius) * 2 * pixelsPerUnit(ctx, options.scale);
       const within: Haze = { blur: haze ? Math.hypot(haze.blur, blur) : blur, tint: op.tint ?? haze?.tint };
-      for (const inner of op.ops) draw(ctx, scene, inner, options, within);
+      for (const inner of op.ops) draw(ctx, scene, inner, options, within, inLayer);
       return;
     }
     case "write": {
@@ -336,6 +447,7 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       const word = only && (only.kind === "text" || only.kind === "ink") ? only : null;
       const made = word && op.at > 0 && op.at < 1 ? options.written?.(word, op.at, pixelsPerUnit(ctx, options.scale)) : null;
       if (word && made) {
+        if (inLayer && word.kind === "text" && word.knock && !haze) cutAround(ctx, made, word.knock + (word.bold ?? 0) / 2);
         ctx.save();
         ctx.globalAlpha *= word.kind === "text" ? (word.alpha ?? 1) : 1;
         const lay = () => ctx.drawImage(made.image, made.x, made.y, made.w, made.h);
@@ -344,7 +456,7 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
         ctx.restore();
         return;
       }
-      wipe(ctx, scene, op, options, haze);
+      wipe(ctx, scene, op, options, haze, inLayer);
     }
   }
 }
@@ -367,10 +479,10 @@ const WIPE_BANDS = 8;
  * each once at its own alpha, so the edge is exact and needs no second
  * canvas.
  */
-function wipe(ctx: PaintTarget, scene: Scene, op: Extract<Op, { kind: "write" }>, options: PaintOptions, haze?: Haze) {
+function wipe(ctx: PaintTarget, scene: Scene, op: Extract<Op, { kind: "write" }>, options: PaintOptions, haze?: Haze, inLayer = false) {
   if (op.at <= 0) return;
   if (op.at >= 1) {
-    for (const inner of op.ops) draw(ctx, scene, inner, options, haze);
+    for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
     return;
   }
   const feather = Math.max(1, op.h * 0.45);
@@ -395,14 +507,14 @@ function wipe(ctx: PaintTarget, scene: Scene, op: Extract<Op, { kind: "write" }>
   const solid = edge - feather;
   ctx.save();
   band(op.x - far, solid);
-  for (const inner of op.ops) draw(ctx, scene, inner, options, haze);
+  for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
   ctx.restore();
   const step = feather / WIPE_BANDS;
   for (let k = 0; k < WIPE_BANDS; k += 1) {
     ctx.save();
     band(solid + k * step, solid + (k + 1) * step);
     ctx.globalAlpha *= 1 - (k + 0.5) / WIPE_BANDS;
-    for (const inner of op.ops) draw(ctx, scene, inner, options, haze);
+    for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
     ctx.restore();
   }
 }

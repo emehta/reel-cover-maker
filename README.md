@@ -47,7 +47,7 @@ on a label's row.
   - The photo stays in this browser (IndexedDB), never uploaded anywhere,
     and is still there next time. Pasty's gel and paste cast their shadow
     onto it.
-- **Make a word bold** to make it Stickery's funky word: select it and
+- **Make a word bold** to make it Stickery's funky word, or Renaissance's script: select it and
   press **Cmd+B** (Ctrl+B on Windows), as in any editor. The field shows it bold. Press again to make it plain; with
   nothing selected, Cmd+B makes what you type next bold or plain. Bold
   carries on as you type the end of a word, and stops at a space. Words
@@ -56,10 +56,10 @@ on a label's row.
   it sets the rest. Every shortcut is listed behind the **?** at the top
   right.
 - **Pick a style** from the row of thumbnails under the cover: Stickery,
-  Pasty, Pasty Flat, Inkblot, Echo and Mono. Each thumbnail is your whole
-  cover in that style, in the cover's own shape, so nothing of it is cut
-  off; all six fit in one row however narrow the window (three by two on
-  a phone), never scrolled. Once the cover is drawn, it is drawn in every
+  Renaissance, Inkblot, Pasty, Pasty Flat, Echo and Mono. Each thumbnail is
+  your whole cover in that style, in the cover's own shape, so nothing of
+  it is cut off; all seven fit in one row however narrow the window (four
+  over three on a phone), never scrolled. Once the cover is drawn, it is drawn in every
   other style too, ahead of time, so a style you pick shows at once.
   - **Stickery**: each line you type is a sticker with stepped, cut paper
     edges, in turn the colour and one a hundred degrees round the colour
@@ -99,8 +99,26 @@ on a label's row.
   - Pasty and Pasty Flat letter in Goo Teardrop (the default) or Goo Even,
     Stickery's drawn hands, or in Drip, picked from their Lettering list.
   - A style's own choices sit under the text: Stickery's Lettering and
-    Plain words, Pasty's Lettering, and for the other three the typeface
-    they are set in, in one row of the same height for every style.
+    Plain words, Renaissance's Look, Pasty's Lettering, and for the other
+    three the typeface they are set in, in one row of the same height for
+    every style.
+  - **Renaissance**: the plain words in tall capitals, stacked tight and
+    centred, and a bold word set in a script laid across the join between
+    two lines of them, overlapping both, so the whole reads as one lockup,
+    as on "THE ART *of* SUMMERTIME", "FIND *Your* NICHE" and "TRAVEL *The*
+    WORLD". With no word bold, the little linking word nearest the middle
+    (of, the, your, and...) is the script. Its **Look** is one of the three
+    posters, capitals and script matched: Summertime (Playfair Display SC
+    with Luxurious Script), Niche (Anton with Pinyon Script, in black) and
+    Travel (Big Shoulders with Luxurious Script). The capitals are drawn
+    narrower than their face, to the poster's own width, and the script
+    is given a broad pen's weight, so its downstrokes come up to the
+    capitals while its hairlines stay thin. In the capitals' own colour
+    the script cuts a thin gap round its strokes out of them (never out
+    of the photo); in another colour (Script colour: black, white or your
+    own) its whole shape is taken out of them, loops closed. A script at
+    either end of the title tucks lightly over the first line or under the
+    last.
   - **Inkblot**: a roundhand script printed in ink that has bled into the
     cloth, after Onehart's "Inkblot Script" (screen printing on denim): the
     letters joined, slanted and looped, their edges rough and chipped, each
@@ -155,6 +173,9 @@ on a label's row.
   cover plays it, in the preview and on the phone, sharp at the screen's
   own pixels, until the sparkle is pressed again to stop. Each lays the
   cover down over a few seconds and ends on it exactly:
+  - Renaissance: **Written** (the capitals rise in line by line, then the
+    script is written across them as a pen writes it, its gap in them
+    following the pen), **Word by word** and **Line by line**.
   - Stickery: **Type and draw** (its plain words typed, its funky words
     written as a pen writes them, stroke by stroke, traced from the letters
     themselves, or piped bead by bead in Goo, and the sticker's paper laid
@@ -461,7 +482,8 @@ Only the plain face chosen is loaded.
 | `liquid.worker.ts`, `liquid-client.ts` | The workers that make the fields, and the page's queue (draft, preview, thumbnails, ahead) and lighting of them |
 | `strokes/` | The single-line fonts, Drip and Goo, from `scripts/drip-font.mjs` and `scripts/goo-font.mjs`, with their licences |
 | `stepped.ts` | Stickery's stepped sticker outline, and the outline of any cells of its grid |
-| `ink.ts` | Inkblot's print: contours of a field, and a word's outline bled, its weight varied and its edge roughened |
+| `ink.ts` | Inkblot's print: contours of a field, and a word's outline bled, its weight varied and its edge roughened; and the closed shape a script takes out of Renaissance's capitals |
+| `renaissance.ts` | Renaissance's looks and lockup: which words are script, the capitals' lines, each script across its join, the gap or shape it cuts |
 | `scene.ts` | Each style, as a list of fills, the photo, grain, shapes, text and liquid layers; and the letters placed (`placeScene`) |
 | `place.ts` | Where the text is placed: the matrix, the handles, and what each drag does |
 | `CoverSurface.tsx` | The cover as an illustration program's canvas: selecting, moving, scaling and turning the text, and framing the photo |
@@ -486,8 +508,9 @@ draw (an emoji) is set as plain text in the liquid styles, so nothing typed
 is lost.
 
 The web typefaces are Pinyon Script, Inter Tight, Archivo Black and Space
-Mono, from Google Fonts under the SIL Open Font License, served from the
-page's own origin. The stroke fonts' licences are in
+Mono, and Stickery's and Renaissance's own (Playfair Display SC, Anton, Big
+Shoulders, Luxurious Script and the rest), from Google Fonts under the SIL
+Open Font License, served from the page's own origin. The stroke fonts' licences are in
 `src/components/reel-cover-maker/strokes/LICENSE.md`.
 
 ## Development

@@ -40,6 +40,7 @@ const AN = await import("@/components/reel-cover-maker/animate");
 const VID = await import("@/components/reel-cover-maker/video");
 const WO = await import("@/components/reel-cover-maker/write-on");
 const INKM = await import("@/components/reel-cover-maker/ink");
+const REN = await import("@/components/reel-cover-maker/renaissance");
 
 let passed = 0;
 const check = (name, fn) => {
@@ -55,6 +56,11 @@ const near = (a, b, e = 1e-6) => Math.abs(a - b) <= e;
 const FACE_WIDTH = {
   // Inkblot's script, narrow and tall, its swashes reaching high and low.
   script: 0.36,
+  // Renaissance's capitals, condensed, and its scripts.
+  "caps-playfairsc": 0.62,
+  "caps-anton": 0.46,
+  "caps-bigshoulders": 0.44,
+  "script-luxurious": 0.42,
   serif: 0.44,
   "serif-italic": 0.41,
   condensed: 0.36,
@@ -78,6 +84,10 @@ const FACE_WIDTH = {
 };
 const FACE_METRICS = {
   script: { cap: 0.62, ascent: 0.96, descent: 0.42 },
+  "caps-playfairsc": { cap: 0.7, ascent: 0.95, descent: 0.22 },
+  "caps-anton": { cap: 0.78, ascent: 0.98, descent: 0.2 },
+  "caps-bigshoulders": { cap: 0.76, ascent: 0.96, descent: 0.18 },
+  "script-luxurious": { cap: 0.62, ascent: 1.0, descent: 0.44 },
   serif: { cap: 0.66, ascent: 0.92, descent: 0.24 },
   "serif-italic": { cap: 0.66, ascent: 0.93, descent: 0.25 },
   condensed: { cap: 0.73, ascent: 0.98, descent: 0.18 },
@@ -106,7 +116,7 @@ function textOps(scene) {
   const out = [];
   const walk = (ops) => {
     for (const op of ops) {
-      if (op.kind === "turn") walk(op.ops);
+      if (op.kind === "turn" || op.kind === "knockout") walk(op.ops);
       else if (op.kind === "text") out.push(op);
     }
   };
@@ -272,13 +282,17 @@ function readableInk(scene) {
   const walk = (ops, turn) => {
     for (const op of ops) {
       if (op.kind === "turn") walk(op.ops, op);
+      else if (op.kind === "knockout") walk(op.ops, turn);
       else if (op.kind === "text" && !op.outline) {
         const ink = measurer.bounds(op.face, op.text);
+        // Drawn squeezed from its start, a pen's weight to its right, a stroke round.
+        const sx = op.sx ?? 1;
+        const pad = (op.bold ?? 0) / 2;
         const rect = {
-          x: op.x - ink.left * op.size,
-          y: op.y - ink.ascent * op.size,
-          w: (ink.left + ink.right) * op.size,
-          h: (ink.ascent + ink.descent) * op.size,
+          x: op.x - ink.left * op.size * sx - pad,
+          y: op.y - ink.ascent * op.size - pad,
+          w: (ink.left + ink.right) * op.size * sx + (op.nib ?? 0) + 2 * pad,
+          h: (ink.ascent + ink.descent) * op.size + 2 * pad,
         };
         out.push({ op, rect: applyTurn(rect, turn) });
       } else if (op.kind === "box") {
@@ -317,7 +331,7 @@ function mainText(scene) {
   const out = [];
   const walk = (ops) => {
     for (const op of ops) {
-      if (op.kind === "turn") walk(op.ops);
+      if (op.kind === "turn" || op.kind === "knockout") walk(op.ops);
       else if ((op.kind === "text" && !op.outline) || op.kind === "ink") out.push(op.text);
     }
   };
@@ -598,6 +612,12 @@ check("no word is dropped or doubled: the drawn text is the typed text", () => {
       for (const title of TITLES) {
         const scene = cover(title, style.id, format.id, COLOURS.green);
         const typed = stripSpaces(T.plainTitle(title));
+        if (style.id === "renaissance") {
+          // Its capitals are drawn before the script over them, and in capitals: every letter, once, all the same.
+          const letters = (text) => [...text.toLocaleLowerCase()].sort().join("");
+          assert.equal(letters(stripSpaces(mainText(scene))), letters(typed), `${style.id} ${format.id} "${title}"`);
+          continue;
+        }
         const expected = style.id === "echo" ? typed.toLocaleUpperCase() : typed;
         assert.equal(stripSpaces(mainText(scene)), expected, `${style.id} ${format.id} "${title}"`);
       }
@@ -643,7 +663,7 @@ check("Mono ends with its cursor after the last letter, and the block sits in th
 });
 
 check("stars mean something only to Stickery: every other style sets a starred word exactly as the rest", () => {
-  for (const style of S.STYLES.filter((st) => st.id !== "stickery")) {
+  for (const style of S.STYLES.filter((st) => st.id !== "stickery" && st.id !== "renaissance")) {
     for (const [starred, plain] of [["How I *actually* save", "How I actually save"], ["*ÉÅ*", "ÉÅ"], ["take up *space* now", "take up space now"]]) {
       for (const ground of ["light", "dark"]) {
         const a = cover(starred, style.id, "post-4x5", { ...COLOURS.blue, ground });
@@ -790,6 +810,11 @@ check("a design round-trips through storage", () => {
   assert.equal(D.DEFAULT_DESIGN.textMode, "auto");
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, textMode: "neon", textHue: 900, textShade: "light" })), { ...design, textMode: "auto", textHue: D.DEFAULT_DESIGN.textHue, textShade: D.DEFAULT_DESIGN.textShade });
   for (const textMode of ["black", "white"]) assert.equal(D.readDesign(JSON.stringify({ textMode })).textMode, textMode);
+  // Renaissance's capitals, script and script colour, kept; anything not understood, the default.
+  const ren = { ...design, style: "renaissance", renaissanceLook: "niche", scriptMode: "black", scriptHue: 30, scriptShade: 0.2, scriptHex: "#202020" };
+  assert.deepEqual(D.readDesign(D.writeDesign(ren)), ren);
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...ren, renaissanceLook: "comic", scriptMode: "neon", scriptHex: "#zz" })), { ...ren, renaissanceLook: D.DEFAULT_DESIGN.renaissanceLook, scriptMode: "auto", scriptHex: null });
+  assert.equal(D.DEFAULT_DESIGN.renaissanceLook, "summertime");
   // A colour typed as a hex code is kept as its six capitals; anything else is no code, the sliders' colour.
   assert.deepEqual(D.readDesign(D.writeDesign({ ...design, hex: "#1E7A5F", textHex: "#F7F4EE" })), { ...design, hex: "#1E7A5F", textHex: "#F7F4EE" });
   assert.equal(D.readDesign(JSON.stringify({ hex: "#f80" })).hex, "#FF8800");
@@ -843,7 +868,8 @@ check("whatever storage holds, the maker opens with something it understands", (
   // Its animation too, where Inkblot has it; one picked for Inkblot itself comes first.
   assert.deepEqual(D.readDesign(JSON.stringify({ style: "editorial", animations: { editorial: "lines", mono: "words" } })).animations, { inkblot: "lines", mono: "words" });
   assert.deepEqual(D.readDesign(JSON.stringify({ animations: { editorial: "lines", inkblot: "words" } })).animations, { inkblot: "words" });
-  assert.deepEqual(S.STYLES.map((st) => st.name), ["Stickery", "Pasty", "Pasty Flat", "Inkblot", "Echo", "Mono"]);
+  // The owner's order of 20 Oct, Renaissance new in it.
+  assert.deepEqual(S.STYLES.map((st) => st.name), ["Stickery", "Renaissance", "Inkblot", "Pasty", "Pasty Flat", "Echo", "Mono"]);
   assert.equal(D.readDesign(JSON.stringify({ text: "x".repeat(500) })).text.length, T.MAX_TITLE_LENGTH);
 });
 
@@ -1011,16 +1037,18 @@ function recorder() {
     textAlign: "start",
     textBaseline: "alphabetic",
     shadowColor: "rgba(0, 0, 0, 0)",
+    globalCompositeOperation: "source-over",
     shadowBlur: 0,
     shadowOffsetX: 0,
     shadowOffsetY: 0,
     getTransform: () => ({ a: m[0], b: m[1], c: m[2], d: m[3], e: m[4], f: m[5] }),
-    save: () => stack.push({ m: [...m], alpha: ctx.globalAlpha, font: ctx.font, shadow: [ctx.shadowColor, ctx.shadowBlur, ctx.shadowOffsetX, ctx.shadowOffsetY] }),
+    save: () => stack.push({ m: [...m], alpha: ctx.globalAlpha, font: ctx.font, composite: ctx.globalCompositeOperation, shadow: [ctx.shadowColor, ctx.shadowBlur, ctx.shadowOffsetX, ctx.shadowOffsetY] }),
     restore: () => {
       const s = stack.pop();
       m = s.m;
       ctx.globalAlpha = s.alpha;
       ctx.font = s.font;
+      ctx.globalCompositeOperation = s.composite;
       [ctx.shadowColor, ctx.shadowBlur, ctx.shadowOffsetX, ctx.shadowOffsetY] = s.shadow;
     },
     setTransform: (a, b, c, d, e, f) => {
@@ -1031,8 +1059,9 @@ function recorder() {
     transform: (a, b, c, d, e, f) => multiply([a, b, c, d, e, f]),
     rotate: (a) => multiply([Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]),
     fillRect: (x, y, w, h) => calls.push({ kind: "fillRect", at: point(x, y), w, h, style: ctx.fillStyle }),
-    fillText: (text, x, y) => calls.push({ kind: "fillText", text, at: point(x, y), font: ctx.font, alpha: ctx.globalAlpha, align: ctx.textAlign, baseline: ctx.textBaseline, style: ctx.fillStyle, shadow: shadowOf() }),
-    strokeText: (text, x, y) => calls.push({ kind: "strokeText", text, at: point(x, y), width: ctx.lineWidth, alpha: ctx.globalAlpha }),
+    fillText: (text, x, y) => calls.push({ kind: "fillText", text, at: point(x, y), font: ctx.font, alpha: ctx.globalAlpha, align: ctx.textAlign, baseline: ctx.textBaseline, style: ctx.fillStyle, shadow: shadowOf(), composite: ctx.globalCompositeOperation }),
+    strokeText: (text, x, y) => calls.push({ kind: "strokeText", text, at: point(x, y), width: ctx.lineWidth, alpha: ctx.globalAlpha, composite: ctx.globalCompositeOperation }),
+    clearRect: () => calls.push({ kind: "clearRect" }),
     beginPath: () => {
       path = [];
     },
@@ -1066,11 +1095,19 @@ check("every word is drawn where the scene puts it, at any scale and from any or
       const walk = (ops, turn) => {
         for (const op of ops) {
           if (op.kind === "turn") walk(op.ops, op);
+          else if (op.kind === "knockout") walk(op.ops, turn);
           else if (op.kind === "text") texts.push({ op, turn });
         }
       };
       walk(scene.ops, null);
-      const drawn = ctx.calls.filter((c) => c.kind === "fillText" || c.kind === "strokeText");
+      // A word given a pen's weight is drawn as copies across its baseline, and its stroke over each: one word, at its first.
+      const drawn = [];
+      for (const c of ctx.calls.filter((c) => c.kind === "fillText" || c.kind === "strokeText")) {
+        const last = drawn.at(-1);
+        const op = texts[drawn.length - 1]?.op;
+        if (last && op && last.text === c.text && (op.nib || op.bold)) continue;
+        drawn.push(c);
+      }
       assert.equal(drawn.length, texts.length);
       drawn.forEach((call, i) => {
         const { op, turn } = texts[i];
@@ -2458,6 +2495,198 @@ check("one short word in Inkblot is set larger than the lines are broken at, as 
   assert.ok(b.x1 - b.x0 > safe.w * 0.9, "a long word does not fill the width");
 });
 
+console.log("renaissance");
+
+/** A Renaissance cover's capitals and scripts, each with its ink box on the cover (a script's turned). */
+function lockup(scene) {
+  const caps = [];
+  const scripts = [];
+  const walk = (ops, turn) => {
+    for (const op of ops) {
+      if (op.kind === "knockout") walk(op.ops, turn);
+      else if (op.kind === "turn") walk(op.ops, op);
+      else if (op.kind === "text") {
+        const ink = measurer.bounds(op.face, op.text);
+        const sx = op.sx ?? 1;
+        const box = applyTurn({ x: op.x - ink.left * op.size * sx, y: op.y - ink.ascent * op.size, w: (ink.left + ink.right) * op.size * sx + (op.nib ?? 0), h: (ink.ascent + ink.descent) * op.size }, turn);
+        (op.face.startsWith("caps-") ? caps : scripts).push({ op, box, turn });
+      }
+    }
+  };
+  walk(scene.ops, null);
+  return { caps, scripts };
+}
+
+check("Renaissance sets a bold word in script; with none bold, the linking word nearest the middle, never the first or last", () => {
+  const picked = (title) => {
+    const paragraphs = T.parseTitle(title);
+    const marks = REN.scriptWords(paragraphs);
+    return paragraphs.flatMap((p, pi) => p.filter((_, wi) => marks[pi][wi]).map((w) => w.map((seg) => seg.text).join("")));
+  };
+  // The three posters, typed with no star.
+  assert.deepEqual(picked("The art of summertime"), ["of"]);
+  assert.deepEqual(picked("Find your niche"), ["your"]);
+  assert.deepEqual(picked("Travel the world"), ["the"]);
+  assert.deepEqual(picked("How I plan my week"), ["my"]);
+  // None to pick: no linking word, or only at an end.
+  assert.deepEqual(picked("The world"), []);
+  assert.deepEqual(picked("Summer"), []);
+  assert.deepEqual(picked("Week 12 👍"), []);
+  // Made bold, the bold words, and no other.
+  assert.deepEqual(picked("Find *your* niche of *mine*"), ["your", "mine"]);
+  assert.deepEqual(picked("un*believ*able of days"), ["unbelievable"]);
+  // As runs of capitals and script phrases: bold words side by side are one phrase; a typed line break ends a line of capitals.
+  const units = (title) => REN.unitsOf(T.parseTitle(title), REN.scriptWords(T.parseTitle(title)));
+  assert.deepEqual(units("The art *of* summertime"), [{ kind: "caps", words: ["THE", "ART"] }, { kind: "script", text: "of" }, { kind: "caps", words: ["SUMMERTIME"] }]);
+  assert.deepEqual(units("*Hello there* world"), [{ kind: "script", text: "Hello there" }, { kind: "caps", words: ["WORLD"] }]);
+  assert.deepEqual(units("one two\nthree"), [{ kind: "caps", words: ["ONE", "TWO"] }, { kind: "caps", words: ["THREE"] }]);
+});
+
+check("Renaissance's looks are the owner's three posters, each its capitals squeezed to the poster's width and its script given a pen's weight", () => {
+  assert.deepEqual(REN.RENAISSANCE_LOOKS.map((l) => [l.id, l.name, l.caps, l.script]), [
+    ["summertime", "Summertime", "caps-playfairsc", "script-luxurious"],
+    ["niche", "Niche", "caps-anton", "script"],
+    ["travel", "Travel", "caps-bigshoulders", "script-luxurious"],
+  ]);
+  for (const l of REN.RENAISSANCE_LOOKS) assert.ok(l.squeeze > 0.5 && l.squeeze < 1.2 && l.nib >= 0 && l.weight >= 0, l.id);
+  // The second poster's Your is black; the others the capitals' own colour.
+  assert.deepEqual(REN.RENAISSANCE_LOOKS.map((l) => l.scriptMode), ["auto", "black", "auto"]);
+  assert.deepEqual(REN.renaissanceFaces("niche"), ["caps-anton"]);
+  assert.deepEqual(REN.renaissanceFaces("travel"), ["caps-bigshoulders", "script-luxurious"]);
+  for (const id of ["summertime", "niche", "travel"]) assert.ok(REN.isRenaissanceLookId(id));
+  for (const id of ["Summertime", "didone", 3, null]) assert.ok(!REN.isRenaissanceLookId(id));
+  // Every capital drawn squeezed, every script with its pen.
+  for (const l of REN.RENAISSANCE_LOOKS) {
+    const { caps, scripts } = lockup(cover("Travel the world", "renaissance", "reel", { renaissanceLook: l.id }));
+    for (const c of caps) assert.equal(c.op.sx ?? 1, l.squeeze);
+    for (const t of scripts) assert.ok(near(t.op.nib ?? 0, l.nib * t.op.size, 1e-9) && near(t.op.bold ?? 0, l.weight * t.op.size, 1e-9));
+  }
+});
+
+check("Renaissance lays its script across the join between two lines of capitals, overlapping both, rising a little, narrower than they are", () => {
+  for (const format of F.FORMATS) {
+    for (const [title, look] of [["The art of summertime", "summertime"], ["Find Your niche", "niche"], ["Travel The world", "travel"], ["5 things I wish I knew before moving to Lisbon", "summertime"]]) {
+      const scene = cover(title, "renaissance", format.id, { renaissanceLook: look, ...COLOURS.red });
+      const { caps, scripts } = lockup(scene);
+      assert.equal(scripts.length, 1, `${format.id} "${title}"`);
+      const [script] = scripts;
+      for (const c of caps) assert.equal(c.op.text, c.op.text.toLocaleUpperCase(), "a plain word not in capitals");
+      assert.ok(caps.every((c) => c.op.face === REN.lookOf(look).caps));
+      assert.equal(script.op.face, REN.lookOf(look).script);
+      // Between the lines it joins: over the bottom of the one above and the top of the one below.
+      const above = caps.filter((c) => c.op.y < script.op.y).sort((a, b) => b.op.y - a.op.y)[0];
+      const below = caps.filter((c) => c.op.y >= script.op.y - 1e-6).sort((a, b) => a.op.y - b.op.y)[0];
+      assert.ok(above && below, `${format.id} "${title}": the script not between two lines`);
+      assert.ok(script.box.y < above.box.y + above.box.h && script.box.y + script.box.h > below.box.y, `${format.id} "${title}": the script does not overlap both lines`);
+      // Never wider than nine tenths of the wider line beside it, nor narrower than about a quarter of it; rising, a few degrees.
+      const beside = Math.max(above.box.w, below.box.w);
+      assert.ok(script.box.w <= beside * 0.9 + 2, `${format.id} "${title}": script too wide`);
+      // Unless it is as tall as a script may be.
+      const capHeight = FACE_METRICS[above.op.face].cap * above.op.size;
+      assert.ok(script.box.w >= beside * 0.2 || script.box.h >= capHeight * 1.4, `${format.id} "${title}": script too small, ${script.box.w.toFixed(0)} of ${beside.toFixed(0)}`);
+      assert.ok(script.turn.angle < 0 && script.turn.angle > -0.1);
+      // The lockup centred in the safe area, each line by its ink.
+      for (const c of caps) assert.ok(Math.abs(c.box.x + c.box.w / 2 - (format.safe.x + format.safe.w / 2)) < 1, `${format.id} "${title}": "${c.op.text}" off centre`);
+    }
+  }
+});
+
+check("Renaissance's script in the capitals' colour cuts its gap in them; in another colour, it is laid straight on", () => {
+  const same = cover("Travel the world", "renaissance", "reel", COLOURS.red);
+  const [group] = same.ops;
+  assert.equal(group.kind, "knockout");
+  const { caps, scripts } = lockup(same);
+  assert.ok(scripts[0].op.knock > 0 && scripts[0].op.color === caps[0].op.color);
+  // About a twentieth of a cap height.
+  const capHeight = FACE_METRICS[caps[0].op.face].cap * caps[0].op.size;
+  assert.ok(near(scripts[0].op.knock, capHeight * REN.KNOCK, 1e-6));
+  // The script drawn after every capital, so its gap is cut from them.
+  const order = group.ops.map((op) => op.kind);
+  assert.ok(order.lastIndexOf("text") < order.indexOf("turn"));
+  // In the capitals' colour, a thin gap round its strokes; no shape of its own taken out.
+  assert.equal(scripts[0].op.knockShape, undefined);
+  for (const colour of ["#141414", "#F7F4EE"]) {
+    const other = lockup(cover("Travel the world", "renaissance", "reel", { ...COLOURS.red, scriptColour: colour }));
+    assert.equal(other.scripts[0].op.color, colour);
+    // In another colour, its whole shape taken out of them, as the second poster's black Your is, round its ink.
+    const shape = other.scripts[0].op.knockShape;
+    assert.ok(shape && shape.length > 0, "no shape taken out");
+    const b = INKM.loopBounds(shape);
+    const t = other.scripts[0];
+    const ink = measurer.bounds(t.op.face, t.op.text);
+    assert.ok(b.x0 <= t.op.x - ink.left * t.op.size && b.x1 >= t.op.x + ink.right * t.op.size && b.y0 <= t.op.y - ink.ascent * t.op.size, "the shape does not cover the script");
+  }
+  // A script colour picked as the capitals' own is the same colour: a thin gap, no shape.
+  const ink = P.paletteFor({ ...COLOURS.red, ground: "light" }).ink;
+  const sameAgain = lockup(cover("Travel the world", "renaissance", "reel", { ...COLOURS.red, scriptColour: ink })).scripts[0].op;
+  assert.ok(sameAgain.knock > 0 && sameAgain.knockShape === undefined);
+  // The script's colour is Renaissance's alone.
+  assert.deepEqual(cover("Travel the world", "inkblot", "reel", { scriptColour: "#141414" }), cover("Travel the world", "inkblot", "reel"));
+});
+
+check("Renaissance's knockout is cut in a layer of its own, never in the photo under it, and drawn plainly where no layer can be made", () => {
+  const scene = cover("Travel the world", "renaissance", "reel", { ...COLOURS.red, photo: true });
+  // No page: every word drawn, nothing cut.
+  const plain = recorder();
+  paint(plain, scene, { scale: 1, font, grain: null });
+  assert.ok(!plain.calls.some((c) => c.composite === "destination-out"));
+  assert.deepEqual([...new Set(plain.calls.filter((c) => c.kind === "fillText").map((c) => c.text))].sort(), ["TRAVEL", "WORLD", "the"]);
+  // A page that makes layers: the capitals and the script drawn in the layer, the script's gap cut there first, the layer then laid on the cover.
+  const layer = recorder();
+  const canvas = { width: 1080, height: 1920, getContext: () => layer };
+  layer.canvas = canvas;
+  const main = recorder();
+  main.canvas = { width: 1080, height: 1920 };
+  globalThis.document = { createElement: () => canvas };
+  try {
+    paint(main, scene, { scale: 1, font, grain: null });
+  } finally {
+    delete globalThis.document;
+  }
+  assert.equal(main.calls.filter((c) => c.kind === "fillText").length, 0, "words drawn on the cover itself");
+  const cut = layer.calls.findIndex((c) => c.composite === "destination-out");
+  const lastCut = layer.calls.findLastIndex((c) => c.composite === "destination-out");
+  const scriptFill = layer.calls.findIndex((c, i) => i > lastCut && c.kind === "fillText" && c.text === "the");
+  assert.ok(cut > 0 && scriptFill > lastCut, "the gap not cut before the script");
+  assert.deepEqual([...new Set(layer.calls.slice(0, cut).filter((c) => c.kind === "fillText").map((c) => c.text))].sort(), ["TRAVEL", "WORLD"], "the capitals not drawn before the gap");
+  assert.ok(!layer.calls.slice(0, cut).some((c) => c.kind === "fillText" && c.text === "the"), "the script drawn before its gap");
+  const laid = main.calls.filter((c) => c.kind === "drawImage" && c.image === canvas);
+  assert.equal(laid.length, 1);
+  // The photo is drawn on the cover, under the layer, and never cut.
+  assert.ok(!main.calls.some((c) => c.composite === "destination-out"));
+});
+
+check("a squeezed word is drawn narrowed from its start, and a pen's weight as copies across, a canvas pixel apart at most", () => {
+  const op = { kind: "text", text: "of", face: "script-luxurious", size: 100, x: 200, y: 300, color: "#123456", nib: 4, sx: 0.5 };
+  const scene = { width: 1080, height: 1920, ops: [op], readable: { x: 0, y: 0, w: 1, h: 1 }, truncated: false };
+  for (const scale of [1, 2, 0.25]) {
+    const ctx = recorder();
+    paint(ctx, scene, { scale, font, grain: null });
+    const fills = ctx.calls.filter((c) => c.kind === "fillText");
+    // From the start to the nib's far side, in steps no wider than a canvas pixel, every copy on the baseline.
+    const xs = fills.map((c) => c.at[0]).sort((a, b) => a - b);
+    assert.ok(near(xs[0], 200 * scale, 1e-6), `scale ${scale}: not from the start`);
+    assert.ok(near(xs.at(-1), (200 + 4 * 0.5) * scale, 1e-6), `scale ${scale}: not to the nib's far side, squeezed`);
+    for (let i = 1; i < xs.length; i += 1) assert.ok(xs[i] - xs[i - 1] <= 1 + 1e-9);
+    for (const c of fills) assert.ok(near(c.at[1], 300 * scale, 1e-6));
+    assert.equal(ctx.depth, 0);
+  }
+});
+
+check("a script's shape taken out of the capitals closes its loops and the gaps its swashes sweep round, with a margin round all of it", () => {
+  // A ring with a small hole and a hook with a narrow gap: both closed; a wide gap stays.
+  const ring = [[0, 0, 0, 1, 1, 1, 1, 0], [0.45, 0.45, 0.55, 0.45, 0.55, 0.55, 0.45, 0.55]];
+  const shape = INKM.silhouetteLoops(ring, 0.14, 0.03);
+  assert.equal(shape.filter((l) => INKM.loopArea(l) < 0).length, 0, "the hole was not closed");
+  const b = INKM.loopBounds(shape);
+  assert.ok(near(b.x0, -0.03, 0.03) && near(b.x1, 1.03, 0.03) && near(b.y0, -0.03, 0.03) && near(b.y1, 1.03, 0.03), JSON.stringify(b));
+  const apart = [[0, 0, 0, 1, 0.3, 1, 0.3, 0], [0.42, 0, 0.42, 1, 0.72, 1, 0.72, 0], [1.5, 0, 1.5, 1, 1.8, 1, 1.8, 0]];
+  const pieces = INKM.silhouetteLoops(apart, 0.14, 0.02).filter((l) => INKM.loopArea(l) > 0);
+  assert.equal(pieces.length, 2, "a narrow gap not closed, or a wide one closed");
+  // Kept for an outline the measurer hands out again.
+  assert.equal(INKM.silhouetteOf(ring, 0.14, 0.03), INKM.silhouetteOf(ring, 0.14, 0.03));
+});
+
 console.log("photo");
 
 check("a photo always covers the whole cover: fitted by its shorter side, zoomed into a window that never runs off it", () => {
@@ -2837,7 +3066,7 @@ function shown(scene) {
   const walk = (ops, alpha) => {
     for (const op of ops) {
       if (op.kind === "fade") walk(op.ops, alpha * op.alpha);
-      else if (op.kind === "turn" || op.kind === "matrix") walk(op.ops, alpha);
+      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "knockout") walk(op.ops, alpha);
       // A shadow cast shows nothing of the cover; something out of focus is still there.
       else if (op.kind === "blur") walk(op.ops, op.tint ? 0 : alpha);
       else if (op.kind === "write") walk(op.ops, alpha * op.at);
@@ -2858,6 +3087,9 @@ const ANIMATED = [
   ["pasty", { pastyLettering: "goo" }],
   ["pasty", { pastyLettering: "drip" }],
   ["pasty-flat", { pastyLettering: "goo-even" }],
+  ["renaissance", {}],
+  ["renaissance", { renaissanceLook: "niche", scriptColour: "#141414" }],
+  ["renaissance", { renaissanceLook: "travel" }],
   ["inkblot", {}],
   ["echo", {}],
   ["mono", {}],
@@ -2893,7 +3125,7 @@ check("every animation of every style starts with less than the cover and ends o
 });
 
 check("typing and piping only ever add: characters typed, paste laid, never taken back, and every chain only ever a first part of its own", () => {
-  for (const [style, extra, id] of [["inkblot", {}, "written"], ["mono", {}, "typewriter"], ["stickery", { lettering: "yesteryear" }, "type-draw"], ["stickery", { lettering: "goo" }, "type-draw"], ["pasty", { pastyLettering: "goo" }, "written"], ["pasty", { pastyLettering: "drip" }, "written"]]) {
+  for (const [style, extra, id] of [["renaissance", {}, "written"], ["inkblot", {}, "written"], ["mono", {}, "typewriter"], ["stickery", { lettering: "yesteryear" }, "type-draw"], ["stickery", { lettering: "goo" }, "type-draw"], ["pasty", { pastyLettering: "goo" }, "written"], ["pasty", { pastyLettering: "drip" }, "written"]]) {
     const scene = cover("things *aren't*\n*what* they seem", style, "reel", extra);
     const p = AN.plan(scene, style, id, measurer);
     let last = { chars: 0, paste: 0 };

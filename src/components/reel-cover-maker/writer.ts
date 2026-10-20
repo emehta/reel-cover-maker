@@ -43,7 +43,7 @@ const inked = new Map<string, { alpha: Uint8ClampedArray; canvas: HTMLCanvasElem
  * its trace is kept by.
  */
 function anchor(op: WordOp): { x: number; y: number; size: number; key: string } {
-  if (op.kind === "text") return { x: op.x, y: op.y, size: op.size, key: `${op.face}|${op.text}` };
+  if (op.kind === "text") return { x: op.x, y: op.y, size: op.size, key: `${op.face}|${op.text}|${op.sx ?? 1}|${((op.bold ?? 0) / op.size).toFixed(4)}|${((op.nib ?? 0) / op.size).toFixed(4)}` };
   const b = loopBounds(op.polygons);
   return { x: b?.x0 ?? 0, y: b?.y0 ?? 0, size: op.size, key: `ink|${op.key}` };
 }
@@ -55,7 +55,23 @@ function drawInk(ctx: CanvasRenderingContext2D, op: WordOp, scale: number, x: nu
     ctx.font = fontCss(op.face, scale);
     ctx.textBaseline = "alphabetic";
     ctx.textAlign = "left";
-    ctx.fillText(op.text, x, y);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(op.sx ?? 1, 1);
+    // A script thickened to its capitals' weight is written thickened: a broad pen's copies across, a stroke round.
+    const nib = ((op.nib ?? 0) * scale) / op.size;
+    const steps = nib > 0 ? Math.min(64, Math.max(2, Math.ceil(nib))) : 0;
+    for (let i = 0; i <= steps; i += 1) {
+      const dx = steps ? (nib * i) / steps : 0;
+      ctx.fillText(op.text, dx, 0);
+      if (op.bold) {
+        ctx.strokeStyle = "#000";
+        ctx.lineJoin = "round";
+        ctx.lineWidth = (op.bold * scale) / op.size;
+        ctx.strokeText(op.text, dx, 0);
+      }
+    }
+    ctx.restore();
     return;
   }
   const at = anchor(op);
@@ -74,7 +90,9 @@ function inkBox(op: WordOp, probe: CanvasRenderingContext2D): { left: number; to
   if (op.kind === "text") {
     probe.font = fontCss(op.face, TRACE_SIZE);
     const m = probe.measureText(op.text);
-    return { left: m.actualBoundingBoxLeft / TRACE_SIZE, top: m.actualBoundingBoxAscent / TRACE_SIZE, right: m.actualBoundingBoxRight / TRACE_SIZE, bottom: m.actualBoundingBoxDescent / TRACE_SIZE };
+    const sx = op.sx ?? 1;
+    const pad = (op.bold ?? 0) / 2 / op.size;
+    return { left: (m.actualBoundingBoxLeft * sx) / TRACE_SIZE + pad, top: m.actualBoundingBoxAscent / TRACE_SIZE + pad, right: (m.actualBoundingBoxRight * sx) / TRACE_SIZE + pad + (op.nib ?? 0) / op.size, bottom: m.actualBoundingBoxDescent / TRACE_SIZE + pad };
   }
   const b = loopBounds(op.polygons);
   return b ? { left: 0, top: 0, right: (b.x1 - b.x0) / op.size, bottom: (b.y1 - b.y0) / op.size } : { left: 0, top: 0, right: 0, bottom: 0 };

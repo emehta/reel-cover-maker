@@ -57,7 +57,16 @@ export function isPlainFaceId(value: unknown): value is PlainFaceId {
 /** The typefaces Stickery's funky words may be set in, where they are a face rather than drawn paste. */
 export type FunkyFaceId = "funky-yesteryear" | "funky-leckerli" | "funky-damion";
 
-export type FaceId = CoreFaceId | PlainFaceId | FunkyFaceId;
+/**
+ * Renaissance's faces: its capitals (Playfair Display SC, Anton and Big
+ * Shoulders, squeezed to their posters' widths) and Luxurious Script, its
+ * script besides Pinyon Script, the core face Inkblot prints. Each look
+ * (renaissance.ts) pairs one of each.
+ */
+export type CapsFaceId = "caps-playfairsc" | "caps-anton" | "caps-bigshoulders";
+export type ScriptFaceId = "script" | "script-luxurious";
+
+export type FaceId = CoreFaceId | PlainFaceId | FunkyFaceId | CapsFaceId | Exclude<ScriptFaceId, "script">;
 
 /** A face's vertical extent, in em. All positive: ascent and cap above the baseline, descent below it. */
 export interface FaceMetrics {

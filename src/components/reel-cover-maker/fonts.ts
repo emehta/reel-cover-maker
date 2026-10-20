@@ -12,18 +12,22 @@
  */
 
 import {
+  Anton,
   Archivo_Black,
   Archivo_Narrow,
+  Big_Shoulders,
   Crimson_Pro,
+  Damion,
   Fraunces,
   Inter_Tight,
-  Damion,
   Jost,
   Leckerli_One,
   Libre_Caslon_Text,
+  Luxurious_Script,
   Newsreader,
   Outfit,
   Pinyon_Script,
+  Playfair_Display_SC,
   Sofia_Sans_Condensed,
   Space_Mono,
   Yesteryear,
@@ -55,6 +59,12 @@ const yesteryear = Yesteryear({ weight: "400", subsets: ["latin"] });
 const leckerli = Leckerli_One({ weight: "400", subsets: ["latin"] });
 const damion = Damion({ weight: "400", subsets: ["latin"] });
 
+// Renaissance's capitals, and Luxurious Script, its script besides Pinyon Script.
+const playfairSc = Playfair_Display_SC({ weight: "700", subsets: ["latin"] });
+const anton = Anton({ weight: "400", subsets: ["latin"] });
+const bigShoulders = Big_Shoulders({ weight: "900", subsets: ["latin"] });
+const luxurious = Luxurious_Script({ weight: "400", subsets: ["latin"] });
+
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
   script: { family: pinyon.style.fontFamily, weight: 400, italic: false },
   sans: { family: interTight.style.fontFamily, weight: 600, italic: false },
@@ -71,6 +81,10 @@ const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }>
   "funky-yesteryear": { family: yesteryear.style.fontFamily, weight: 400, italic: false },
   "funky-leckerli": { family: leckerli.style.fontFamily, weight: 400, italic: false },
   "funky-damion": { family: damion.style.fontFamily, weight: 400, italic: false },
+  "caps-playfairsc": { family: playfairSc.style.fontFamily, weight: 700, italic: false },
+  "caps-anton": { family: anton.style.fontFamily, weight: 400, italic: false },
+  "caps-bigshoulders": { family: bigShoulders.style.fontFamily, weight: 900, italic: false },
+  "script-luxurious": { family: luxurious.style.fontFamily, weight: 400, italic: false },
 };
 
 /** The CSS font for a face at a size in pixels, as a canvas reads it. */
@@ -122,9 +136,9 @@ function fontGate(face: FaceId): FontGate {
   return gate;
 }
 
-/** The faces a cover may be drawn in: every core face, and the plain and funky faces Stickery is set in. */
-export function facesFor(plain: FaceId, funky?: FaceId | null): FaceId[] {
-  return funky ? [...CORE_FACE_IDS, plain, funky] : [...CORE_FACE_IDS, plain];
+/** The faces a cover may be drawn in: every core face, the plain and funky faces Stickery is set in, and any more a style chosen sets (Renaissance's capitals and script). */
+export function facesFor(plain: FaceId, funky?: FaceId | null, ...more: FaceId[]): FaceId[] {
+  return [...new Set<FaceId>([...CORE_FACE_IDS, plain, ...(funky ? [funky] : []), ...more])];
 }
 
 /** For useSyncExternalStore: told whenever a face finishes loading, or fails to. */

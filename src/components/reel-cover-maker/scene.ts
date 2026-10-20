@@ -12,6 +12,7 @@
 import { DEFAULT_PLAIN_FACE, type FaceId, type FunkyFaceId, type Measurer, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { formatById, type FormatId, type Rect } from "@/components/reel-cover-maker/formats";
 import { printedWord, printReach, printSeed, loopBounds, type Loop } from "@/components/reel-cover-maker/ink";
+import { DEFAULT_RENAISSANCE_LOOK, renaissance, type RenaissanceLookId } from "@/components/reel-cover-maker/renaissance";
 import { flow, type Block } from "@/components/reel-cover-maker/layout";
 import { boundsOf, pasteGlyph, type Chain, type PasteRecipe } from "@/components/reel-cover-maker/liquid";
 import { strokeMetrics } from "@/components/reel-cover-maker/strokes";
@@ -23,7 +24,7 @@ import { polygonBounds, steppedOutline, type Polygon } from "@/components/reel-c
 import { apply, isHome, mappedBounds, placeMatrix, strokeScale, type Matrix, type Place } from "@/components/reel-cover-maker/place";
 import { graphemes, parseTitle, type Paragraph } from "@/components/reel-cover-maker/title";
 
-export type StyleId = "stickery" | "pasty" | "pasty-flat" | "inkblot" | "echo" | "mono";
+export type StyleId = "stickery" | "renaissance" | "inkblot" | "pasty" | "pasty-flat" | "echo" | "mono";
 
 export interface Style {
   id: StyleId;
@@ -31,15 +32,18 @@ export interface Style {
 }
 
 /**
- * In the order the style picker shows them, the owner's of 7 Oct. Spread
- * was taken out that day; Inkblot took Editorial's place on 19 Oct (the
- * owner's ask, after Onehart's inkblot script).
+ * In the order the style picker shows them, the owner's of 20 Oct:
+ * Stickery, Renaissance, Inkblot, Pasty, Pasty Flat, Echo, Mono. Spread
+ * was taken out on 7 Oct; Inkblot took Editorial's place on 19 Oct (after
+ * Onehart's inkblot script); Renaissance came on 20 Oct (capitals with a
+ * script laid across them, after three posters).
  */
 export const STYLES: readonly Style[] = [
   { id: "stickery", name: "Stickery" },
+  { id: "renaissance", name: "Renaissance" },
+  { id: "inkblot", name: "Inkblot" },
   { id: "pasty", name: "Pasty" },
   { id: "pasty-flat", name: "Pasty Flat" },
-  { id: "inkblot", name: "Inkblot" },
   { id: "echo", name: "Echo" },
   { id: "mono", name: "Mono" },
 ];
@@ -125,6 +129,29 @@ export type Op =
       outline?: number;
       /** Which line of Inkblot's it is on (an emoji set among its printed words), for an animation that brings each line in. */
       line?: number;
+      /**
+       * Inside a knockout group: its own shape, this many pixels of the
+       * picture wider all round, cut out of what the group drew before it,
+       * before it is drawn (Renaissance's script over its capitals).
+       */
+      knock?: number;
+      /**
+       * Inside a knockout group, cut in place of `knock`'s gap: a shape in
+       * the op's own frame (Renaissance's script in another colour, its
+       * loops closed). `knock` is still the gap while it is being written.
+       */
+      knockShape?: Polygon[];
+      /** Drawn this share of its face's width, from its start: Renaissance's squeezed capitals. */
+      sx?: number;
+      /** Ink added round its strokes, a stroke this many pixels of the picture wide in its colour: a script brought to its capitals' weight. */
+      bold?: number;
+      /**
+       * A broad pen's weight added, in pixels of the picture: the letters
+       * drawn again across to this far right, so a downstroke thickens and a
+       * hairline along the way does not (a script brought to its capitals'
+       * weight with its contrast kept).
+       */
+      nib?: number;
     }
   /**
    * A word of Inkblot's script as printed (ink.ts): its outline in pixels of
@@ -135,6 +162,13 @@ export type Op =
   | { kind: "ink"; text: string; polygons: Polygon[]; color: string; size: number; line: number; key: string }
   | LiquidOp
   | { kind: "turn"; cx: number; cy: number; angle: number; ops: Op[] }
+  /**
+   * Ops drawn together as a layer of their own, in which a text with
+   * `knock` cuts its gap out of what is under it in the layer (never the
+   * photo or the ground beneath the layer). Drawn plainly, gap and all
+   * left out, where there is no page to make a layer in.
+   */
+  | { kind: "knockout"; ops: Op[] }
   /** The owner's photo, framed to cover the whole picture: drawn by the page, which holds it. */
   | { kind: "photo" }
   /** Ops drawn through an affine map, as a canvas's `transform` takes it: letters the owner has moved. */
@@ -175,6 +209,9 @@ export interface CoverInput {
   textColour?: string | null;
   /** Pasty's and Pasty Flat's lettering: Drip, or Goo as a teardrop or evened out. */
   pastyLettering?: PastyLetteringId;
+  /** Renaissance's look (its capitals and script), and the script's colour: absent or null, the colour's own. */
+  renaissanceLook?: RenaissanceLookId;
+  scriptColour?: string | null;
   /** A photo behind the letters, in place of the plain ground. */
   photo?: boolean;
   hue: number;
@@ -1841,7 +1878,7 @@ export function liquidOps(scene: Scene): LiquidOp[] {
   const walk = (ops: Op[]) => {
     for (const op of ops) {
       if (op.kind === "liquid") out.push(op);
-      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write" || op.kind === "blur") walk(op.ops);
+      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write" || op.kind === "blur" || op.kind === "knockout") walk(op.ops);
     }
   };
   walk(scene.ops);
@@ -1855,10 +1892,11 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const seed = input.seed | 0;
   const { width, height, safe } = format;
   // Stars mean something only to Stickery, where they pick the funky
-  // words; every other style sets a starred word as it sets the rest, in
-  // the same colour and face (the owner's ask of 7 Oct).
+  // words, and Renaissance, where they pick the script; every other style
+  // sets a starred word as it sets the rest, in the same colour and face
+  // (the owner's ask of 7 Oct).
   const typed = parseTitle(input.title);
-  const paragraphs = input.style === "stickery" ? typed : typed.map((p) => p.map((w) => w.map((seg) => ({ ...seg, emphasis: false }))));
+  const paragraphs = input.style === "stickery" || input.style === "renaissance" ? typed : typed.map((p) => p.map((w) => w.map((seg) => ({ ...seg, emphasis: false }))));
   const canvas = { x: width * 0.03, y: height * 0.03, w: width * 0.94, h: height * 0.94 };
 
   const made: { ops: Op[]; readable: Rect; block?: Block } = (() => {
@@ -1873,6 +1911,11 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
         return echo(paragraphs, safe, palette, measurer, height);
       case "mono":
         return mono(paragraphs, safe, palette, measurer);
+      case "renaissance": {
+        // A script picked in the capitals' own colour is no colour of its own: it cuts a thin gap, as the same colour does.
+        const script = input.scriptColour && input.scriptColour !== palette.ink ? input.scriptColour : null;
+        return renaissance(paragraphs, safe, measurer, { look: input.renaissanceLook ?? DEFAULT_RENAISSANCE_LOOK, ink: palette.ink, script, seed });
+      }
       default:
         return inkblot(paragraphs, safe, palette, measurer, seed);
     }

@@ -1,7 +1,7 @@
 /**
  * What the maker remembers between visits: the title being worked on, the
  * style, Stickery's lettering and plain face and the colour of its letters,
- * Pasty's lettering, the colour (hue, shade, a hex code typed, and ground), the size, the
+ * Pasty's lettering, Renaissance's look and the colour of its script, the colour (hue, shade, a hex code typed, and ground), the size, the
  * shuffle, how the photo behind the cover is framed and adjusted (the
  * photo itself is kept in photo-store.ts, being too big for here), where
  * the letters have been moved to, and whether the cover is animated and
@@ -32,6 +32,7 @@ import {
   type PastyLetteringId,
   type StyleId,
 } from "@/components/reel-cover-maker/scene";
+import { DEFAULT_RENAISSANCE_LOOK, isRenaissanceLookId, type RenaissanceLookId } from "@/components/reel-cover-maker/renaissance";
 import { clipMarked, MAX_TITLE_LENGTH } from "@/components/reel-cover-maker/title";
 
 export interface Design {
@@ -40,6 +41,8 @@ export interface Design {
   lettering: LetteringId;
   plainFace: PlainFaceId;
   pastyLettering: PastyLetteringId;
+  /** Renaissance's look: one poster's capitals and script, matched. */
+  renaissanceLook: RenaissanceLookId;
   hue: number;
   shade: number;
   /** A colour typed as a hex code, used exactly; null while the sliders' own colour is the colour. Moving a slider lets it go. */
@@ -50,6 +53,11 @@ export interface Design {
   textHue: number;
   textShade: number;
   textHex: string | null;
+  /** The colour of Renaissance's script: auto is the colour's own (when it cuts its gap in the capitals), else black, white or its own, as Stickery's text colour is. */
+  scriptMode: TextMode;
+  scriptHue: number;
+  scriptShade: number;
+  scriptHex: string | null;
   format: FormatId;
   /** The shuffle: every random choice a style makes is seeded by it as well as by the title. */
   seed: number;
@@ -81,6 +89,7 @@ export const DEFAULT_DESIGN: Design = {
   lettering: DEFAULT_LETTERING,
   plainFace: DEFAULT_PLAIN_FACE,
   pastyLettering: DEFAULT_PASTY_LETTERING,
+  renaissanceLook: DEFAULT_RENAISSANCE_LOOK,
   hue: DEFAULT_COLOUR.hue,
   shade: DEFAULT_COLOUR.shade,
   hex: null,
@@ -90,6 +99,11 @@ export const DEFAULT_DESIGN: Design = {
   textHue: DEFAULT_COLOUR.hue,
   textShade: 0.9,
   textHex: null,
+  scriptMode: "auto",
+  // A near-black of the default red, for when a colour of its own is first picked: the second poster's black script.
+  scriptHue: DEFAULT_COLOUR.hue,
+  scriptShade: 0.06,
+  scriptHex: null,
   format: DEFAULT_FORMAT,
   seed: 0,
   photoFrame: DEFAULT_FRAME,
@@ -144,6 +158,7 @@ export function readDesign(raw: string | null): Design {
       isPastyLetteringId(stored.pastyLettering) && !(stored.pastyLettering === "drip" && !(Number(stored.version) >= 2))
         ? stored.pastyLettering
         : DEFAULT_DESIGN.pastyLettering,
+    renaissanceLook: isRenaissanceLookId(stored.renaissanceLook) ? stored.renaissanceLook : DEFAULT_DESIGN.renaissanceLook,
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
     hex: hexCode(stored.hex),
@@ -152,6 +167,10 @@ export function readDesign(raw: string | null): Design {
     textHue: number(stored.textHue, 0, 360) ?? DEFAULT_DESIGN.textHue,
     textShade: number(stored.textShade, 0, 1) ?? DEFAULT_DESIGN.textShade,
     textHex: hexCode(stored.textHex),
+    scriptMode: isTextMode(stored.scriptMode) ? stored.scriptMode : DEFAULT_DESIGN.scriptMode,
+    scriptHue: number(stored.scriptHue, 0, 360) ?? DEFAULT_DESIGN.scriptHue,
+    scriptShade: number(stored.scriptShade, 0, 1) ?? DEFAULT_DESIGN.scriptShade,
+    scriptHex: hexCode(stored.scriptHex),
     format: isFormatId(stored.format) ? stored.format : DEFAULT_DESIGN.format,
     seed: Number.isInteger(stored.seed) && Math.abs(stored.seed as number) < 2 ** 31 ? (stored.seed as number) : DEFAULT_DESIGN.seed,
     photoFrame: readFrame(stored.photoFrame),
