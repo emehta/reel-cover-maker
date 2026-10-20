@@ -1,7 +1,7 @@
 /**
  * What the maker remembers between visits: the title being worked on, the
  * style, Stickery's lettering and plain face and the colour of its letters,
- * Pasty's lettering, the colour (hue, shade and ground), the size, the
+ * Pasty's lettering, the colour (hue, shade, a hex code typed, and ground), the size, the
  * shuffle, how the photo behind the cover is framed and adjusted (the
  * photo itself is kept in photo-store.ts, being too big for here), where
  * the letters have been moved to, and whether the cover is animated and
@@ -14,6 +14,7 @@
  */
 
 import { animationsFor, offers, speedOf, type AnimationId } from "@/components/reel-cover-maker/animate";
+import { parseHex } from "@/components/reel-cover-maker/colour";
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
 import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, isTextMode, type Ground, type TextMode } from "@/components/reel-cover-maker/palettes";
@@ -41,11 +42,14 @@ export interface Design {
   pastyLettering: PastyLetteringId;
   hue: number;
   shade: number;
+  /** A colour typed as a hex code, used exactly; null while the sliders' own colour is the colour. Moving a slider lets it go. */
+  hex: string | null;
   ground: Ground;
-  /** The colour of Stickery's letters on its stickers; with "colour", the hue and shade of its own two sliders. */
+  /** The colour of Stickery's letters on its stickers; with "colour", the hue and shade of its own two sliders, or a hex code typed. */
   textMode: TextMode;
   textHue: number;
   textShade: number;
+  textHex: string | null;
   format: FormatId;
   /** The shuffle: every random choice a style makes is seeded by it as well as by the title. */
   seed: number;
@@ -79,11 +83,13 @@ export const DEFAULT_DESIGN: Design = {
   pastyLettering: DEFAULT_PASTY_LETTERING,
   hue: DEFAULT_COLOUR.hue,
   shade: DEFAULT_COLOUR.shade,
+  hex: null,
   ground: DEFAULT_COLOUR.ground,
   textMode: "auto",
   // A pale tint of the default red, for when a colour of its own is first picked: it reads on that red.
   textHue: DEFAULT_COLOUR.hue,
   textShade: 0.9,
+  textHex: null,
   format: DEFAULT_FORMAT,
   seed: 0,
   photoFrame: DEFAULT_FRAME,
@@ -113,6 +119,9 @@ function readAnimations(value: unknown): Partial<Record<StyleId, AnimationId>> {
   return out;
 }
 
+/** A hex code stored, as its six capital digits, or null for anything else. */
+const hexCode = (value: unknown): string | null => (typeof value === "string" ? parseHex(value) : null);
+
 const number = (value: unknown, lo: number, hi: number): number | null =>
   typeof value === "number" && Number.isFinite(value) && value >= lo && value <= hi ? value : null;
 
@@ -137,10 +146,12 @@ export function readDesign(raw: string | null): Design {
         : DEFAULT_DESIGN.pastyLettering,
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
+    hex: hexCode(stored.hex),
     ground: isGround(stored.ground) ? stored.ground : DEFAULT_DESIGN.ground,
     textMode: isTextMode(stored.textMode) ? stored.textMode : DEFAULT_DESIGN.textMode,
     textHue: number(stored.textHue, 0, 360) ?? DEFAULT_DESIGN.textHue,
     textShade: number(stored.textShade, 0, 1) ?? DEFAULT_DESIGN.textShade,
+    textHex: hexCode(stored.textHex),
     format: isFormatId(stored.format) ? stored.format : DEFAULT_DESIGN.format,
     seed: Number.isInteger(stored.seed) && Math.abs(stored.seed as number) < 2 ** 31 ? (stored.seed as number) : DEFAULT_DESIGN.seed,
     photoFrame: readFrame(stored.photoFrame),

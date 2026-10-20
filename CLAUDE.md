@@ -130,7 +130,8 @@ npm run build   # the static site, in out/
   left a card of Text, the lettering row (`.letteringRow`: Stickery's two
   lists, Pasty's one, or the fixed style's typeface, always one row),
   Stickery's Text colour (below), Colour ("Sticker colour" in Stickery;
-  its hex chip copies the code) and Size; in the middle the cover on the
+  its hex code is pressed to type one, with a copy button of its own
+  beside it, the owner's ask of 20 Oct: `HexField`) and Size; in the middle the cover on the
   page itself, with no card or border round it (the owner's ask, 7 Oct),
   at a height set by the window alone (`.stage`, grown into what the tools
   and styles leave, up to 560), never by the size or style, and the
@@ -156,6 +157,12 @@ npm run build   # the static site, in out/
   Escape (claimed in the capture phase, so the phone view stays) or by a
   press elsewhere. Hidden on a touch screen. Redo is Cmd+Shift+Z or
   Ctrl+Shift+Z (Ctrl+Y still works).
+- **A typed hex code is the colour exactly** (`design.hex`,
+  `design.textHex`, `ColourChoice.hex`): the sliders go to the nearest
+  they can name (`slidersFor`), which sets what is worked out from the
+  colour (an accent, the second sticker), and a slider moved sets the code
+  back to null. Each keystroke that makes a colour is applied, as one undo
+  step with the rest; Escape puts back the colour from before.
 - **Stickery's text colour** (`TextColourField`, `textColour` in
   palettes.ts, the owner's ask, 7 Oct): Auto (each sticker's black or
   white, `readableOn`, as always), Black, White (`SOFT_BLACK`,

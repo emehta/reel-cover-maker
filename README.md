@@ -119,7 +119,13 @@ on a label's row.
   to near-white. The colour is the letters' (the paste, the ink), and in
   Stickery the stickers' (**Sticker colour**). Dragging a slider only
   lights the paste again, so it keeps up with your finger. The colour's
-  hex code shows beside its label; click it to copy it.
+  hex code shows beside its label: click the code to type one of your own
+  (three digits or six, with or without the #; the cover follows as you
+  type, Enter keeps it, Escape puts back the colour before), or the copy
+  button beside it to copy it. A typed colour is used exactly; the
+  sliders move to the nearest they can show, and moving one goes back to
+  the sliders' own colours. Stickery's text colour takes a code the same
+  way.
 - **Pick Stickery's text colour**, under its lettering: **Auto** (black or
   white, whichever reads on each sticker), **Black**, **White**, or
   **Colour**, a colour of your own from two sliders like the stickers'.
@@ -438,7 +444,7 @@ Only the plain face chosen is loaded.
 | `TextField.tsx` | The Text field: a textarea for the typing, the same letters drawn over it with their bold |
 | `platform.ts` | Whether this is a Mac or an iPhone, for Cmd or Ctrl |
 | `PhoneView.tsx`, `phone.ts` | The phone view: a whole iPhone to scale, the cover in the middle of @eshaan.tm's profile grid |
-| `ColourField.tsx` | A colour's sliders and its hex chip, and Stickery's Text colour field |
+| `ColourField.tsx` | A colour's sliders, its hex code to type or copy, and Stickery's Text colour field |
 | `animate.ts` | Each style's animations, as a function of time on the cover's own scene, and a sticker's paper laid under its words |
 | `write-on.ts`, `writer.ts` | A script word written as a pen would: its strokes traced from its ink, and drawn part written |
 | `Motion.tsx`, `AnimateCard.tsx` | An animation played on the page, painted live at the screen's pixels (paste made ahead), and the card to pick one and its speed in |

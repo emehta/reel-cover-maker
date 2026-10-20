@@ -3,8 +3,8 @@
 import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DeviceMobile, DownloadSimple, Moon, Shuffle, Sparkle, Sun } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
-import { sliderColour } from "@/components/reel-cover-maker/colour";
-import { ColourSliders, HexChip, TextColourField } from "@/components/reel-cover-maker/ColourField";
+import { sliderColour, slidersFor } from "@/components/reel-cover-maker/colour";
+import { ColourSliders, HexField, TextColourField, type TextColourChange } from "@/components/reel-cover-maker/ColourField";
 import { AnimateCard } from "@/components/reel-cover-maker/AnimateCard";
 import { animationsFor, frameTimes, holdFrames, plan as animationPlan, type AnimationId, type Plan } from "@/components/reel-cover-maker/animate";
 import { drawFrames, pngOf } from "@/components/reel-cover-maker/animation-frames";
@@ -28,7 +28,7 @@ import { PlayCanvas, usePaste, type PlayRequest } from "@/components/reel-cover-
 import { PhoneView } from "@/components/reel-cover-maker/PhoneView";
 import { PhotoControls } from "@/components/reel-cover-maker/PhotoControls";
 import { HOME, invert, isHome, keepOnCover, multiply, placeMatrix, type Matrix, type Place, type Point } from "@/components/reel-cover-maker/place";
-import { textColour, type TextMode } from "@/components/reel-cover-maker/palettes";
+import { textColour } from "@/components/reel-cover-maker/palettes";
 import { isApple, subscribeNothing } from "@/components/reel-cover-maker/platform";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, videoName, type SaveMethod } from "@/components/reel-cover-maker/save";
 import { prepareVideo, VIDEO_FPS, videoJob, type VideoKind } from "@/components/reel-cover-maker/video";
@@ -169,7 +169,7 @@ const scenes = new Map<string, Scene>();
 function sceneFor(input: CoverInput, loads: number): Scene {
   // The text colour is Stickery's alone: picking one builds no other style again.
   const text = input.style === "stickery" ? input.textColour ?? null : null;
-  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, input.hue, input.shade, input.ground, text, input.format, input.seed, input.photo, loads]);
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, loads]);
   let scene = scenes.get(key);
   if (!scene) {
     scene = buildScene(input, measurerFor(loads));
@@ -441,16 +441,17 @@ export default function ReelCoverMaker() {
 
   const measurer = loads >= 0 ? measurerFor(loads) : null;
   /** Stickery's letters' colour, as picked; null for auto, each sticker's own black or white. */
-  const textHex = textColour(design.textMode, design.textHue, design.textShade);
+  const letterColour = textColour(design.textMode, design.textHue, design.textShade, design.textHex);
   const input: CoverInput = {
     title,
     style: design.style,
     lettering: design.lettering,
     plainFace: design.plainFace,
-    textColour: textHex,
+    textColour: letterColour,
     pastyLettering: design.pastyLettering,
     hue: design.hue,
     shade: design.shade,
+    hex: design.hex,
     ground: design.ground,
     format: design.format,
     seed: design.seed,
@@ -481,8 +482,9 @@ export default function ReelCoverMaker() {
     design.pastyLettering,
     design.hue,
     design.shade,
+    design.hex,
     design.ground,
-    design.style === "stickery" ? textHex : null,
+    design.style === "stickery" ? letterColour : null,
     design.format,
     design.seed,
     loads,
@@ -565,15 +567,18 @@ export default function ReelCoverMaker() {
     update({ seed });
   };
 
-  const hex = sliderColour(design.hue, design.shade);
+  /** The colour as shown: a hex code typed, or the sliders' own. */
+  const hex = design.hex ?? sliderColour(design.hue, design.shade);
+  /** The colour as it was when its hex code began to be typed, for Escape to put back. */
+  const colourBefore = useRef<Pick<Design, "hue" | "shade" | "hex"> | null>(null);
 
   /**
    * A change to the text colour: every part of it named in each, so a
    * press on a resting slider and the drag after it are one step to undo.
    */
-  const pickText = (change: { textMode?: TextMode; textHue?: number; textShade?: number }) => {
-    const { textMode, textHue, textShade } = designRef.current;
-    update({ textMode, textHue, textShade, ...change });
+  const pickText = (change: TextColourChange) => {
+    const { textMode, textHue, textShade, textHex } = designRef.current;
+    update({ textMode, textHue, textShade, textHex, ...change });
   };
 
   /** The animation the cover is on, picked or its style's first, whether or not it is animated. */
@@ -1061,7 +1066,7 @@ export default function ReelCoverMaker() {
           </div>
 
           {/* The colour of Stickery's letters on its stickers, under its type. */}
-          {stickery && <TextColourField mode={design.textMode} hue={design.textHue} shade={design.textShade} onPick={pickText} />}
+          {stickery && <TextColourField mode={design.textMode} hue={design.textHue} shade={design.textShade} hex={design.textHex} onPick={pickText} />}
 
           <div className={styles.field}>
             <div className={styles.labelRow}>
@@ -1069,9 +1074,19 @@ export default function ReelCoverMaker() {
               <span className={styles.label} id="rcm-colour-label">
                 {stickery ? "Sticker colour" : "Colour"}
               </span>
-              <HexChip hex={hex} of={stickery ? "the sticker colour's" : "the colour's"} />
+              <HexField
+                hex={hex}
+                name={stickery ? "the sticker colour" : "the colour"}
+                onBegin={() => {
+                  const { hue, shade, hex: typed } = designRef.current;
+                  colourBefore.current = { hue, shade, hex: typed };
+                }}
+                onHex={(typed) => update({ hex: typed, ...slidersFor(typed, designRef.current.hue) })}
+                onCancel={() => colourBefore.current && update(colourBefore.current)}
+              />
             </div>
-            <ColourSliders labelledBy="rcm-colour-label" hue={design.hue} shade={design.shade} onHue={(hue) => update({ hue })} onShade={(shade) => update({ shade })} />
+            {/* A slider moved names a colour of its own: a hex code typed lets go. */}
+            <ColourSliders labelledBy="rcm-colour-label" hue={design.hue} shade={design.shade} onHue={(hue) => update({ hue, hex: null })} onShade={(shade) => update({ shade, hex: null })} />
           </div>
 
           <div className={styles.field}>

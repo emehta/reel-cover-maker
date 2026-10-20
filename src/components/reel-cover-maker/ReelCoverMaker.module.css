@@ -1042,31 +1042,33 @@
 }
 
 /* The hex chip ends its row: its name runs inward too. */
-.hexChip.tip::after {
+/* The copy button sits at the label row's right end: its name runs inward from it. */
+.copyHex.tip::after {
   left: auto;
   right: 0;
   transform: translate(0, -3px);
 }
 
 @media (hover: hover) {
-  .hexChip.tip:hover::after {
+  .copyHex.tip:hover::after {
     transform: none;
   }
 }
 
-.hexChip.tip:focus-visible::after {
+.copyHex.tip:focus-visible::after {
   transform: none;
 }
 
 /* Copied: said at once, on a touch screen too, which has no hover to show it. */
-.hexChip.tip[data-copied]::after {
+.copyHex.tip[data-copied]::after {
   opacity: 1;
   transform: none;
   transition-delay: 0s;
 }
 
 .tool:focus-visible,
-.hexChip:focus-visible,
+.hexEdit:focus-visible,
+.copyHex:focus-visible,
 .photoButton:focus-visible,
 .glassButton:focus-visible,
 .smallIcon:focus-visible,
@@ -1284,30 +1286,102 @@
   font-size: 13px;
 }
 
-.hexChip {
-  appearance: none;
+/*
+ * A colour's hex code and its copy button, on the label's row (the owner's
+ * ask, 20 Oct: the code is pressed to type one, the copy is its own
+ * button). The code and the field it turns into are one width, so nothing
+ * on the row moves as it is typed in.
+ */
+.hexField {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 -6px 0 0;
+}
+
+.hexEdit,
+.hexEditing {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  box-sizing: border-box;
+  width: 102px;
   height: var(--rcm-h-mini);
-  margin: 0 -6px 0 0;
   padding: 0 7px 0 4px;
-  border: 0;
   border-radius: var(--rcm-r-mini);
+}
+
+.hexEdit {
+  appearance: none;
+  border: 0;
   background: transparent;
   color: var(--rcm-text);
   font: inherit;
-  cursor: pointer;
+  cursor: text;
   -webkit-tap-highlight-color: transparent;
   transition: background-color 0.15s ease;
 }
 
-.hexChip:hover {
+.hexEdit:hover {
   background: var(--rcm-inset);
 }
 
-.hexChip:active {
+.hexEdit:active {
+  background: var(--rcm-inset-strong);
+}
+
+.hexEditing {
+  background: var(--rcm-inset);
+  box-shadow: inset 0 0 0 1.5px var(--rcm-focus);
+}
+
+/* Typed in as the code is shown: its digits the same size and weight, in capitals whatever is typed. */
+.hexInput {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--rcm-text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.hexInput[aria-invalid] {
+  color: var(--rcm-faint);
+}
+
+.copyHex {
+  appearance: none;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--rcm-h-mini);
+  height: var(--rcm-h-mini);
+  padding: 0;
+  border: 0;
+  border-radius: var(--rcm-r-mini);
+  background: transparent;
+  color: var(--rcm-faint);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.copyHex:hover {
+  background: var(--rcm-inset);
+  color: var(--rcm-text);
+}
+
+.copyHex:active {
   background: var(--rcm-inset-strong);
 }
 
@@ -1315,6 +1389,7 @@
 .chip {
   width: 20px;
   height: 20px;
+  flex: none;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
 }
@@ -1324,18 +1399,6 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
-}
-
-.hexIcon {
-  display: inline-grid;
-  place-items: center;
-  width: 12px;
-  color: var(--rcm-faint);
-  transition: color 0.15s ease;
-}
-
-.hexChip:hover .hexIcon {
-  color: var(--rcm-text);
 }
 
 /*
@@ -2598,8 +2661,8 @@
   .tip::after,
   .sliders,
   .shortcutsCard,
-  .hexChip,
-  .hexIcon,
+  .hexEdit,
+  .copyHex,
   .input,
   .dropdownButton,
   .dropdownCaret,

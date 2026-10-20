@@ -20,6 +20,12 @@ export interface ColourChoice {
   /** 0 (near-black) to 1 (near-white). */
   shade: number;
   ground: Ground;
+  /**
+   * A colour typed as a hex code, used exactly as typed: the sliders, moved
+   * to the nearest they can name, set what is worked out from it (an
+   * accent, the second sticker). Absent or null, the sliders' own colour.
+   */
+  hex?: string | null;
 }
 
 export interface Palette {
@@ -50,11 +56,12 @@ export const DEFAULT_COLOUR: ColourChoice = { hue: 24, shade: 0.5, ground: "ligh
 export function paletteFor(choice: ColourChoice): Palette {
   const { hue, shade, ground } = choice;
   const away = ground === "light" ? -0.22 : 0.22;
+  const ink = choice.hex ?? sliderColour(hue, shade);
   return {
     bg: GROUNDS[ground],
-    ink: sliderColour(hue, shade),
+    ink,
     accent: shiftedColour(hue, shade, away),
-    sticker: [sliderColour(hue, shade), sliderColour(hue - STICKER_TURN, Math.min(0.8, Math.max(0.45, shade)))],
+    sticker: [ink, sliderColour(hue - STICKER_TURN, Math.min(0.8, Math.max(0.45, shade)))],
     outline: ground === "light" ? "#141414" : "#F2EEE6",
   };
 }
@@ -118,11 +125,11 @@ export function isTextMode(value: unknown): value is TextMode {
   return TEXT_MODES.some((m) => m.id === value);
 }
 
-/** The text colour picked, as a colour; null for auto, which is each sticker's own. */
-export function textColour(mode: TextMode, hue: number, shade: number): string | null {
+/** The text colour picked, as a colour (one typed as a hex code, else the sliders'); null for auto, which is each sticker's own. */
+export function textColour(mode: TextMode, hue: number, shade: number, hex: string | null = null): string | null {
   if (mode === "black") return SOFT_BLACK;
   if (mode === "white") return SOFT_WHITE;
-  if (mode === "colour") return sliderColour(hue, shade);
+  if (mode === "colour") return hex ?? sliderColour(hue, shade);
   return null;
 }
 

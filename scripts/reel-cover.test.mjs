@@ -685,6 +685,33 @@ console.log("colour");
 const HUES = Array.from({ length: 24 }, (_, i) => i * 15);
 const SHADES = Array.from({ length: 21 }, (_, i) => i / 20);
 
+check("a hex code is read however it is typed, and the sliders go to the nearest colour they name; a typed colour is used exactly", () => {
+  for (const [typed, read] of [["#1e7a5f", "#1E7A5F"], ["1E7A5F", "#1E7A5F"], ["  #f80 ", "#FF8800"], ["abc", "#AABBCC"], ["#FFFFFF", "#FFFFFF"]]) assert.equal(C.parseHex(typed), read, typed);
+  for (const bad of ["", "#", "#12345", "#1234567", "ggg", "#12 345", "red", "#ff00ff00"]) assert.equal(C.parseHex(bad), null, bad);
+  // A slider colour typed back puts the sliders where they were, near enough to name the same colour.
+  for (const hue of HUES) {
+    for (const shade of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+      const near = C.slidersFor(C.sliderColour(hue, shade), 0);
+      const dh = Math.abs(((near.hue - hue + 540) % 360) - 180);
+      assert.ok(dh <= 3 && Math.abs(near.shade - shade) <= 0.011, `${hue} ${shade}: ${near.hue} ${near.shade}`);
+    }
+  }
+  // A grey keeps the hue the slider is on; black and white go to the shade's ends.
+  assert.equal(C.slidersFor("#808080", 211).hue, 211);
+  assert.equal(C.slidersFor("#000000", 5).shade, 0);
+  assert.equal(C.slidersFor("#FFFFFF", 5).shade, 1);
+  // The palette takes a typed colour as it is; without one, the sliders'.
+  const typed = P.paletteFor({ hue: 160, shade: 0.46, ground: "light", hex: "#1E7A5F" });
+  assert.equal(typed.ink, "#1E7A5F");
+  assert.equal(typed.sticker[0], "#1E7A5F");
+  assert.equal(P.paletteFor({ hue: 160, shade: 0.46, ground: "light" }).ink, C.sliderColour(160, 0.46));
+  assert.equal(P.textColour("colour", 200, 0.3, "#123456"), "#123456");
+  assert.equal(P.textColour("black", 200, 0.3, "#123456"), P.SOFT_BLACK);
+  // A cover is in the typed colour.
+  const scene = cover("hex", "mono", "reel", { hue: 160, shade: 0.46, hex: "#1E7A5F" });
+  assert.ok(scene.ops.some((op) => op.kind === "text" && op.color === "#1E7A5F"));
+});
+
 check("every hue and shade the sliders reach is a real sRGB colour, as a six-digit hex", () => {
   for (const hue of HUES) for (const shade of SHADES) assert.match(C.sliderColour(hue, shade), /^#[0-9A-F]{6}$/, `${hue} ${shade}`);
   assert.equal(C.sliderColour(360, 0.5), C.sliderColour(0, 0.5), "the hue wraps round");
@@ -763,6 +790,12 @@ check("a design round-trips through storage", () => {
   assert.equal(D.DEFAULT_DESIGN.textMode, "auto");
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, textMode: "neon", textHue: 900, textShade: "light" })), { ...design, textMode: "auto", textHue: D.DEFAULT_DESIGN.textHue, textShade: D.DEFAULT_DESIGN.textShade });
   for (const textMode of ["black", "white"]) assert.equal(D.readDesign(JSON.stringify({ textMode })).textMode, textMode);
+  // A colour typed as a hex code is kept as its six capitals; anything else is no code, the sliders' colour.
+  assert.deepEqual(D.readDesign(D.writeDesign({ ...design, hex: "#1E7A5F", textHex: "#F7F4EE" })), { ...design, hex: "#1E7A5F", textHex: "#F7F4EE" });
+  assert.equal(D.readDesign(JSON.stringify({ hex: "#f80" })).hex, "#FF8800");
+  for (const hex of [7, "teal", "#12", null]) assert.equal(D.readDesign(JSON.stringify({ hex, textHex: hex })).hex, null);
+  assert.equal(D.DEFAULT_DESIGN.hex, null);
+  assert.equal(D.DEFAULT_DESIGN.textHex, null);
   // Animated or not, and each style's animation: one a style does not offer is let go, the rest kept.
   const animated = { ...design, animated: true, animations: { stickery: "slap", pasty: "written", echo: "spread" }, animationSpeed: 1.5 };
   assert.deepEqual(D.readDesign(D.writeDesign(animated)), animated);

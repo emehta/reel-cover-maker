@@ -179,6 +179,8 @@ export interface CoverInput {
   photo?: boolean;
   hue: number;
   shade: number;
+  /** A colour typed as a hex code, used exactly in place of the sliders' own. */
+  hex?: string | null;
   ground: Ground;
   format: FormatId;
   /** The shuffle: mixed into every random choice the style makes. */
@@ -1849,7 +1851,7 @@ export function liquidOps(scene: Scene): LiquidOp[] {
 /** The cover for a title, as ops to draw on a canvas the format's size. */
 export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const format = formatById(input.format);
-  const palette = paletteFor({ hue: input.hue, shade: input.shade, ground: input.ground });
+  const palette = paletteFor({ hue: input.hue, shade: input.shade, ground: input.ground, hex: input.hex ?? null });
   const seed = input.seed | 0;
   const { width, height, safe } = format;
   // Stars mean something only to Stickery, where they pick the funky
