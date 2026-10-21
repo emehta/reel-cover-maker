@@ -344,32 +344,45 @@ npm run build   # the static site, in out/
   letters as last drawn by the difference of the two matrices (`showLive`,
   the photo shadow as its own multiplied layer) and draws them sharp on
   release. Handle maths lives in `place.ts`, tested: change it with tests.
-- **A side handle is a text box's** (the owner's ask, 21 Oct): with no key
-  it re-wraps (`wrapTo`: left and right to a width, top and bottom to a
-  height, the opposite side kept, held between the widest word and the
-  cover), with Shift it scales keeping the shape (`dragHandle` `keep`),
-  with Cmd or Ctrl it stretches one way; a corner scales keeping its shape
-  and with Shift freely; Alt works from the middle; a key pressed mid-drag
-  applies at once; a Ctrl press on a handle opens no menu. `Place.wrap` is
-  the width; each style sets its words again for it at the size its own
-  layout settled on (`Scene.wrapRef`, `CoverInput.wrap`, `Scene.wrapped`),
-  and at its own width exactly as it set them (tested for every style): a
-  style that measures lines by advance and its box by ink carries the
-  difference (`slack`: Inkblot, Renaissance, Pasty), Pasty keeps its own
-  breaks (`counts`), letting one go each time the box is as much wider as
-  a line of its own (three lines hold until half as wide again: its lines
-  fill the block by size, so the fewest that fit would drop one at the
-  first pixel), its height-scaled cap (`most`) and how far its last line's
-  drips ran (`tail`), Renaissance holds its scripts' sizes. A flow style's
-  wrapped block is held where its own box held it (`settle` in scene.ts),
-  and Inkblot cuts its lines into slices counted from their centre, not
-  the cover's edge, so the same words at another size space the same way.
-  Nothing a text box holds, at any width or however much is typed into
-  it, leaves the cover: each style sets it smaller only as far as it must.
-  `Place.wrapSize` keeps the size for the style and type it
-  was made in (`wrapTypeOf`, `textBoxRef`), so typing more never resizes
-  the letters. A re-wrap is shown by setting the scene again at each move
-  (`reflow` in the page), not by carrying the last picture.
+- **A side handle is a text box's** (the owner's ask, 21 Oct, and again
+  the same day: "it doesn't work like Adobe Illustrator at all"): with no
+  key it re-wraps (`wrapTo`: left and right to a width, top and bottom to
+  a height, the opposite side kept), as far as it is pulled, past the
+  cover's edge too, and never narrower than a word a line; the letters
+  never change size, at any width or however much is typed into it, and
+  its words are always inside the frame, so the frame is where the
+  pointer is (tested for every style). With Shift a side scales keeping
+  the shape (`dragHandle` `keep`), with Cmd or Ctrl it stretches one way;
+  a corner scales keeping its shape and with Shift freely; Alt works from
+  the middle; a key pressed mid-drag applies at once; a Ctrl press on a
+  handle opens no menu. `Place.wrap` is the width; each style sets its
+  words again for it at the size its own layout settled on
+  (`Scene.wrapRef`, `CoverInput.wrap`, `Scene.wrapped`), and at its own
+  width exactly as it set them, so a drag never jumps on its first pixel:
+  - a style that measures lines by advance and its box by ink carries the
+    difference (`slack`: Inkblot, Renaissance, Pasty);
+  - a flow style's wrapped block is held where its own box held it
+    (`settle`), and Inkblot cuts its lines into slices counted from their
+    centre, so the same words at another size space the same way; its
+    narrowest is printed, once (`inkblotNarrowest`);
+  - Stickery wraps every line, funky words and plain, to a measure that
+    moves one for one with the box edge from its own widest line (`delta`
+    in `build`), each plain line the size the style set the line in its
+    place, the funky words broken where the style broke them;
+  - Pasty keeps its own breaks (`counts`): a break there only because the
+    words did not fit goes as soon as they do, a line it set apart though
+    it fitted is let go one by one (`own` in the liquid wrap); its paste is
+    kerned past its advance, so it is wrapped again by its real width until
+    it is inside the box (`within`, which Stickery's paper and zigzag use
+    too), and its narrowest is the narrower of a word a line and its own
+    breaks; it holds its height-scaled cap (`most`), the drips' reach
+    (`tail`) and where it broke a word too long (`breakAt`);
+  - Renaissance holds its scripts' sizes, scaled when typing changes the
+    size its own layout would choose.
+  `Place.wrapSize` keeps the size for the style and type it was made in
+  (`wrapTypeOf`, `textBoxRef`), so typing more never resizes the letters.
+  A re-wrap is shown by setting the scene again at each move (`reflow` in
+  the page), not by carrying the last picture.
 - **The cover is the text's canvas** (`CoverSurface`): a press on the
   letters selects them; on a photo, only a press on their ink does (a
   press between them moves the photo), and once selected the whole box

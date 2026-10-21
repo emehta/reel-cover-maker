@@ -274,9 +274,10 @@ export function textBoxRef(own: WrapRef, kept: WrapSize | undefined, of: string)
   if (kept.stretch !== undefined) ref.stretch = kept.stretch;
   if (kept.most !== undefined) ref.most = kept.most;
   if (kept.tail !== undefined) ref.tail = kept.tail;
+  // Pasty's own breaks are for its own title alone; Renaissance's scripts, made at the size the title was set at, at the size held.
   if (!same) {
     delete ref.counts;
-    delete ref.scripts;
+    if (own.scripts) ref.scripts = own.scripts.map((v) => v * k);
   }
   return ref;
 }
@@ -298,31 +299,19 @@ function wrapBox(cx: number, cy: number, width: number): Rect {
 
 /**
  * A flow style's lines as a text box: wrapped to `wrap.width` at the size it
- * was set at, its box never narrower than its widest word (or, a word too
- * wide even for the cover, broken as the style breaks one), never wider
- * than the cover; and, should that be more than the cover holds either way
- * (more typed into it, a narrow box), set smaller, as little as it must,
- * to fit. `slack` is how much wider the lines' advance runs than the box
- * the style measures (its ink, for Inkblot); `fit` false leaves the
- * fitting to the style, which adjusts its lines after.
+ * was set at, whatever that comes to (the owner, 21 Oct: as in Illustrator,
+ * the letters never change size and the box runs as far as it is pulled,
+ * past the cover's edge too). Never narrower than its widest word. `slack`
+ * is how much wider the lines' advance runs than the box the style
+ * measures (its ink, for Inkblot).
  */
-function flowWrapped(paragraphs: Paragraph[], spec: Omit<FlowSpec, "box" | "maxSize" | "minSize">, measurer: Measurer, wrap: Wrap, home: Rect, room: Rect, slack: number, fit = true) {
+function flowWrapped(paragraphs: Paragraph[], spec: Omit<FlowSpec, "box" | "maxSize" | "minSize">, measurer: Measurer, wrap: Wrap, home: Rect, slack: number) {
   const at = { x: home.x + home.w / 2, y: home.y + home.h / 2 };
-  let size = wrap.ref.size;
-  let made: { block: Block; width: number; min: number } | null = null;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const s = size;
-    const narrow = narrowestAt(paragraphs, spec, measurer, s) * 0.995 - slack * (s / wrap.ref.size);
-    // A word wider than the cover is broken however wide the box is: any width will do, down to about a letter.
-    const min = Math.max(1, narrow <= room.w ? narrow : s);
-    const width = Math.min(Math.max(wrap.width, min), Math.max(min, room.w));
-    const block = flow(paragraphs, { ...spec, box: wrapBox(at.x, at.y, (width + slack * (s / wrap.ref.size)) / 0.995 + 1e-6), maxSize: s, minSize: s, fixedSize: true }, measurer);
-    made = { block: settle(block, home), width, min };
-    const k = fit ? Math.min(1, room.w / Math.max(1, block.bounds.w), room.h / Math.max(1, block.bounds.h)) : 1;
-    if (k >= 1 - 1e-9) break;
-    size *= k * 0.999;
-  }
-  return made as { block: Block; width: number; min: number };
+  const s = wrap.ref.size;
+  const min = Math.max(1, narrowestAt(paragraphs, spec, measurer, s) * 0.995 - slack);
+  const width = Math.max(wrap.width, min);
+  const block = flow(paragraphs, { ...spec, box: wrapBox(at.x, at.y, (width + slack) / 0.995 + 1e-6), maxSize: s, minSize: s, fixedSize: true }, measurer);
+  return { block: settle(block, home), width, min };
 }
 
 /**
@@ -508,15 +497,23 @@ function rowEnds(p: InkPiece, top: number, slice: number, rows: number): { left:
  * printed from the face's own outline (ink.ts), seeded by the word and the
  * shuffle; the paper grain a print is pulled on lies over a photo.
  */
-function inkblot(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, seed: number, wrap: Wrap | null, room: Rect): Made {
+function inkblot(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, seed: number, wrap: Wrap | null, narrowest = false): Made {
   const reach = printReach();
   const spec = { face: "script", emphasisFace: "script", leading: INK_LEADING, align: "center", padX: reach, padY: reach, wordSpace: INK_WORD_SPACE } as const;
   // As a text box, at the size it was, wrapped to the box. Its lines are
   // wrapped by their letters' advance, padded by the print's reach; the box
   // is round its printed ink, by as much narrower as it was. It is fitted to
   // the cover once its words are printed and set apart, below.
-  const boxed = wrap ? flowWrapped(paragraphs, spec, measurer, wrap, safe, room, wrap.ref.slack ?? 0, false) : null;
-  const min = boxed?.min ?? 0;
+  // Never narrower than its words printed a word a line, their ink and all: worked out once, by setting it so.
+  let printed = 0;
+  if (wrap && !narrowest) {
+    const key = `${seed}|${wrap.ref.size}|${wrap.ref.slack ?? 0}|${safe.x},${safe.y},${safe.w},${safe.h}|${JSON.stringify(paragraphs)}`;
+    printed = inkblotNarrowest.get(key) ?? inkblot(paragraphs, safe, palette, measurer, seed, { width: 1, ref: wrap.ref }, true).readable.w;
+    inkblotNarrowest.set(key, printed);
+    while (inkblotNarrowest.size > 32) inkblotNarrowest.delete(inkblotNarrowest.keys().next().value as string);
+  }
+  const boxed = wrap ? flowWrapped(paragraphs, spec, measurer, { width: Math.max(wrap.width, printed), ref: wrap.ref }, safe, wrap.ref.slack ?? 0) : null;
+  const min = Math.max(boxed?.min ?? 0, printed);
   const wrapWidth = boxed?.width ?? 0;
   const block = boxed ? boxed.block : flow(paragraphs, { ...spec, box: safe, maxSize: INK_SET, minSize: 34 }, measurer);
   // The paper's grain is there before anything is printed on it.
@@ -669,7 +666,7 @@ function inkblot(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer
   // Then the whole as large as it fits, the print's reach round it, centred in the safe area; as a text box, as it is, unless it is more than the cover.
   const all = union(pieces.map((p) => pieceRect(p, p.outline ? reach : 0)));
   // (Its width is the box's, which the page holds to the cover; only so many lines can be too tall for it.)
-  const k = wrap ? Math.min(1, room.w / Math.max(1, all.w), room.h / Math.max(1, all.h)) : Math.min(safe.w / Math.max(1, all.w), safe.h / Math.max(1, all.h), INK_MAX / size) * 0.999;
+  const k = wrap ? 1 : Math.min(safe.w / Math.max(1, all.w), safe.h / Math.max(1, all.h), INK_MAX / size) * 0.999;
   const cx = all.x + all.w / 2;
   const cy = all.y + all.h / 2;
   for (const p of pieces) {
@@ -703,12 +700,12 @@ function inkblot(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer
 }
 
 /** Heavy wide capitals, repeated in outline above and below to the cover's edges. */
-function echo(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, height: number, wrap: Wrap | null, room: Rect): Made {
+function echo(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, height: number, wrap: Wrap | null): Made {
   const band = Math.min(safe.h, Math.max(safe.h * 0.36, 260));
   const box = { x: safe.x, y: safe.y + (safe.h - band) / 2, w: safe.w, h: band };
   const spec = { face: "wide", emphasisFace: "wide", leading: 0.94, align: "center" } as const;
   const words = upper(paragraphs);
-  const boxed = wrap ? flowWrapped(words, spec, measurer, wrap, box, room, 0) : null;
+  const boxed = wrap ? flowWrapped(words, spec, measurer, wrap, box, 0) : null;
   const min = boxed?.min ?? 0;
   const wrapWidth = boxed?.width ?? 0;
   const block = boxed ? boxed.block : flow(words, { ...spec, box, maxSize: 210, minSize: 40 }, measurer);
@@ -738,11 +735,11 @@ function echo(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: M
 }
 
 /** A typewriter's lines, set left in a block at the centre, with the cursor after them. */
-function mono(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, wrap: Wrap | null, room: Rect): Made {
+function mono(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, wrap: Wrap | null): Made {
   const pad = 0.14;
   const spec = { face: "mono", emphasisFace: "mono", leading: 1.34, align: "left", padX: pad, padY: 0.1, trailing: 0.78 } as const;
   // Its box is padded, as its lines are: the narrowest the whole of it can be.
-  const boxed = wrap ? flowWrapped(paragraphs, spec, measurer, wrap, safe, room, 0) : null;
+  const boxed = wrap ? flowWrapped(paragraphs, spec, measurer, wrap, safe, 0) : null;
   const min = boxed?.min ?? 0;
   const wrapWidth = boxed?.width ?? 0;
   const block = boxed ? boxed.block : flow(paragraphs, { ...spec, box: safe, maxSize: 118, minSize: 30 }, measurer);
@@ -1095,8 +1092,6 @@ function setLiquid(
   canvas: Rect,
   textColour: (emphasis: boolean) => string,
   measurer: Measurer,
-  /** As a text box, what it must fit in: the cover. */
-  room: Rect | null = null,
 ): Set {
   const recipe = style.recipe(letterCount(paragraphs));
   const empty = { chains: [], glyphOf: [], lineOf: [], colourOf: [], tone: [], droplets: [], missing: [], readable: { x: box.x + box.w / 2, y: box.y + box.h / 2, w: 0, h: 0 }, xHeight: 0, size: 0, stretch: 1, widest: 0, block: 0, counts: [], most: 0, tail: 0 };
@@ -1255,8 +1250,8 @@ function setLiquid(
   // A smaller box can choose other lines, so the tries may end a pixel
   // over: then the paste itself is scaled down about the box's middle,
   // which always fits.
-  const fitIn = style.spec.wrap ? (room ?? box) : box;
-  const k = Math.min(1, fitIn.w / Math.max(1e-6, set.readable.w), fitIn.h / Math.max(1e-6, set.readable.h));
+  // As a text box, never: its letters keep their size.
+  const k = style.spec.wrap ? 1 : Math.min(1, box.w / Math.max(1e-6, set.readable.w), box.h / Math.max(1e-6, set.readable.h));
   if (k < 1) {
     const cx = box.x + box.w / 2;
     const cy = box.y + box.h / 2;
@@ -1398,25 +1393,58 @@ function pasty(paragraphs: Paragraph[], safe: Rect, canvas: Rect, palette: Palet
   // much. Its lines are measured by their advance, which runs past the
   // paste's ink by as much as it did. Its own breaks are kept while the
   // box is no wider than Pasty set it, so a drag starts from what was there;
-  // wider, each typed line keeps as many of its lines as would fill a box
-  // that wide end to end, as its own filled the box it was set in: a line
-  // set in three keeps three until the box is half as wide again. Pasty
-  // fills a line to the block by its letters' size, not by the words it
-  // holds, so the fewest lines that fit would take one away at the first
-  // pixel.
+  // wider, a break that was there only because the words did not fit goes
+  // as soon as they do, and a line Pasty set apart though it fitted (its
+  // lines fill the block by size, not by the words they hold: "do what /
+  // you / want") is let go one by one, a line set in three keeping three
+  // until the box is half as wide again.
   const slack = wrap?.ref.slack ?? 0;
-  const atLeast = wrap?.ref.counts?.map((n) => Math.max(1, Math.ceil((n * wrap.ref.width) / Math.max(wrap.ref.width, wrap.width) - 1e-6)));
-  const style = wrap ? { ...shuffledStyle, spec: { ...shuffledStyle.spec, wrap: { width: wrap.width + slack, size: wrap.ref.size, stretch: wrap.ref.stretch ?? 1, atLeast, most: wrap.ref.most, tail: wrap.ref.tail } } } : shuffledStyle;
-  const set = setLiquid(paragraphs, wrap ? wrapBox(safe.x + safe.w / 2, safe.y + safe.h / 2, wrap.width + slack) : safe, style, canvas, (e) => (e ? palette.accent : palette.ink), measurer, canvas);
-  const min = Math.max(1, Math.min(set.widest - slack, canvas.w));
+  const tint = (e: boolean) => (e ? palette.accent : palette.ink);
+  /** Set as a text box `width` wide by its lines' advance; its own breaks held as the box (`box` wide) allows. */
+  const boxed = (width: number, box: number) => {
+    if (!wrap) return setLiquid(paragraphs, safe, shuffledStyle, canvas, tint, measurer);
+    const atLeast = wrap.ref.counts?.map((n) => Math.max(1, Math.ceil((n * wrap.ref.width) / Math.max(wrap.ref.width, box) - 1e-6)));
+    const own = wrap.ref.counts ? { counts: wrap.ref.counts, width: wrap.ref.width + slack } : undefined;
+    const spec = { ...shuffledStyle.spec, wrap: { width: width + slack, size: wrap.ref.size, stretch: wrap.ref.stretch ?? 1, atLeast, own, most: wrap.ref.most, tail: wrap.ref.tail, breakAt: safe.w / shuffledStyle.spec.minSize } };
+    return setLiquid(paragraphs, wrapBox(safe.x + safe.w / 2, safe.y + safe.h / 2, width + slack), { ...shuffledStyle, spec }, canvas, tint, measurer);
+  };
+  // The paste is kerned by its ink, so a line runs a little past the
+  // advance it was wrapped by: as a text box it is wrapped again by as much
+  // narrower as its paste ran past the box, until it is inside it, so the
+  // box follows the pointer. Never narrower than a word a line.
+  let narrowest = 0;
+  let width = 0;
+  let set: Set;
+  if (wrap) {
+    const key = `${base.spec.salt}|${seed}|${flat}|${wrap.ref.size}|${wrap.ref.width}|${slack}|${wrap.ref.most}|${wrap.ref.tail}|${wrap.ref.counts}|${JSON.stringify(paragraphs)}`;
+    // A word a line, unless its own breaks are narrower: each line fills the block, so a short word alone can run wider than it did beside another.
+    narrowest = pastyNarrowest.get(key) ?? Math.max(1, Math.min(boxed(1, 1).readable.w, boxed(wrap.ref.width, wrap.ref.width).readable.w));
+    pastyNarrowest.set(key, narrowest);
+    while (pastyNarrowest.size > 32) pastyNarrowest.delete(pastyNarrowest.keys().next().value as string);
+    width = Math.max(wrap.width, narrowest);
+    const box = width;
+    set = within((measure) => boxed(measure, box), width, (made) => made.readable.w);
+  } else set = boxed(0, 0);
   return {
-    ...(wrap ? { wrapped: { width: Math.min(Math.max(wrap.width, min), Math.max(min, canvas.w)), min } } : { ref: { size: set.size, width: set.readable.w, stretch: set.stretch, slack: Math.max(0, set.block - set.readable.w), counts: set.counts, most: set.most, ...(set.tail > 0 ? { tail: set.tail } : {}) } }),
+    ...(wrap ? { wrapped: { width, min: narrowest } } : { ref: { size: set.size, width: set.readable.w, stretch: set.stretch, slack: Math.max(0, set.block - set.readable.w), counts: set.counts, most: set.most, ...(set.tail > 0 ? { tail: set.tail } : {}) } }),
     // The paste draws no ground of its own: on a photo its shadow falls on
     // the photo; with none, the cover is clear but for the paste and its
     // shadow, a stain as it would fall on the ground chosen, which the
     // paste is still lit as lying on. Flat paste casts no shadow at all.
-    ops: [liquidOp(set, style, [palette.ink, palette.accent], null, true, !flat, photo ? null : palette.bg), ...set.missing] as Op[],
+    ops: [liquidOp(set, shuffledStyle, [palette.ink, palette.accent], null, true, !flat, photo ? null : palette.bg), ...set.missing] as Op[],
     readable: set.readable,
+  };
+}
+
+/** A liquid set moved by (dx, dy): its paste, its droplets, the letters it could not draw, and its box. */
+function shiftSet(set: Set, dx: number, dy: number): Set {
+  if (!dx && !dy) return set;
+  return {
+    ...set,
+    chains: shiftChains(set.chains, dx, dy),
+    droplets: shiftChains(set.droplets, dx, dy),
+    missing: set.missing.map((op) => moveOp(op, dx, dy)),
+    readable: { ...set.readable, x: set.readable.x + dx, y: set.readable.y + dy },
   };
 }
 
@@ -1557,7 +1585,6 @@ function stickery(
   plainFace: PlainFaceId,
   textColour: string | null,
   wrap: Wrap | null,
-  room: Rect,
 ): Made {
   const starred = paragraphs.some((p) => p.some((w) => w.some((s) => s.emphasis)));
   // Which words are funky: the starred ones, else each sticker's longest.
@@ -1618,8 +1645,14 @@ function stickery(
     return letterBoxes(face, text, x, baseline, size);
   };
 
-  /** A run of funky words, set from (0, 0) and turned: its ops, its paste, the parts to keep clear of, the boxes its steps go round. */
-  const funkyRun = (run: (typeof groups)[number][number], size: number, ink: string, next: () => number) => {
+  /**
+   * A run of funky words, set from (0, 0) and turned: its ops, its paste,
+   * the parts to keep clear of, the boxes its steps go round. As a text box
+   * `delta` wider or narrower than the style set it, its lines wrapped at
+   * the size they were to a measure as much wider or narrower than its own
+   * widest line (never narrower than a word a line).
+   */
+  const funkyRun = (run: (typeof groups)[number][number], size: number, ink: string, next: () => number, delta = 0) => {
     const texts: Op[] = [];
     let chains: Chain[] = [];
     let parts: Part[] = [];
@@ -1632,7 +1665,20 @@ function stickery(
     let inkHeight = size;
     let xHeight = size * 0.45;
     if (paste) {
-      const set = setLiquid([run.words], { x: 0, y: 0, w: size * 5.2, h: size * 3.6 }, { ...paste, spec: { ...paste.spec, maxSize: size, minSize: size * 0.45 } }, anywhere, () => ink, measurer);
+      const home = { x: 0, y: 0, w: size * 5.2, h: size * 3.6 };
+      const homeStyle = { ...paste, spec: { ...paste.spec, maxSize: size, minSize: size * 0.45 } };
+      let set = setLiquid([run.words], home, homeStyle, anywhere, () => ink, measurer);
+      if (delta !== 0) {
+        // Wrapped as Pasty wraps a text box: at the size it chose, its breaks let go one by one as it widens.
+        const own = set;
+        const slack = Math.max(0, own.block - own.readable.w);
+        const width = Math.max(own.readable.w + delta, own.widest - slack, 1);
+        const atLeast = own.counts.map((n) => Math.max(1, Math.ceil((n * own.readable.w) / Math.max(own.readable.w, width) - 1e-6)));
+        const wrapSpec = { width: width + slack, size: own.size, stretch: own.stretch, atLeast, own: { counts: own.counts, width: own.readable.w + slack }, most: own.most, breakAt: home.w / homeStyle.spec.minSize, ...(own.tail > 0 ? { tail: own.tail } : {}) };
+        set = setLiquid([run.words], wrapBox(home.x + home.w / 2, home.y + home.h / 2, width + slack), { ...homeStyle, spec: { ...homeStyle.spec, wrap: wrapSpec } }, anywhere, () => ink, measurer);
+        // Where the style set it, by its top left: the sticker's paper is stepped on a grid, so a word set the same must land the same.
+        set = shiftSet(set, own.readable.x - set.readable.x, own.readable.y - set.readable.y);
+      }
       const r = set.readable;
       const cx = r.x + r.w / 2;
       const cy = r.y + r.h / 2;
@@ -1650,11 +1696,15 @@ function stickery(
         parts.push({ kind: "box", ...box, funky: true });
       }
     } else if (funkyFace) {
-      const set = flow(
-        [run.words],
-        { box: { x: 0, y: 0, w: size * 6, h: size * 6 }, face: funkyFace, emphasisFace: funkyFace, maxSize: size * FUNKY_SCALE, minSize: size * FUNKY_SCALE, leading: 0.92, align: "left" },
-        measurer,
-      );
+      const spec = { face: funkyFace, emphasisFace: funkyFace, leading: 0.92, align: "left" } as const;
+      const at = size * FUNKY_SCALE;
+      let set = flow([run.words], { ...spec, box: { x: 0, y: 0, w: size * 6, h: size * 6 }, maxSize: at, minSize: at }, measurer);
+      if (delta !== 0 && set.lines.length) {
+        const widest = Math.max(...set.lines.map((l) => l.inkLeft + l.width + l.inkRight)) / 0.995;
+        // A word wider than the style's own measure is broken as the style broke it, however wide the box.
+        const w = Math.max(Math.min(narrowestAt([run.words], spec, measurer, at), size * 6), widest + delta) + 1e-6;
+        set = flow([run.words], { ...spec, box: { x: 0, y: 0, w, h: size * 6 }, maxSize: at, minSize: at, fixedSize: true }, measurer);
+      }
       const words: Op[] = [];
       /** The words' ink, strip by strip: what the plain words settle against and the steps go round. */
       const letters: Rect[] = [];
@@ -1743,11 +1793,12 @@ function stickery(
   const plainXHeight = xHeightOf(plainFace);
 
   /**
-   * The stickers at `size`, their plain words wrapped `spread` times as wide
-   * as the funky word leads them to be (1, as the style sets them; wider or
-   * narrower, as a text box's side is dragged; 0, a word a line).
+   * The stickers at `size`, as the style sets them; or, as a text box
+   * `delta` wider or narrower than that, every line (funky or plain)
+   * wrapped to a measure as much wider or narrower than its own widest,
+   * its letters the size they were (-Infinity, a word a line).
    */
-  const build = (size: number, spread = 1) => {
+  const build = (size: number, delta = 0) => {
     const plainSize = size * plainScale;
     const colours: string[] = [];
     const stickers = groups.map((runs, gi) => {
@@ -1763,6 +1814,8 @@ function stickery(
       const extent: Rect[] = [];
       let placed: Part[] = [];
       let funky: Rect | null = null;
+      /** The funky word's width as the style set it, before a text box wrapped it. */
+      let ownFunkyW: number | null = null;
       let funkyHeight = 0;
       let funkyX = 0;
       /** The plain x-heights this sticker is set in: what its steps and padding are measured in. */
@@ -1782,25 +1835,41 @@ function stickery(
        *   longer line that sits up on a tall letter the others drop past;
        *   never turned, its word spaces the face's own.
        */
-      const setPlain = (run: (typeof groups)[number][number], ri: number, dir: 1 | -1) => {
+      const setPlain = (run: (typeof groups)[number][number], ri: number, dir: 1 | -1, ownFunkyW: number | null) => {
         // Beside a funky word, the lettering's share of its x-height; on a
         // sticker with none, the size its words would have beside one of
         // this cover's, so it matches the stickers round it.
         const besideX = funky ? funkyX : paste ? strokeMetrics(paste.spec.fonts[0]?.id ?? "drip").xHeight * size : xHeightOf(funkyFace ?? plainFace) * size * FUNKY_SCALE;
         const base = Math.max(plainSize * 0.4, (plainShare * besideX) / plainXHeight);
-        const wrapAt = (funky ? Math.max(funky.w * 1.15, base * 7) : base * 14) * spread;
-        const lines = plainLines(run, base, wrapAt);
+        // A line of three words or more no wider than the funky word, near
+        // enough; a shorter one under two fifths of its width grown toward
+        // that, as Main Sticker 1's "it is" is; any other keeps its size.
+        const fitFor = (line: ReturnType<typeof plainLines>[number]) =>
+          ownFunkyW === null
+            ? 1
+            : line.words.length >= 3
+              ? Math.min(1, Math.max(0.7, (ownFunkyW * 0.97) / Math.max(1, line.width)))
+              : Math.min(1.25, Math.max(1, (ownFunkyW * 0.4) / Math.max(1, line.width)));
+        const own = plainLines(run, base, ownFunkyW !== null ? Math.max(ownFunkyW * 1.15, base * 7) : base * 14);
+        const ownFits = own.map(fitFor);
+        let lines = own;
+        let fits = ownFits;
+        if (delta !== 0 && own.length) {
+          // As a text box: wrapped to a measure as much wider or narrower
+          // than its widest line as the box is, each line the size the
+          // style set the line in its place (the last's, for one more), so
+          // a word moving to another line never changes size.
+          let widest = 0;
+          own.forEach((line, i) => {
+            if (line.width > own[widest].width) widest = i;
+          });
+          lines = plainLines(run, base, own[widest].width + delta / ownFits[widest]);
+          fits = lines.map((_, i) => ownFits[Math.min(i, ownFits.length - 1)]);
+        }
         const ordered = dir < 0 ? lines : [...lines].reverse();
         const lineNext = random(mixSeed(salt, (gi + 1) * 1009 + ri));
         ordered.forEach((line, li) => {
-          // A line of three words or more no wider than the funky word, near
-          // enough; a shorter one under two fifths of its width grown toward
-          // that, as Main Sticker 1's "it is" is; any other keeps its size.
-          const fit = !funky
-            ? 1
-            : line.words.length >= 3
-              ? Math.min(1, Math.max(0.7, (funky.w * 0.97 * Math.max(spread, 1e-6)) / Math.max(1, line.width)))
-              : Math.min(1.25, Math.max(1, (funky.w * 0.4) / Math.max(1, line.width)));
+          const fit = fits[dir < 0 ? li : lines.length - 1 - li];
           const size = base * fit;
           const xh = size * plainXHeight;
           xHeights.push(xh);
@@ -1926,10 +1995,13 @@ function stickery(
       runs.forEach((run, ri) => {
         if (!run.goo) {
           if (!placed.length) above.push({ run, ri });
-          else setPlain(run, ri, -1);
+          else setPlain(run, ri, -1, ownFunkyW);
           return;
         }
-        const made = funkyRun(run, size, ink, random(mixSeed(salt, (gi + 1) * 7 + ri)));
+        const funkySeed = mixSeed(salt, (gi + 1) * 7 + ri);
+        const made = funkyRun(run, size, ink, random(funkySeed), delta);
+        // What the plain words beside it are sized and wrapped by: the funky words as the style set them.
+        ownFunkyW = boundsOfParts((delta === 0 ? made : funkyRun(run, size, ink, random(funkySeed))).parts).w;
         let parts = made.parts;
         let dx = 0;
         let dy = 0;
@@ -1959,10 +2031,10 @@ function stickery(
         funkyHeight = made.inkHeight;
         funkyX = made.xHeight;
         // What came before the first funky word drops onto it, the line nearest it first.
-        for (const a of above.splice(0).reverse()) setPlain(a.run, a.ri, 1);
+        for (const a of above.splice(0).reverse()) setPlain(a.run, a.ri, 1, ownFunkyW);
       });
       // A sticker with no funky word at all: its plain words in lines.
-      for (const a of above.splice(0)) setPlain(a.run, a.ri, -1);
+      for (const a of above.splice(0)) setPlain(a.run, a.ri, -1, ownFunkyW);
 
       // Measured in the plain words' x-height, as the references' steps are:
       // the grid and the paper round the ink the lettering's own (coarse
@@ -2001,40 +2073,39 @@ function stickery(
 
   // The size: scaled to fit the measured block into the safe area a few
   // times over, then, to be certain, made smaller until it fits. As a text
-  // box, the size it was, its plain words wrapped as much wider or narrower
-  // as the box is than the stickers were (never narrower than a word a
-  // line), and smaller only to stay on the cover.
+  // box, the size it was, and its lines wrapped as much wider or narrower
+  // than the style set them as the box is pulled, past the cover too (the
+  // owner, 21 Oct: as in Illustrator), never narrower than a word a line.
   let size = wrap ? wrap.ref.size : Math.min(380, safe.w * 0.4);
-  // A word a line is narrowest, but for a stack of stickers whose zigzag (a
-  // share of each one's width) takes more room so: the narrower of the two.
-  // Worked out once a title and size, not at every move of a drag.
-  const narrowestAt = (at: number) => {
-    const key = `${salt}|${plainFace}|${at}`;
-    let w = stickeryNarrowest.get(key);
+  /**
+   * How wide the stickers are set as the style sets them, and as narrow as
+   * they go (a word a line, unless a stack's zigzag makes that wider): once
+   * a title and size, not at every move of a drag.
+   */
+  const widthOf = (kind: "home" | "narrow", at: number, make: () => number) => {
+    const key = `${kind}|${salt}|${plainFace}|${at}`;
+    let w = stickeryWidths.get(key);
     if (w === undefined) {
-      w = Math.min(build(at, 0).bounds.w, build(at, 1).bounds.w);
-      stickeryNarrowest.set(key, w);
-      while (stickeryNarrowest.size > 32) stickeryNarrowest.delete(stickeryNarrowest.keys().next().value as string);
+      w = make();
+      stickeryWidths.set(key, w);
+      while (stickeryWidths.size > 64) stickeryWidths.delete(stickeryWidths.keys().next().value as string);
     }
     return w;
   };
-  const narrowest = wrap ? Math.min(narrowestAt(size), room.w) : 0;
-  const wrapWidth = wrap ? Math.min(Math.max(wrap.width, narrowest), Math.max(narrowest, room.w)) : 0;
-  const spread = wrap ? wrapWidth / Math.max(1, wrap.ref.width) : 1;
-  let made = build(size, spread);
-  // As a text box, on the cover either way; else in the safe area.
-  const fits = () => (wrap ? made.bounds.w <= room.w && made.bounds.h <= room.h : made.bounds.w <= safe.w && made.bounds.h <= safe.h);
+  const home = wrap ? widthOf("home", size, () => build(size).bounds.w) : 0;
+  const narrowest = wrap ? widthOf("narrow", size, () => Math.min(build(size, -Infinity).bounds.w, home)) : 0;
+  const wrapWidth = wrap ? Math.max(wrap.width, narrowest) : 0;
+  let made = wrap ? within((measure) => build(size, measure - home), wrapWidth, (m) => m.bounds.w, 0) : build(size);
+  const fits = () => made.bounds.w <= safe.w && made.bounds.h <= safe.h;
   for (let attempt = 0; attempt < 6 && !wrap; attempt += 1) {
     const k = Math.min(safe.w / Math.max(1, made.bounds.w), safe.h / Math.max(1, made.bounds.h));
     if (fits() && k < 1.03) break;
     size *= Math.min(1.6, k * 0.985);
     made = build(size);
   }
-  // Smaller by as much as it is over, and a little more each time it is not yet on.
-  for (let attempt = 0; attempt < 16 && !fits(); attempt += 1) {
-    const over = wrap ? Math.min(room.w / Math.max(1, made.bounds.w), room.h / Math.max(1, made.bounds.h)) : 1;
-    size *= Math.min(0.94, over * (1 - 0.01 * (attempt + 1)));
-    made = build(size, spread);
+  for (let attempt = 0; attempt < 16 && !wrap && !fits(); attempt += 1) {
+    size *= 0.94;
+    made = build(size);
   }
   // Centred in the safe area.
   const dx = safe.x + (safe.w - made.bounds.w) / 2 - made.bounds.x;
@@ -2055,8 +2126,48 @@ function stickery(
   };
 }
 
-/** Stickery's narrowest text box for a title at a size, worked out once. */
-const stickeryNarrowest = new Map<string, number>();
+/**
+ * A text box's lines set to a measure that keeps them inside `width`: the
+ * measure the box is, and if what that sets runs past it (a paste kerned
+ * by its ink, a sticker's paper and zigzag), less by as much as it ran
+ * over, then halved between that and `least`, the measure that sets it
+ * a word a line, until it fits.
+ */
+function within<T>(make: (measure: number) => T, width: number, wide: (made: T) => number, least = 1): T {
+  let made = make(width);
+  if (wide(made) <= width + 0.5) return made;
+  let over = width;
+  let measure = width;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    measure -= wide(made) - width + 0.5;
+    if (measure <= least) break;
+    made = make(measure);
+    if (wide(made) <= width + 0.5) return made;
+    over = measure;
+  }
+  let lo = least;
+  let fits = make(least);
+  // Nothing narrower can be had (a stack whose zigzag is wider a word a line): the narrowest it was.
+  if (wide(fits) > width + 0.5) return wide(fits) < wide(made) ? fits : made;
+  for (let step = 0; step < 6; step += 1) {
+    const mid = (lo + over) / 2;
+    const tried = make(mid);
+    if (wide(tried) <= width + 0.5) {
+      lo = mid;
+      fits = tried;
+    } else over = mid;
+  }
+  return fits;
+}
+
+/** Inkblot's narrowest text box for a title at a size, printed, worked out once. */
+const inkblotNarrowest = new Map<string, number>();
+
+/** Pasty's narrowest text box for a title at a size, worked out once. */
+const pastyNarrowest = new Map<string, number>();
+
+/** Stickery's widths as it sets a title at a size, and as a text box at its narrowest, worked out once. */
+const stickeryWidths = new Map<string, number>();
 
 /** A funky typeface's size against the drawn paste's: its letters come out about as tall. */
 const FUNKY_SCALE = 1.15;
@@ -2132,7 +2243,6 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const paragraphs = input.style === "stickery" || input.style === "renaissance" ? typed : typed.map((p) => p.map((w) => w.map((seg) => ({ ...seg, emphasis: false }))));
   const canvas = { x: width * 0.03, y: height * 0.03, w: width * 0.94, h: height * 0.94 };
 
-  const room = { x: 0, y: 0, w: width, h: height };
   // A text box needs words to wrap: with none, the style sets itself.
   const wrap = input.wrap && paragraphs.some((p) => p.length) ? input.wrap : null;
 
@@ -2143,18 +2253,18 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
       case "pasty-flat":
         return pasty(paragraphs, safe, canvas, palette, measurer, true, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING, input.photo === true, wrap);
       case "stickery":
-        return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE, input.textColour ?? null, wrap, room);
+        return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE, input.textColour ?? null, wrap);
       case "echo":
-        return echo(paragraphs, safe, palette, measurer, height, wrap, room);
+        return echo(paragraphs, safe, palette, measurer, height, wrap);
       case "mono":
-        return mono(paragraphs, safe, palette, measurer, wrap, room);
+        return mono(paragraphs, safe, palette, measurer, wrap);
       case "renaissance": {
         // A script picked in the capitals' own colour is no colour of its own: it cuts a thin gap, as the same colour does.
         const script = input.scriptColour && input.scriptColour !== palette.ink ? input.scriptColour : null;
-        return renaissance(paragraphs, safe, measurer, { look: input.renaissanceLook ?? DEFAULT_RENAISSANCE_LOOK, ink: palette.ink, script, seed, wrap, room });
+        return renaissance(paragraphs, safe, measurer, { look: input.renaissanceLook ?? DEFAULT_RENAISSANCE_LOOK, ink: palette.ink, script, seed, wrap });
       }
       default:
-        return inkblot(paragraphs, safe, palette, measurer, seed, wrap, room);
+        return inkblot(paragraphs, safe, palette, measurer, seed, wrap);
     }
   })();
 

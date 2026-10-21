@@ -240,12 +240,13 @@ on a label's row.
   - **Drag a side** and the box is a text box: the letters keep their size
     and the words move between lines. The left or right side sets how wide
     the lines run, the top or bottom how tall the box is (a taller box runs
-    narrower lines). The opposite side stays put, and the box never goes
-    narrower than its widest word or wider than the cover. Typing more
-    into it keeps the letters' size; the box grows to hold them. Every
-    style does this in its own way: Stickery's plain words wrap round its
-    funky word, Pasty's lines still fill the block, Renaissance's script
-    stays on its join.
+    narrower lines). The opposite side stays put, the frame follows the
+    pointer as far as it is pulled, past the cover's edge too, and it
+    never goes narrower than a word a line. The letters never change size,
+    however narrow or wide the box or however much is typed into it. Every
+    style does this in its own way: Stickery's funky words wrap as well as
+    its plain ones, Pasty's lines still fill the block, Renaissance's
+    script stays on its join.
   - **Shift and a side** scales the letters keeping their shape; **Cmd
     (Ctrl on Windows) and a side** stretches them one way. A key pressed or
     let go mid-drag changes what the drag does at once.
@@ -361,8 +362,9 @@ for it at the size its own layout chose (its `wrapRef`), never stretched.
 At its own width a style sets them exactly as it did, every word where it
 was, so a drag starts from what was there (tested for every style, with
 titles that once moved by a few pixels or a line); and however narrow or
-wide the box, or however much is typed into it, its words stay on the
-cover, smaller only as far as they must be. The size is kept with the placement (`wrapSize`, for
+wide the box, or however much is typed into it, its words stay inside the
+frame at the size they were, the frame going past the cover's edge if it
+is pulled there, as an Illustrator text box does. The size is kept with the placement (`wrapSize`, for
 the style and type it was made in), so typing more never changes it; in
 another style or type, that one's own size is used.
 

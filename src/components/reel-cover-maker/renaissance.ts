@@ -317,8 +317,6 @@ export interface RenaissanceSpec {
   seed: number;
   /** Set as a text box: its lines wrapped to a width at the size it chose (the owner's ask, 21 Oct). */
   wrap?: Wrap | null;
-  /** What it may not grow past as a text box: the cover. */
-  room?: Rect;
 }
 
 /** A Renaissance cover's lettering, laid out in the safe area: the ops (one knockout group) and the box they ink. */
@@ -332,19 +330,15 @@ export function renaissance(paragraphs: Paragraph[], safe: Rect, measurer: Measu
   // A title in script alone has no lines to wrap: no text box, its sides scale it.
   const allScriptTitle = units.every((u) => u.kind === "script");
   const wrap = allScriptTitle ? null : (spec.wrap ?? null);
-  const room = spec.room ?? safe;
   // As a text box, its capitals' lines wrapped to the box at the size they
-  // were, never narrower than its widest word (or, one too wide even for the
-  // cover, broken into pieces that fit it), never wider than the cover.
+  // were and its scripts at theirs, whatever that comes to (the owner, 21
+  // Oct: as in Illustrator, the letters never change size and the box runs
+  // as far as it is pulled, past the cover's edge too); never narrower than
+  // a word a line. Its lines are measured by their advance, wider than the
+  // ink the box is round: by as much as they were.
   const widestWord = wrap ? Math.max(1, ...units.flatMap((u) => (u.kind === "caps" ? u.words.map((w) => measurer.width(face, w) * wrap.ref.size * sx + 0.5) : []))) : 0;
-  // Its lines are measured by their advance, wider than the ink the box is
-  // round: by as much as they were. So is its widest word, or a word a line
-  // would be wider than the title set that way.
   const slack = wrap ? (wrap.ref.slack ?? 0) : 0;
-  const narrowest = wrap ? (widestWord - slack <= room.w ? Math.max(1, widestWord - slack) : Math.min(room.w, wrap.ref.size)) : 0;
-  const wrapWidth = wrap ? Math.min(Math.max(wrap.width, narrowest), Math.max(narrowest, room.w)) : 0;
-  const lineMax = wrap ? wrapWidth + slack : safe.w;
-  if (wrap && widestWord > lineMax) units = units.map((u) => (u.kind === "caps" ? { kind: "caps", words: u.words.flatMap((w) => breakWide(w, face, wrap.ref.size, sx, lineMax, measurer)) } : u));
+  let lineMax = safe.w;
   const cap = measurer.metrics(face).cap;
   const xHeight = Math.max(0.2, measurer.bounds(scriptFace, "x").ascent);
   const space = measurer.width(face, " ") * sx;
@@ -392,7 +386,7 @@ export function renaissance(paragraphs: Paragraph[], safe: Rect, measurer: Measu
       // By its small letters, as the poster's of; a short word with no tall letters (to, in, art) made up to cover a little more of its lines, its small letters never past three quarters of a cap height.
       const byX = (SCRIPT_X * C) / xHeight;
       const own = Math.min((SCRIPT_TALL * C) / tall, (SCRIPT_WIDE * beside) / wide, Math.max(byX, Math.min((SCRIPT_COVER * beside) / wide, (SCRIPT_X_MOST * C) / xHeight)));
-      const s = held ? Math.min(held[scriptIndex[ui]], (SCRIPT_WIDE * beside) / wide) : own;
+      const s = held ? held[scriptIndex[ui]] : own;
       return { b, s, h: tall * s, beside, joins };
     });
 
@@ -464,6 +458,16 @@ export function renaissance(paragraphs: Paragraph[], safe: Rect, measurer: Measu
     return { lines, sets, bounds: union(rects), C };
   };
 
+  // As a text box: the narrowest it goes is its words a line, each script as it was; then its lines run as wide as the box.
+  let narrowest = 0;
+  let wrapWidth = 0;
+  if (wrap) {
+    lineMax = widestWord;
+    narrowest = Math.max(1, lay(wrap.ref.size)?.bounds.w ?? widestWord - slack);
+    wrapWidth = Math.max(wrap.width, narrowest);
+    lineMax = Math.max(widestWord, wrapWidth + slack);
+  }
+
   const fits = (size: number, us: Unit[] = units) => {
     const made = lay(size, us);
     return !!made && made.bounds.w <= safe.w + 1e-6 && made.bounds.h <= safe.h + 1e-6;
@@ -507,9 +511,8 @@ export function renaissance(paragraphs: Paragraph[], safe: Rect, measurer: Measu
   const made = lay(lo) ?? lay(CAPS_MIN);
   if (!made) return { ops: [], readable: { x: safe.x + safe.w / 2, y: safe.y + safe.h / 2, w: 0, h: 0 } };
 
-  // Centred in the safe area by its ink, and made smaller if, at the smallest capitals, it is still too much (as a text box, if it is more than the cover).
-  // As a text box, made smaller only as far as it must be to fit the cover either way.
-  const k = wrap ? Math.min(1, room.w / Math.max(1, made.bounds.w), room.h / Math.max(1, made.bounds.h)) : Math.min(1, safe.w / Math.max(1, made.bounds.w), safe.h / Math.max(1, made.bounds.h));
+  // Centred in the safe area by its ink, and made smaller if, at the smallest capitals, it is still too much; as a text box, as it is.
+  const k = wrap ? 1 : Math.min(1, safe.w / Math.max(1, made.bounds.w), safe.h / Math.max(1, made.bounds.h));
   const ox = made.bounds.x + made.bounds.w / 2;
   const oy = made.bounds.y + made.bounds.h / 2;
   const tx = safe.x + safe.w / 2;

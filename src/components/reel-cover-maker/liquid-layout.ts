@@ -64,12 +64,18 @@ export interface LiquidSpec {
    * fit `width` with its longest at `size`, then each line sized, as the
    * box's are, to fill the block's own width; stretched by `stretch`. With
    * `atLeast`, each typed line into no fewer lines than that: the style's
-   * own breaks, let go of one by one as the box widens. `most` is
+   * own breaks, let go of one by one as the box widens; with `own` (the
+   * style's own counts and the width they were wrapped to), only as many
+   * lines more than fit as the style itself set more than fit, so a break
+   * that was there only because the words did not fit goes as soon as they
+   * do. `most` is
    * the largest a line may be, as the style held its lines (made smaller
    * with them all to fit the box's height). `tail` is how far under the
-   * last line's baseline its drips may run (scene.ts reads it).
+   * last line's baseline its drips may run (scene.ts reads it). `breakAt`
+   * is the widest a word may be, in em, before it is broken between letters,
+   * as the style set it: a text box never breaks a word it did not.
    */
-  wrap?: { width: number; size: number; stretch: number; atLeast?: readonly number[]; most?: number; tail?: number };
+  wrap?: { width: number; size: number; stretch: number; atLeast?: readonly number[]; own?: { counts: readonly number[]; width: number }; most?: number; tail?: number; breakAt?: number };
 }
 
 export interface LiquidGlyph extends PlacedGlyph {
@@ -263,8 +269,9 @@ export function liquidLayout(paragraphs: Paragraph[], spec: LiquidSpec): LiquidL
   const descent = Math.max(...metrics.map((m) => (spec.upper ? 0.05 : m.descent)));
   const space = Math.max(...metrics.map((m) => m.space)) * 0.62;
   // A word wider than the box at the smallest size is broken between
-  // letters, as a word too long for a line is anywhere else.
-  const most = spec.box.w / spec.minSize;
+  // letters, as a word too long for a line is anywhere else; as a text box,
+  // where the style broke it (`breakAt`, in em), whatever the box's width.
+  const most = spec.wrap ? (spec.wrap.breakAt ?? Infinity) : spec.box.w / spec.minSize;
   const typed = paragraphs.map((p) => p.flatMap((w) => breakWord(letters(w, spec), most, spec.tracking)));
   if (!typed.some((p) => p.length)) return { glyphs: [], missing: [], floors: [], sizes: [], size: 0, stretch: 1, widest: 0, block: 0, counts: [], most: spec.maxSize };
 
@@ -289,11 +296,18 @@ export function liquidLayout(paragraphs: Paragraph[], spec: LiquidSpec): LiquidL
   // Wrapped to a width: each typed line into the fewest lines that fit it at the size held, each then sized to the widest.
   let best: ReturnType<typeof fit> | null = null;
   if (spec.wrap) {
-    const { width, size, atLeast } = spec.wrap;
+    const { width, size, atLeast, own } = spec.wrap;
+    const partsOf = (words: Word[], n: number) => partition(words.map((w) => w.width), space, n).map((ids) => ids.map((i) => words[i]));
+    const fewest = (words: Word[], measure: number) => {
+      for (let n = 1; n <= words.length; n += 1) if (Math.max(...partsOf(words, n).map(lineWidth)) * size <= measure + 1e-6) return n;
+      return words.length;
+    };
     const lines = typed.flatMap((words, pi) => {
       if (!words.length) return [];
-      for (let n = Math.min(words.length, Math.max(1, atLeast?.[pi] ?? 1)); n <= words.length; n += 1) {
-        const parts = partition(words.map((w) => w.width), space, n).map((ids) => ids.map((i) => words[i]));
+      let least = atLeast?.[pi] ?? 1;
+      if (own && own.counts[pi] !== undefined) least = Math.min(least, fewest(words, width) + Math.max(0, own.counts[pi] - fewest(words, own.width)));
+      for (let n = Math.min(words.length, Math.max(1, least)); n <= words.length; n += 1) {
+        const parts = partsOf(words, n);
         if (Math.max(...parts.map(lineWidth)) * size <= width + 1e-6) return parts;
       }
       return words.map((w) => [w]);

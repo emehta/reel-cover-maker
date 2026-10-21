@@ -3083,11 +3083,11 @@ console.log("placing");
         if (!style.startsWith("pasty")) {
           assert.equal(letters(wide), letters(own), `${style} "${title}": a word lost, wide`);
           assert.equal(letters(narrow), letters(own), `${style} "${title}": a word lost, narrow`);
-          if (style === "stickery") {
-            // Stickery's funky word keeps its size; a plain line is set, as Stickery sets it, to run about the funky word's width.
-            const funky = (sc) => textOps(sc).filter((op) => !op.face.startsWith("plain-")).map((op) => op.size.toFixed(6));
-            assert.deepEqual(funky(wide), funky(own), `${style} "${title}": the funky word resized`);
-          } else assert.deepEqual(shape(wide).sizes, shape(own).sizes, `${style} "${title}": letters resized, wide`);
+          // Every letter a size the style set it at: Stickery's plain lines each keep the size of the line in their place.
+          for (const [sc, how] of [[wide, "wide"], [narrow, "narrow"]]) {
+            const sizes = new Set(shape(own).sizes);
+            assert.ok(shape(sc).sizes.every((v) => sizes.has(v)), `${style} "${title}": letters resized, ${how}: ${shape(sc).sizes} not of ${[...sizes]}`);
+          }
         }
         // The box is the width asked, never narrower than the widest word can go, and the words never wider than it but for that word.
         for (const sc of [wide, narrow, at(1)]) {
@@ -3095,15 +3095,19 @@ console.log("placing");
           assert.ok(sc.readable.w >= sc.wrapped.width - 1e-6, `${style} "${title}": the box narrower than it was set to`);
         }
         assert.ok(near(at(1).wrapped.width, at(1).wrapped.min, 1e-6), `${style} "${title}": wrapped narrower than its widest word`);
-        // Taller than the cover, it is made smaller to fit: never off its top and bottom.
-        assert.ok(at(1).readable.h <= 1920 + 1, `${style} "${title}": ${at(1).readable.h} tall`);
+        // As wide as it is pulled, past the cover too (the owner, 21 Oct: as in Illustrator), its words inside it.
+        for (const width of [own.wrapRef.width * 3, 5000]) {
+          const sc = at(width);
+          assert.ok(near(sc.wrapped.width, width, 1e-6), `${style} "${title}": held to ${sc.wrapped.width} of ${width}`);
+          assert.ok(near(sc.readable.w, width, 1), `${style} "${title}": ${sc.readable.w} wide in a box ${width} wide`);
+        }
         // The scene placed as it is (a text box, not moved) is drawn as it is.
         assert.equal(S.placeScene(wide, { ...PL.HOME, wrap: 999 }), wide);
       }
     }
   });
 
-  check("a text box never jumps on the first move of a drag, and never leaves the cover however narrow or wide it is or however much is typed into it", () => {
+  check("a text box never jumps on the first move of a drag, and however narrow or wide it is pulled or however much is typed into it, its words are inside it, at the size they were", () => {
     /** Where every word, sticker and bead is drawn, and the box round them. */
     const marks = (scene) => {
       const out = [];
@@ -3144,10 +3148,15 @@ console.log("placing");
           const at = cover(title, style, "reel", { ...extra, wrap: { width: own.wrapRef.width, ref: own.wrapRef } });
           assert.ok(same(marks(at), marks(own)), `${style} "${title}": moved at its own width`);
         }
-        // More typed in, at the size it was, from a box a pixel wide to one past the cover: on the cover.
-        for (const width of [1, own.wrapRef.width * 0.5, own.wrapRef.width * 2, 5000]) {
-          const r = cover(title + " and a few more words typed in", style, "reel", { ...extra, wrap: { width, ref: own.wrapRef } }).readable;
-          assert.ok(r.w <= 1080 + 1 && r.h <= 1920 + 1 && Number.isFinite(r.w + r.h), `${style} "${title}" at ${Math.round(width)}: ${r.w}x${r.h}`);
+        // Pulled a pixel at a time either way, then much further, and typed into at each: the box follows, as wide as asked
+        // (never narrower than a word a line), every word inside it.
+        for (const typed of ["", " and a few more words typed in"]) {
+          for (const width of [own.wrapRef.width - 1, own.wrapRef.width + 1, 1, own.wrapRef.width * 0.5, own.wrapRef.width * 0.8, own.wrapRef.width * 1.3, own.wrapRef.width * 2, 5000]) {
+            const sc = cover(title + typed, style, "reel", { ...extra, wrap: { width, ref: own.wrapRef } });
+            const r = sc.readable;
+            assert.ok(Number.isFinite(r.w + r.h) && near(sc.wrapped.width, Math.max(width, sc.wrapped.min), 1e-6), `${style} "${title + typed}" at ${Math.round(width)}: box ${sc.wrapped.width}`);
+            assert.ok(r.w <= sc.wrapped.width + 1, `${style} "${title + typed}" at ${Math.round(width)}: ${Math.round(r.w)} wide in a box ${Math.round(sc.wrapped.width)} wide`);
+          }
         }
       }
     }
@@ -3167,6 +3176,31 @@ console.log("placing");
       }
       assert.ok(last < lines(own), `${style}: never fewer lines, however wide`);
     }
+    // The owner's two covers (21 Oct): pulled out, the box goes on past the cover and the words join up; pushed in, they wrap, never smaller.
+    {
+      // The words themselves, not Echo's outlined repeats.
+      const words = (sc) => textOps(sc).filter((op) => !op.outline);
+      const lines = (sc) => new Set(words(sc).map((op) => Math.round(op.y / 8))).size;
+      const sizes = (sc) => new Set(words(sc).map((op) => op.size.toFixed(6)));
+      for (const [title, style, extra] of [["Maybe *not so* sweet after all", "stickery", { lettering: "damion" }], ["MAYBE *not so* SWEET AFTER ALL", "renaissance", { renaissanceLook: "summertime" }], ["Type your *title*", "echo", {}]]) {
+        const own = cover(title, style, "reel", extra);
+        const at = (k) => cover(title, style, "reel", { ...extra, wrap: { width: own.wrapRef.width * k, ref: own.wrapRef } });
+        const ownSizes = sizes(own);
+        let last = lines(own);
+        for (const k of [1.25, 1.6, 2, 3, 4]) {
+          const sc = at(k);
+          assert.ok(near(sc.wrapped.width, own.wrapRef.width * k, 1e-6), `${style}: held at ${sc.wrapped.width}`);
+          assert.ok([...sizes(sc)].every((v) => ownSizes.has(v)), `${style}: letters resized at ${k}`);
+          assert.ok(lines(sc) <= last, `${style}: more lines wider`);
+          last = lines(sc);
+        }
+        if (style !== "stickery") assert.ok(last < lines(own), `${style}: never fewer lines, however wide`);
+        const narrow = at(0.5);
+        assert.ok([...sizes(narrow)].every((v) => ownSizes.has(v)), `${style}: letters resized narrow`);
+        // Stickery's "sweet after all" goes onto two lines, and its funky words too; the others are a word a line already.
+        assert.ok(style === "stickery" ? lines(narrow) > lines(own) : lines(narrow) >= lines(own), `${style}: fewer lines, narrower`);
+      }
+    }
     // A Renaissance title all in script is no text box: it is set as it is set, whatever is asked.
     const script = cover("*all of it script*", "renaissance", "reel");
     assert.equal(script.wrapRef, undefined);
@@ -3185,9 +3219,9 @@ console.log("placing");
     const boxed = cover("rate my setup and my desk", "inkblot", "reel", { wrap: { width: 1000, ref } });
     assert.ok(boxed.readable.h < 1920, "the box made too tall to hold");
     assert.ok(textOps(boxed).concat(boxed.ops.filter((op) => op.kind === "ink")).every((op) => near(op.size, short.wrapRef.size, 1e-6)), "typed into, its letters changed size");
-    // Too narrow for the cover's height, its letters are made smaller only so far as to fit it.
+    // Narrow, its letters still the size they were, however tall that makes it.
     const tall = cover("rate my setup and my desk", "inkblot", "reel", { wrap: { width: 300, ref } });
-    assert.ok(tall.readable.h <= 1920 + 1e-6);
+    assert.ok(textOps(tall).concat(tall.ops.filter((op) => op.kind === "ink")).every((op) => near(op.size, short.wrapRef.size, 1e-6)), "narrowed, its letters changed size");
     // Another type keeps nothing of it.
     assert.equal(S.textBoxRef(long.wrapRef, kept, S.wrapTypeOf({ style: "echo" })), long.wrapRef);
     assert.notEqual(S.wrapTypeOf({ style: "stickery", lettering: "goo" }), S.wrapTypeOf({ style: "stickery", lettering: "yesteryear" }));

@@ -251,12 +251,9 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     const wrapped = latest.current.wrapBox(g.from.wrap ?? g.rect.w);
     // Nothing to wrap (no words): the side scales, keeping the shape.
     if (!wrapped) return show(dragHandle(g.rect, g.from, g, p, { keep: true, fromMiddle: keys.altKey }));
-    // Never narrower than its widest word, never wider than the cover lets it run, the way the box is turned, at its scale.
-    const cos = Math.abs(Math.cos(g.from.angle));
-    const sin = Math.abs(Math.sin(g.from.angle));
-    const most = Math.min(cos > 1e-6 ? width / cos : Infinity, sin > 1e-6 ? height / sin : Infinity) / Math.max(1e-6, Math.abs(g.from.sx));
+    // Never narrower than its widest word; as wide as it is pulled, past the cover's edge too (the owner, 21 Oct: as in Illustrator).
     const at = (w: number) => latest.current.wrapBox(w)?.box ?? g.rect;
-    show(wrapTo(g.rect, g.from, g, p, at, { fromMiddle: keys.altKey, least: wrapped.min, most }));
+    show(wrapTo(g.rect, g.from, g, p, at, { fromMiddle: keys.altKey, least: wrapped.min }));
   };
 
   // A key pressed or let go mid-drag changes what the handle does at once, without waiting for the pointer to move.
