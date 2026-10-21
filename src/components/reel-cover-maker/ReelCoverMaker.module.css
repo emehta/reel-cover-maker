@@ -104,8 +104,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px
-    max(20px, env(safe-area-inset-left));
+  /* In line with the cards' edges under it. */
+  padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 12px
+    max(14px, env(safe-area-inset-left));
 }
 
 .title {
@@ -165,8 +166,10 @@
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.save:hover {
-  opacity: 0.88;
+@media (hover: hover) {
+  .save:hover {
+    opacity: 0.88;
+  }
 }
 
 .save:active {
@@ -241,11 +244,8 @@
   white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.exportButton:hover {
-  opacity: 0.9;
+  /* One colour whatever happens (the owner, 21 Oct: it faded in and out at every change): pressed, it only moves down a pixel. */
+  transition: transform 0.15s ease;
 }
 
 .exportButton:active {
@@ -275,8 +275,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* What it makes, in a small tag at its end. */
+/* What it makes, in a small tag at its end; Stop while a video is made, in the same capitals, on the button's own colour so it reads over the part still to make. */
+.exportButton[data-making] .exportKind {
+  background: color-mix(in srgb, var(--rcm-primary) 85%, transparent);
+}
+
 .exportKind {
+  text-transform: uppercase;
   display: inline-grid;
   place-items: center;
   height: var(--rcm-h-mini);
@@ -298,22 +303,25 @@
   height: var(--rcm-h-button);
   margin: 0;
   padding: 0 16px;
-  border: 0;
+  border: 1px solid var(--rcm-line);
   border-radius: var(--rcm-r-button);
-  background: transparent;
+  /* The page's one secondary button: as Upload and Take photo are. */
+  background: var(--rcm-surface);
   color: var(--rcm-text);
-  box-shadow: inset 0 0 0 1px var(--rcm-line-strong);
+  box-shadow: var(--rcm-lift);
   font: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
-.quietButton:hover {
-  background: var(--rcm-inset);
+@media (hover: hover) {
+  .quietButton:hover {
+    border-color: var(--rcm-line-strong);
+  }
 }
 
 .quietButton:focus-visible {
@@ -491,9 +499,10 @@
   pointer-events: none;
 }
 
+/* The page's one blue, its focus colour's: the box, its handles and the hover outline. */
 .selection {
   fill: none;
-  stroke: #3b82f6;
+  stroke: var(--rcm-focus);
   stroke-width: 1.5px;
   vector-effect: non-scaling-stroke;
 }
@@ -501,7 +510,7 @@
 .handle,
 .turnHandle {
   fill: #ffffff;
-  stroke: #3b82f6;
+  stroke: var(--rcm-focus);
   stroke-width: 1.5px;
   vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
@@ -510,7 +519,7 @@
 /* The text under the pointer, before it is selected: it can be. */
 .hoverBox {
   fill: none;
-  stroke: #3b82f6;
+  stroke: var(--rcm-focus);
   stroke-opacity: 0.7;
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
@@ -895,7 +904,8 @@
   padding: 4px;
   border-radius: var(--rcm-r-card);
   background: var(--rcm-card);
-  box-shadow: 0 0 0 1px var(--rcm-card-line), 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 18px rgba(0, 0, 0, 0.06);
+  /* Lifted as the panels are, in either mode. */
+  box-shadow: 0 0 0 1px var(--rcm-card-line), var(--rcm-card-shadow);
 }
 
 .toolGroup:first-child {
@@ -953,8 +963,10 @@
   transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
-.tool:hover:not(:disabled) {
-  background: var(--rcm-inset);
+@media (hover: hover) {
+  .tool:hover:not(:disabled) {
+    background: var(--rcm-inset);
+  }
 }
 
 .tool:active:not(:disabled) {
@@ -973,11 +985,11 @@
   color: var(--rcm-card);
 }
 
-/* A button's name, shown by it on a pointer's hover (or a key's focus), after a moment: the bar is icons. */
+/* A button's name, shown above it on a pointer's hover (or a key's focus), after a moment: the bar is icons. Above, never below (the owner's rule): below, it fell over the cover. */
 .tip::after {
   content: attr(data-tip);
   position: absolute;
-  top: calc(100% + 8px);
+  bottom: calc(100% + 8px);
   left: 50%;
   z-index: 30;
   padding: 5px 8px;
@@ -992,7 +1004,7 @@
   white-space: pre;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, -3px);
+  transform: translate(-50%, 3px);
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
@@ -1009,54 +1021,87 @@
   transform: translate(-50%, 0);
 }
 
-/* At either end of the row, and by the header's edge, a name runs inward from its button, so it never runs off a narrow window. */
+/* At either end of the row a name runs inward from its button, so it never runs off a narrow window. */
 .toolGroup:first-child > .tool.tip:first-child::after {
   left: 0;
-  transform: translate(0, -3px);
+  transform: translate(0, 3px);
 }
 
 .toolGroup:last-child > .tool.tip:last-child::after,
-.helpButton.tip::after {
+.copyHex.tip::after {
   left: auto;
   right: 0;
-  transform: translate(0, -3px);
+  transform: translate(0, 3px);
+}
+
+/* The header's ? has no room above it: its name opens to its left. */
+.helpButton.tip::after {
+  top: 50%;
+  bottom: auto;
+  left: auto;
+  right: calc(100% + 8px);
+  transform: translate(3px, -50%);
 }
 
 @media (hover: hover) {
   .toolGroup:first-child > .tool.tip:first-child:hover::after,
   .toolGroup:last-child > .tool.tip:last-child:hover::after,
-  .helpButton.tip:hover::after {
+  .copyHex.tip:hover::after {
     transform: none;
+  }
+
+  .helpButton.tip:hover::after {
+    transform: translate(0, -50%);
   }
 }
 
 .toolGroup:first-child > .tool.tip:first-child:focus-visible::after,
 .toolGroup:last-child > .tool.tip:last-child:focus-visible::after,
-.helpButton.tip:focus-visible::after {
+.copyHex.tip:focus-visible::after {
   transform: none;
+}
+
+.helpButton.tip:focus-visible::after {
+  transform: translate(0, -50%);
+}
+
+/* A button at the end of its row (the photo's camera): its name runs inward from it. */
+.tipEnd.tip::after {
+  left: auto;
+  right: 0;
+  transform: translate(0, 3px);
+}
+
+/* A button with no room above it (the photo's own, at the top of its card, which scrolls and would cut a name off): its name opens to its left. */
+.tipLeft.tip::after {
+  top: 50%;
+  bottom: auto;
+  left: auto;
+  right: calc(100% + 8px);
+  transform: translate(3px, -50%);
+}
+
+@media (hover: hover) {
+  .tipEnd.tip:hover::after {
+    transform: none;
+  }
+
+  .tipLeft.tip:hover::after {
+    transform: translate(0, -50%);
+  }
+}
+
+.tipEnd.tip:focus-visible::after {
+  transform: none;
+}
+
+.tipLeft.tip:focus-visible::after {
+  transform: translate(0, -50%);
 }
 
 /* Its card open, the ? needs no name. */
 .helpButton[data-open]::after {
   display: none;
-}
-
-/* The hex chip ends its row: its name runs inward too. */
-/* The copy button sits at the label row's right end: its name runs inward from it. */
-.copyHex.tip::after {
-  left: auto;
-  right: 0;
-  transform: translate(0, -3px);
-}
-
-@media (hover: hover) {
-  .copyHex.tip:hover::after {
-    transform: none;
-  }
-}
-
-.copyHex.tip:focus-visible::after {
-  transform: none;
 }
 
 /* Copied: said at once, on a touch screen too, which has no hover to show it. */
@@ -1080,7 +1125,7 @@
 /* The size's pixels beside its label: quieter than the label, in plain case. */
 .dims {
   margin-left: 6px;
-  color: var(--rcm-faint);
+  color: var(--rcm-muted);
   font-size: 12px;
   font-weight: 550;
   letter-spacing: 0;
@@ -1116,7 +1161,7 @@
   width: 18px;
   height: 18px;
   border: 1.5px solid var(--rcm-line-strong);
-  border-radius: 3px;
+  border-radius: var(--rcm-r-mini);
   background: var(--rcm-surface);
   color: transparent;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
@@ -1151,13 +1196,12 @@
   grid-column: 1 / -1;
 }
 
+/* Set by the style, not chosen: its name in its own type, as tall as a dropdown so nothing moves, but with no box, which made it read as a dropdown that would not open. */
 .fixedFace {
   display: flex;
   align-items: center;
   height: var(--rcm-h-field);
-  padding: 0 14px;
-  border-radius: var(--rcm-r-field);
-  background: var(--rcm-inset);
+  padding: 0;
   color: var(--rcm-text);
   white-space: nowrap;
   overflow: hidden;
@@ -1221,18 +1265,17 @@
   tab-size: 4;
 }
 
+/* One height whatever is typed, so nothing under it moves as a title grows: a longer one scrolls inside it. */
 .input {
   display: block;
   width: 100%;
-  min-height: 96px;
-  max-height: 200px;
+  height: 96px;
   border-color: var(--rcm-line);
   background: var(--rcm-surface);
   color: transparent;
   -webkit-text-fill-color: transparent;
   caret-color: var(--rcm-text);
   resize: none;
-  field-sizing: content;
   scrollbar-width: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -1256,10 +1299,10 @@
   -webkit-text-fill-color: transparent;
 }
 
+/* Its border, as every other control marks its focus: no glow round the one field the page opens on. */
 .input:focus {
   border-color: var(--rcm-focus);
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rcm-focus) 18%, transparent);
 }
 
 .mirror {
@@ -1306,14 +1349,16 @@
   align-items: center;
   gap: 7px;
   box-sizing: border-box;
-  width: 102px;
+  width: 101px;
   height: var(--rcm-h-mini);
-  padding: 0 7px 0 4px;
+  padding: 0 8px;
   border-radius: var(--rcm-r-mini);
 }
 
+/* Its fill as far either side of the chip and the code: what is left over shared between them. */
 .hexEdit {
   appearance: none;
+  justify-content: center;
   border: 0;
   background: transparent;
   color: var(--rcm-text);
@@ -1370,7 +1415,8 @@
   border: 0;
   border-radius: var(--rcm-r-mini);
   background: transparent;
-  color: var(--rcm-faint);
+  /* Muted, as a working control is: the faint grey is what a disabled one is drawn in. */
+  color: var(--rcm-muted);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background-color 0.15s ease, color 0.15s ease;
@@ -1391,7 +1437,8 @@
   height: 20px;
   flex: none;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
+  /* A ring strong enough that a colour as dark (or as light) as the card behind it still shows. */
+  box-shadow: inset 0 0 0 1px var(--rcm-line-strong);
 }
 
 .hex {
@@ -1477,25 +1524,24 @@
 }
 
 .shortcut dt {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   margin: 0;
   font-weight: 550;
-}
-
-.shortcutNote {
-  color: var(--rcm-muted);
-  font-size: 12px;
-  font-weight: 450;
-  line-height: 1.35;
 }
 
 .shortcut dd {
   display: flex;
   flex: none;
+  align-items: center;
   gap: 4px;
   margin: 0;
+}
+
+/* What is done with the keys, in words beside them: a drag is a pointer's, not a key. */
+.shortcutWords {
+  color: var(--rcm-muted);
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
 }
 
 .shortcut kbd {
@@ -1504,7 +1550,7 @@
   min-width: 24px;
   height: 22px;
   padding: 0 6px;
-  border-radius: 3px;
+  border-radius: var(--rcm-r-mini);
   background: var(--rcm-inset);
   box-shadow: inset 0 -1px 0 var(--rcm-line);
   color: var(--rcm-text);
@@ -1545,14 +1591,17 @@
  * cover's own shape, all seven in one row as wide as they fit and never
  * wider, so there is never anything to scroll.
  */
+/* As tall for every size, a tile and its name, the names on one line at the foot: a wider size's tiles come out shorter where the row is full, and the cover above must not move for it. */
 .styles {
   flex: none;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, calc(var(--rcm-tile-h) * var(--rcm-ratio-n))));
   justify-content: center;
-  align-items: start;
+  align-content: end;
+  align-items: end;
   gap: 10px;
   width: 100%;
+  height: calc(var(--rcm-tile-h) + 32.5px);
   padding: 4px;
 }
 
@@ -1600,10 +1649,13 @@
   box-shadow: 0 0 0 2px var(--rcm-bg), 0 0 0 4px var(--rcm-focus);
 }
 
+/* Each name may run into half the gap either side, so the longest (Renaissance) is whole at every width. */
 .styleName {
+  margin: 0 -5px;
   overflow: hidden;
   color: var(--rcm-muted);
   font-size: 12.5px;
+  line-height: 1.4;
   font-weight: 600;
   text-align: center;
   text-overflow: ellipsis;
@@ -1631,6 +1683,11 @@
   .sliders[data-resting]:hover {
     opacity: 0.7;
   }
+}
+
+/* Reached by a key, wholly there: a focus ring at 40% reads as no ring. */
+.sliders[data-resting]:focus-within {
+  opacity: 1;
 }
 
 /* A slider is its own track: the colours it runs through, under a round thumb. */
@@ -1698,6 +1755,11 @@
   background: var(--rcm-inset);
 }
 
+/* Choices of different lengths (Auto, Black, White, Colour with its swatch): each as wide as it is, and what is left shared, so the longest is not cramped. */
+.segments[data-fit] {
+  grid-template-columns: repeat(var(--rcm-segments, 3), auto);
+}
+
 .segment {
   position: relative;
   display: flex;
@@ -1716,8 +1778,10 @@
   transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.segment:hover {
-  color: var(--rcm-text);
+@media (hover: hover) {
+  .segment:hover {
+    color: var(--rcm-text);
+  }
 }
 
 .segment:has(.radio:checked) {
@@ -1745,7 +1809,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
+  box-shadow: inset 0 0 0 1px var(--rcm-line-strong);
 }
 
 .dropdown {
@@ -1753,6 +1817,13 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+
+/* Its label as tall as every other field's label row, so the fields keep one rhythm down the card. */
+.dropdown > .label {
+  display: flex;
+  align-items: center;
+  min-height: var(--rcm-h-mini);
 }
 
 .dropdownButton {
@@ -1777,8 +1848,10 @@
   transition: border-color 0.15s ease;
 }
 
-.dropdownButton:hover {
-  border-color: var(--rcm-line-strong);
+@media (hover: hover) {
+  .dropdownButton:hover {
+    border-color: var(--rcm-line-strong);
+  }
 }
 
 .dropdownButton[aria-expanded="true"] {
@@ -1818,7 +1891,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   list-style: none;
-  border-radius: 7px;
+  border-radius: var(--rcm-r-card);
   background: var(--rcm-surface);
   box-shadow: var(--rcm-pop);
   outline: none;
@@ -1922,8 +1995,10 @@
   transition: border-color 0.15s ease;
 }
 
-.photoButton:hover {
-  border-color: var(--rcm-line-strong);
+@media (hover: hover) {
+  .photoButton:hover {
+    border-color: var(--rcm-line-strong);
+  }
 }
 
 .photoPicture {
@@ -1944,6 +2019,7 @@
 
 .glassButton {
   appearance: none;
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2198,15 +2274,16 @@
 
 .cameraClose,
 .cameraRound {
+  position: relative;
   appearance: none;
   display: inline-grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: var(--rcm-h-button);
+  height: var(--rcm-h-button);
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: var(--rcm-r-card);
+  border-radius: var(--rcm-r-button);
   background: rgba(255, 255, 255, 0.14);
   color: #f2f1ee;
   cursor: pointer;
@@ -2231,6 +2308,7 @@
 }
 
 .shutter {
+  position: relative;
   appearance: none;
   display: inline-grid;
   place-items: center;
@@ -2313,13 +2391,25 @@
 .animateClose.tip::after {
   left: auto;
   right: 0;
-  transform: translate(0, -3px);
+  transform: translate(0, 3px);
 }
 
+@media (hover: hover) {
+  .animateClose.tip:hover::after {
+    transform: none;
+  }
+}
+
+.animateClose.tip:focus-visible::after {
+  transform: none;
+}
+
+/* Its 4px of room for the chosen tile's ring taken from the card's padding, so the tiles line up with the title and Save. */
 .animateTiles {
   display: grid;
   grid-template-columns: repeat(var(--rcm-count, 3), minmax(0, 1fr));
   gap: 16px;
+  margin: 0 -4px;
   padding: 4px;
 }
 
@@ -2422,8 +2512,10 @@
   z-index: 1;
 }
 
+/* Held a little after the track, as Speed is before it: room for "0.75×" without the figure floating off at the end. */
 .speed .value {
   min-width: 42px;
+  text-align: left;
 }
 
 .animateButtons {
@@ -2487,9 +2579,10 @@
 /*
  * Three columns on a window of a laptop's height: the photo's card drawn a
  * little closer, so Dim and Export below it both show without scrolling
- * the card (measured 7 Oct: 41 pixels over at 808 tall).
+ * the card (measured 7 Oct: 41 pixels over at 808 tall; 21 Oct: the
+ * roomier card fits from 860 tall, so only under that).
  */
-@media (min-width: 1200px) and (max-height: 900px) {
+@media (min-width: 1200px) and (max-height: 859.98px) {
   .photoPanel {
     gap: 16px;
   }
@@ -2510,6 +2603,13 @@
     padding-top: 14px;
     padding-bottom: 16px;
     margin-bottom: -18px;
+  }
+}
+
+/* Shorter still (a laptop with a bar of bookmarks, about 760 tall): the photo a little lower. */
+@media (min-width: 1200px) and (max-height: 779.98px) {
+  .photoSlot {
+    height: 108px;
   }
 }
 
@@ -2558,13 +2658,14 @@
     padding-bottom: 96px;
   }
 
+  /* A pixel wider than the column either side, over the cards' rings, and inset as a card's controls are, so the button lines up with them. */
   .exportBar {
     position: fixed;
     bottom: 0;
-    left: max(14px, env(safe-area-inset-left));
-    width: 316px;
+    left: calc(max(14px, env(safe-area-inset-left)) - 1px);
+    width: 318px;
     margin: 0;
-    padding: 22px 0 max(14px, env(safe-area-inset-bottom));
+    padding: 22px 19px max(14px, env(safe-area-inset-bottom));
     border: 0;
     border-radius: 0;
     background: linear-gradient(to bottom, transparent, var(--rcm-bg) 22px);
@@ -2582,8 +2683,8 @@
 /* A phone or a narrow window: the cover, then the words' card, then the photo's, the page scrolling. */
 @media (max-width: 899.98px) {
   .header {
-    padding-left: max(16px, env(safe-area-inset-left));
-    padding-right: max(16px, env(safe-area-inset-right));
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
   }
 
   .main {
@@ -2640,6 +2741,7 @@
   .styles {
     grid-template-columns: repeat(8, minmax(0, calc(var(--rcm-tile-h) * var(--rcm-ratio-n) / 2)));
     row-gap: 12px;
+    height: auto;
   }
 
   .style {

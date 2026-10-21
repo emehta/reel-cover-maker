@@ -59,13 +59,13 @@ export function PhotoControls({ thumb, frame, adjust, onFile, onCamera, onRemove
           </span>
           {has && (
             <span className={styles.photoActions} role="group" aria-labelledby={`${id}-label`}>
-              <button type="button" className={styles.smallIcon} aria-pressed={frame.flip} onClick={() => onFrame({ ...frame, flip: !frame.flip })} title="Mirror" aria-label="Mirror the photo">
+              <button type="button" className={`${styles.smallIcon} ${styles.tip} ${styles.tipLeft}`} aria-pressed={frame.flip} onClick={() => onFrame({ ...frame, flip: !frame.flip })} data-tip="Mirror" aria-label="Mirror the photo">
                 <FlipHorizontal size={16} weight="bold" />
               </button>
-              <button type="button" className={styles.smallIcon} onClick={() => onFrame({ ...DEFAULT_FRAME, flip: frame.flip })} disabled={!framed} title="Fit the whole photo" aria-label="Fit the whole photo again">
+              <button type="button" className={`${styles.smallIcon} ${styles.tip} ${styles.tipLeft}`} onClick={() => onFrame({ ...DEFAULT_FRAME, flip: frame.flip })} disabled={!framed} data-tip="Fit" aria-label="Fit the whole photo again">
                 <CornersIn size={16} weight="bold" />
               </button>
-              <button type="button" className={`${styles.smallIcon} ${styles.danger}`} onClick={onRemove} title="Remove" aria-label="Remove the photo">
+              <button type="button" className={`${styles.smallIcon} ${styles.danger} ${styles.tip} ${styles.tipLeft}`} onClick={onRemove} data-tip="Remove" aria-label="Remove the photo">
                 <Trash size={16} weight="bold" />
               </button>
             </span>
@@ -104,17 +104,17 @@ export function PhotoControls({ thumb, frame, adjust, onFile, onCamera, onRemove
               <img className={styles.photoPicture} src={thumb} alt="The photo behind the cover" style={frame.flip ? { transform: "scaleX(-1)" } : undefined} />
               <span className={styles.photoOver}>
                 <button type="button" className={styles.glassButton} onClick={upload}>
-                  <UploadSimple size={15} weight="bold" aria-hidden="true" />
+                  <UploadSimple size={16} weight="bold" aria-hidden="true" />
                   Replace
                 </button>
-                <button type="button" className={styles.glassButton} onClick={camera} aria-label="Take a new photo" title="Take a new photo">
-                  <CameraIcon size={15} weight="bold" aria-hidden="true" />
+                <button type="button" className={`${styles.glassButton} ${styles.tip} ${styles.tipEnd}`} onClick={camera} aria-label="Take a new photo" data-tip="Take a new photo">
+                  <CameraIcon size={16} weight="bold" aria-hidden="true" />
                 </button>
               </span>
             </>
           ) : (
             <span className={styles.photoAdd}>
-              <ImageIcon size={26} weight="duotone" aria-hidden="true" className={styles.photoAddIcon} />
+              <ImageIcon size={26} weight="bold" aria-hidden="true" className={styles.photoAddIcon} />
               <span className={styles.photoAddButtons}>
                 <button type="button" className={styles.photoButton} onClick={upload}>
                   <UploadSimple size={16} weight="bold" aria-hidden="true" />
@@ -161,7 +161,7 @@ export function PhotoControls({ thumb, frame, adjust, onFile, onCamera, onRemove
         </div>
         <div className={styles.adjustList} role="group" aria-labelledby={`${id}-adjust`}>
           {ADJUSTMENTS.map((a) => (
-            <label key={a.key} className={styles.adjustRow} data-off={!has || undefined} title={has ? "Double-click to reset" : undefined}>
+            <label key={a.key} className={styles.adjustRow} data-off={!has || undefined}>
               <span className={styles.adjustName}>{a.name}</span>
               <span className={styles.value}>{adjustLabel(a.key, adjust[a.key])}</span>
               <input

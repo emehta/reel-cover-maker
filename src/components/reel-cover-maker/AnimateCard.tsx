@@ -137,7 +137,19 @@ function Tile({ option, picked, onPick, onChoose, request, speed, target, still,
   const paste = usePaste(request, target);
   return (
     <label className={styles.animTile} onDoubleClick={onChoose}>
-      <input type="radio" name="rcm-animation" className={styles.radio} checked={picked} onChange={onPick} />
+      {/* Enter chooses the one with the keys' focus, as a double click does. */}
+      <input
+        type="radio"
+        name="rcm-animation"
+        className={styles.radio}
+        checked={picked}
+        onChange={onPick}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          onChoose();
+        }}
+      />
       <span className={styles.animPreview} data-clear={clear || undefined} data-ground={ground} aria-busy={!paste}>
         {request && paste ? <PlayCanvas request={request} speed={speed} paste={paste} target={target} className={styles.thumbCanvas} /> : still}
       </span>

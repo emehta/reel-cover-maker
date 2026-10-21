@@ -144,9 +144,11 @@ npm run build   # the static site, in out/
   `convertStars`.
 - **One undo for the whole cover** (`history.ts`): every `update` is a
   step unless told otherwise (a photo taken, which undo cannot bring back,
-  seals instead), runs of the same fields within 800 ms are one step, and
-  Cmd+Z in the Text field is this undo too (the browser's own would bring
-  back text without its bold).
+  seals instead), runs of the same fields within 800 ms are one step (a
+  slider dragged, a word typed), a press of a button or a choice made is
+  always a step of its own (`update(change, "alone")`: three shuffles in a
+  second are three undos), and Cmd+Z in the Text field is this undo too
+  (the browser's own would bring back text without its bold).
 - **Spread is gone, with all of its own** (the collage, square knife ends,
   Hershey Sans and its package), at the owner's ask of 7 Oct, and so is the
   matte knife paste: Pasty Flat is the `flat` finish, one colour with no
@@ -172,7 +174,13 @@ npm run build   # the static site, in out/
   and redo at its left corner; the background (one button, the sun
   turning to the moon), Shuffle and Reset text in its middle; Animate
   and the phone view at its right corner. Icons only, with their names on
-  hover (`.tip`); a tool that cannot act is disabled, never removed.
+  hover (`.tip`), above them, never below where they fell on the cover
+  (`.tipEnd` runs inward at a row's end, `.tipLeft` opens to the left
+  where there is no room above, the header's ?); every button's name is
+  one of these, never a native `title`. A tool that cannot act is
+  disabled, never removed (Shuffle in Echo and Mono, `shuffles`). Hover
+  fills are only for a pointer that hovers (`@media (hover: hover)`), so a
+  tap never leaves one lit.
   There is no contrast warning any more (the owner's ask, 7 Oct: "I
   don't want the error message for low contrast"). A chosen segment is
   white in dark mode too, its word dark (the owner's ask, 7 Oct). From
@@ -269,12 +277,17 @@ npm run build   # the static site, in out/
   has its own worker. Measured 7 Oct: Stickery 3 to 9 s, Pasty 6 to 14 s.
   A press on Download in its first 800 ms is a double click, not a stop.
 - **Download is at the foot of the photo's card** (the owner's ask, 7 Oct:
-  "below dim"), sticky there, the card drawn closer on windows under 900
-  tall so Dim and Download both show (`@media (max-height: 900px)`); from
+  "below dim"), sticky there, the card drawn closer on windows under 860
+  tall so Dim and Download both show (measured: the roomier card fits
+  from 860), and closer again under 780; from
   900 to 1199 wide it is held at the foot of the left column, and on a
   phone at the foot of the screen. It reads Download everywhere (the
   owner, 8 Oct: not "Export"), with a tag of what it makes (PNG, MOV or
-  MP4), and Preparing and how far while a video is made.
+  MP4), and Preparing and how far while a video is made. It is never
+  disabled and never changes colour (the owner, 21 Oct: it faded in and
+  out at every change while the paste was drawn): pressed before the
+  picture is on the canvas, it saves once it is (`waitingSave`); with no
+  title typed, it puts the caret in the Text field.
 - **The phone view's posts are the owner's** (the owner's ask, 7 Oct):
   @eshaan.tm's four reels, newest first, after the cover as they would
   follow a new post, and its profile picture in the tab bar
@@ -321,8 +334,11 @@ npm run build   # the static site, in out/
   order of 20 Oct: Stickery, Renaissance, Inkblot, Pasty, Pasty Flat,
   Echo, Mono): never the profile grid's
   crop, which cut a reel cover's sides off (the owner's ask, 7 Oct), and
-  never a row that scrolls. Grid crop shows the grid's window on the
-  cover itself.
+  never a row that scrolls, the row as tall for every size so the cover
+  never moves for it. The six other styles are made from the design once
+  it has paused for `SETTLE_MS` (`settled`): made at every keystroke, they
+  cost each key about a tenth of a second. Grid crop shows the grid's
+  window on the cover itself.
 - **A style picked shows at once.** Once the picture is drawn the page
   asks for the cover in every style at full size (`ahead` in
   `liquid-client.ts`), on one of two workers, so the other is free for the
@@ -384,7 +400,10 @@ npm run build   # the static site, in out/
   A re-wrap is shown by setting the scene again at each move (`reflow` in
   the page), not by carrying the last picture.
 - **The cover is the text's canvas** (`CoverSurface`): a press on the
-  letters selects them; on a photo, only a press on their ink does (a
+  letters selects them (on a phone, a swipe up or down over the cover
+  scrolls the page until the letters are selected or a photo is there to
+  move: `touch-action: pan-y`, and a press the browser takes back for it
+  lets go of what it selected); on a photo, only a press on their ink does (a
   press between them moves the photo), and once selected the whole box
   does. The box and its handles are drawn only within the preview's stage,
   never over the controls, and a handle past the cover's edge is pressed

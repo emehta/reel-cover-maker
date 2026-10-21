@@ -45,6 +45,7 @@ import {
   liquidOps,
   PASTY_LETTERINGS,
   placeScene,
+  shuffles,
   STYLES,
   type CoverInput,
   type Scene,
@@ -75,6 +76,9 @@ const DRAFT_SCALE = 0.5;
 
 /** How long the picture must have been ready before every other style is made ahead of time. */
 const AHEAD_DELAY_MS = 120;
+
+/** How long the design must stay as it is before the other styles' thumbnails are made of it: a pause in typing. */
+const SETTLE_MS = 150;
 
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
 
@@ -439,6 +443,28 @@ export default function ReelCoverMaker() {
   const [phoneView, setPhoneView] = useState(false);
   /** The Animate card is open, to pick how the cover is animated. */
   const [animateOpen, setAnimateOpen] = useState(false);
+  const animateButton = useRef<HTMLButtonElement>(null);
+  /** Whether the last thing done was with keys: a card closed by them hands their focus back to its button. */
+  const usedKeys = useRef(false);
+  useEffect(() => {
+    const keys = () => (usedKeys.current = true);
+    const pointer = () => (usedKeys.current = false);
+    window.addEventListener("keydown", keys, true);
+    window.addEventListener("pointerdown", pointer, true);
+    return () => {
+      window.removeEventListener("keydown", keys, true);
+      window.removeEventListener("pointerdown", pointer, true);
+    };
+  }, []);
+  /**
+   * The Animate card gone: a keyboard's focus back on the button that opened
+   * it, not lost to the page. Never after a tap, where an iPhone would ring
+   * the button for it.
+   */
+  const closeAnimate = () => {
+    setAnimateOpen(false);
+    if (usedKeys.current) requestAnimationFrame(() => animateButton.current?.focus({ preventScroll: true }));
+  };
   /** How far a video being made has got, 0 to 1; null while none is. */
   const [making, setMaking] = useState<number | null>(null);
   const makingRef = useRef<{ controller: AbortController; since: number } | null>(null);
@@ -454,6 +480,8 @@ export default function ReelCoverMaker() {
   const prepared = useRef<{ key: string; file: File } | null>(null);
   /** What is on the canvas. */
   const painted = useRef<string | null>(null);
+  /** The picture Download was pressed for before it was on the canvas: saved as soon as it is, unless it has changed since. */
+  const waitingSave = useRef<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
   const undoRef = useRef<() => void>(() => {});
   const redoRef = useRef<() => void>(() => {});
@@ -468,6 +496,14 @@ export default function ReelCoverMaker() {
   /** The letters alone, drawn once a picture, to tell a press on them from one between them. */
   const inkRef = useRef<{ key: string; ctx: CanvasRenderingContext2D } | null>(null);
 
+  /** The design as it was once changes paused, for what can wait for that (the other styles' thumbnails). */
+  const [settled, setSettled] = useState(design);
+  useEffect(() => {
+    if (settled === design) return;
+    const timer = window.setTimeout(() => setSettled(design), SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [design, settled]);
+
   const filled = hasTitle(design.text);
   const title = filled ? design.text : PLACEHOLDER_TITLE;
   const format = formatById(design.format);
@@ -478,27 +514,30 @@ export default function ReelCoverMaker() {
   const apple = useSyncExternalStore(subscribeNothing, isApple, () => true);
 
   const measurer = loads >= 0 ? measurerFor(loads) : null;
-  /** Stickery's letters' colour, as picked; null for auto, each sticker's own black or white. */
-  const letterColour = textColour(design.textMode, design.textHue, design.textShade, design.textHex);
-  /** Renaissance's script's colour, as picked; null for the colour's own, when it cuts its gap in the capitals. */
-  const scriptColour = textColour(design.scriptMode, design.scriptHue, design.scriptShade, design.scriptHex);
-  const input: CoverInput = {
-    title,
-    style: design.style,
-    lettering: design.lettering,
-    plainFace: design.plainFace,
-    textColour: letterColour,
-    pastyLettering: design.pastyLettering,
-    renaissanceLook: design.renaissanceLook,
-    scriptColour,
-    hue: design.hue,
-    shade: design.shade,
-    hex: design.hex,
-    ground: design.ground,
-    format: design.format,
-    seed: design.seed,
+  /**
+   * What a design's cover is made from: its title (or the placeholder's),
+   * Stickery's letters' colour as picked (null for auto, each sticker's own
+   * black or white), Renaissance's script's (null for the colour's own,
+   * when it cuts its gap in the capitals), and the rest as they are.
+   */
+  const inputOf = (d: Design): CoverInput => ({
+    title: hasTitle(d.text) ? d.text : PLACEHOLDER_TITLE,
+    style: d.style,
+    lettering: d.lettering,
+    plainFace: d.plainFace,
+    textColour: textColour(d.textMode, d.textHue, d.textShade, d.textHex),
+    pastyLettering: d.pastyLettering,
+    renaissanceLook: d.renaissanceLook,
+    scriptColour: textColour(d.scriptMode, d.scriptHue, d.scriptShade, d.scriptHex),
+    hue: d.hue,
+    shade: d.shade,
+    hex: d.hex,
+    ground: d.ground,
+    format: d.format,
+    seed: d.seed,
     photo: photo !== null,
-  };
+  });
+  const input = inputOf(design);
   /** A text box being re-wrapped by its side, shown as it goes: the words set again at each move, which carrying the last picture cannot show. */
   const [reflow, setReflow] = useState<Place | null>(null);
   const cover = measurer ? coverFor(input, loads, reflow ?? design.place) : null;
@@ -506,8 +545,14 @@ export default function ReelCoverMaker() {
   /** Where the letters are, kept on the cover whatever its size now. */
   const place = cover?.place ?? design.place;
   const scene = cover?.scene ?? null;
-  /** The cover in every style: the thumbnails, and what is made ahead of time for each. */
-  const thumbs = measurer ? STYLES.map((style) => (style.id === design.style ? scene : coverFor({ ...input, style: style.id }, loads, design.place).scene)) : null;
+  /**
+   * The cover in every style: the thumbnails, and what is made ahead of
+   * time for each. Of the design as it was a moment ago, once it has
+   * settled: made new at every keystroke, the six other styles cost each
+   * key about a tenth of a second.
+   */
+  const thumbInput = inputOf(settled);
+  const thumbs = measurer ? STYLES.map((style) => (style.id === design.style ? scene : coverFor({ ...thumbInput, style: style.id }, loads, settled.place).scene)) : null;
   const name = fileName(design.text, design.format);
   // Drawn again when a liquid layer the preview waits on arrives.
   useSyncExternalStore(subscribeLayers, layersVersion, () => 0);
@@ -528,8 +573,8 @@ export default function ReelCoverMaker() {
     design.shade,
     design.hex,
     design.ground,
-    design.style === "stickery" ? letterColour : null,
-    design.style === "renaissance" ? [design.renaissanceLook, scriptColour] : null,
+    design.style === "stickery" ? input.textColour : null,
+    design.style === "renaissance" ? [design.renaissanceLook, input.scriptColour] : null,
     design.format,
     design.seed,
     loads,
@@ -547,10 +592,16 @@ export default function ReelCoverMaker() {
     setError(null);
   };
 
-  /** A change to the design: a step to undo, unless it is one undo cannot mean (a new photo framed whole). */
-  const update = (change: Partial<Design>, step = true) => {
+  /**
+   * A change to the design: a step to undo, unless it is one undo cannot
+   * mean (a new photo framed whole). A press of a button or a choice made
+   * (`"alone"`) is always a step of its own: three shuffles in a second are
+   * three undos, not one, as a slider dragged or a word typed is one.
+   */
+  const update = (change: Partial<Design>, step: boolean | "alone" = true) => {
     const current = designRef.current;
-    historyRef.current = step ? record(historyRef.current, current, Object.keys(change), performance.now()) : seal(historyRef.current);
+    const history = step === "alone" ? seal(historyRef.current) : historyRef.current;
+    historyRef.current = step ? record(history, current, Object.keys(change), performance.now()) : seal(history);
     show({ ...current, ...change });
   };
 
@@ -609,7 +660,7 @@ export default function ReelCoverMaker() {
   const shuffle = () => {
     let seed = design.seed;
     while (seed === design.seed) seed = Math.floor(Math.random() * 2 ** 30) + 1;
-    update({ seed });
+    update({ seed }, "alone");
   };
 
   /** The colour as shown: a hex code typed, or the sliders' own. */
@@ -617,19 +668,22 @@ export default function ReelCoverMaker() {
   /** The colour as it was when its hex code began to be typed, for Escape to put back. */
   const colourBefore = useRef<Pick<Design, "hue" | "shade" | "hex"> | null>(null);
 
+  /** A choice of mode pressed: a step of its own. A slider dragged or a hex code typed is not, so each is one step however long. */
+  const chosen = (change: TextColourChange) => change.hue === undefined && change.shade === undefined && change.hex === undefined;
+
   /**
    * A change to the text colour: every part of it named in each, so a
    * press on a resting slider and the drag after it are one step to undo.
    */
   const pickText = (change: TextColourChange) => {
     const { textMode, textHue, textShade, textHex } = designRef.current;
-    update({ textMode: change.mode ?? textMode, textHue: change.hue ?? textHue, textShade: change.shade ?? textShade, textHex: change.hex !== undefined ? change.hex : textHex });
+    update({ textMode: change.mode ?? textMode, textHue: change.hue ?? textHue, textShade: change.shade ?? textShade, textHex: change.hex !== undefined ? change.hex : textHex }, chosen(change) ? "alone" : true);
   };
 
   /** A change to Renaissance's script colour, every part of it named, as the text colour's is. */
   const pickScript = (change: TextColourChange) => {
     const { scriptMode, scriptHue, scriptShade, scriptHex } = designRef.current;
-    update({ scriptMode: change.mode ?? scriptMode, scriptHue: change.hue ?? scriptHue, scriptShade: change.shade ?? scriptShade, scriptHex: change.hex !== undefined ? change.hex : scriptHex });
+    update({ scriptMode: change.mode ?? scriptMode, scriptHue: change.hue ?? scriptHue, scriptShade: change.shade ?? scriptShade, scriptHex: change.hex !== undefined ? change.hex : scriptHex }, chosen(change) ? "alone" : true);
   };
 
   /** The animation the cover is on, picked or its style's first, whether or not it is animated. */
@@ -650,6 +704,11 @@ export default function ReelCoverMaker() {
   const paste = usePaste(playRequest, playRequest ? playTarget : null);
   /** The animation playing on the preview, once any paste it holds is made for the cover as it is now. */
   const playing = playRequest && paste ? { request: playRequest, paste } : null;
+  /** When its loop began: kept through an edit (the still cover shown while new paste is made), begun again once it stops. */
+  const playClock = useRef<number | null>(null);
+  useEffect(() => {
+    if (!playRequest) playClock.current = null;
+  });
 
   const plainFace = design.plainFace;
   const funkyFace = letteringFace(design.lettering);
@@ -842,6 +901,8 @@ export default function ReelCoverMaker() {
       paint(ctx, scene, { scale: 1, font: fontCss, grain: grain(), liquid: (op, part) => liquidLayer(op, mainTarget, part) ?? null, photo: photoForRef.current(scene) });
       painted.current = key;
       liveRef.current = null;
+      // A Download pressed while it was drawn.
+      if (waitingSave.current === key) window.setTimeout(() => saveRef.current(), 0);
     }
     if (prepared.current?.key === key) return;
     // The file waits for the picture to settle; the first one is made at once.
@@ -939,8 +1000,10 @@ export default function ReelCoverMaker() {
           setMaking(0.04 + 0.56 * ((i + 1) / times.length));
         },
       });
-      const blob = await encoder.finish((done) => setMaking(Math.max(0.6, 0.6 + 0.4 * done)));
+      // Its last few percent kept for the file itself to be put together, so it never sits at 100% with nothing come.
+      const blob = await encoder.finish((done) => setMaking(Math.max(0.6, 0.6 + 0.37 * done)));
       if (controller.signal.aborted) return;
+      setMaking(1);
       const file = new File([blob], fileTitle, { type: blob.type });
       if (method === "download") download(file);
       else setVideoFile(file);
@@ -970,10 +1033,20 @@ export default function ReelCoverMaker() {
   };
 
   const save = async () => {
+    // With nothing typed there is nothing to save: the caret goes where the title is typed.
+    if (!filled) {
+      waitingSave.current = null;
+      inputRef.current?.focus();
+      return;
+    }
     if (design.animated) return saveVideo();
     const canvas = canvasRef.current;
-    // Never the last picture: only once this one is on the canvas.
-    if (!canvas || !scene || !filled || painted.current !== key) return;
+    // Never the last picture: pressed while this one is still being drawn, it is saved once it is on the canvas.
+    if (!canvas || !scene || painted.current !== key) {
+      waitingSave.current = key;
+      return;
+    }
+    waitingSave.current = null;
     setError(null);
     const ready = prepared.current?.key === key ? prepared.current.file : null;
     try {
@@ -1032,13 +1105,6 @@ export default function ReelCoverMaker() {
   const exportKind = design.animated ? (photo ? "MP4" : "MOV") : "PNG";
   /** Download, wherever the file ends up (the owner, 8 Oct: not "Export"); a phone's share sheet saves it the same. */
   const saveLabel = "Download";
-  const exportDetail = !filled
-    ? "Type a title first"
-    : design.animated
-      ? photo
-        ? `MP4 video, ${format.width} × ${format.height}`
-        : `MOV video, ProRes 4444 with no background, ${format.width} × ${format.height}`
-      : `PNG, ${format.width} × ${format.height}${photo ? "" : ", no background"}`;
   const mod = apple ? "⌘" : "Ctrl+";
   const dark = design.ground === "dark";
 
@@ -1084,7 +1150,7 @@ export default function ReelCoverMaker() {
                     label: l.name,
                     font: l.face ? fontCss(l.face, 19) : undefined,
                   }))}
-                  onChange={(lettering) => update({ lettering })}
+                  onChange={(lettering) => update({ lettering }, "alone")}
                 />
                 <Dropdown
                   label="Plain words"
@@ -1094,7 +1160,7 @@ export default function ReelCoverMaker() {
                     label: f.name,
                     font: fontCss(f.id, 16),
                   }))}
-                  onChange={(plainFace) => update({ plainFace })}
+                  onChange={(plainFace) => update({ plainFace }, "alone")}
                 />
               </>
             ) : design.style === "renaissance" ? (
@@ -1103,14 +1169,14 @@ export default function ReelCoverMaker() {
                 label="Look"
                 value={design.renaissanceLook}
                 options={RENAISSANCE_LOOKS.map((l) => ({ value: l.id, label: l.name, font: fontCss(l.caps, 17) }))}
-                onChange={(renaissanceLook) => update({ renaissanceLook, scriptMode: lookOf(renaissanceLook).scriptMode })}
+                onChange={(renaissanceLook) => update({ renaissanceLook, scriptMode: lookOf(renaissanceLook).scriptMode }, "alone")}
               />
             ) : design.style === "pasty" || design.style === "pasty-flat" ? (
               <Dropdown
                 label="Lettering"
                 value={design.pastyLettering}
                 options={PASTY_LETTERINGS.map((l) => ({ value: l.id, label: l.name }))}
-                onChange={(pastyLettering) => update({ pastyLettering })}
+                onChange={(pastyLettering) => update({ pastyLettering }, "alone")}
               />
             ) : (
               <div className={styles.dropdown}>
@@ -1124,25 +1190,6 @@ export default function ReelCoverMaker() {
               </div>
             )}
           </div>
-
-          {/* The colour of Stickery's letters on its stickers, under its type. */}
-          {stickery && <TextColourField label="Text colour" id="rcm-text-colour" mode={design.textMode} hue={design.textHue} shade={design.textShade} hex={design.textHex} onPick={pickText} />}
-          {/* Renaissance's script: the colour's own (cutting its gap), or black, white or its own laid over the capitals. */}
-          {design.style === "renaissance" && (
-            <TextColourField
-              label="Script colour"
-              id="rcm-script-colour"
-              mode={design.scriptMode}
-              hue={design.scriptHue}
-              shade={design.scriptShade}
-              hex={design.scriptHex}
-              autoName="Same"
-              autoSwatch={hex}
-              autoColour={hex}
-              names={["Script hue", "Script shade"]}
-              onPick={pickScript}
-            />
-          )}
 
           <div className={styles.field}>
             <div className={styles.labelRow}>
@@ -1170,7 +1217,7 @@ export default function ReelCoverMaker() {
               <span className={styles.label} id="rcm-format-label">
                 Size <span className={styles.dims}>{format.width} × {format.height}</span>
               </span>
-              <label className={styles.check} title={format.grid ? "Dim what the profile grid cuts off" : "The profile grid shows a 3:4 post whole"}>
+              <label className={styles.check}>
                 <input
                   type="checkbox"
                   className={styles.radio}
@@ -1192,13 +1239,32 @@ export default function ReelCoverMaker() {
                     name="rcm-format"
                     className={styles.radio}
                     checked={design.format === f.id}
-                    onChange={() => update({ format: f.id })}
+                    onChange={() => update({ format: f.id }, "alone")}
                   />
                   {f.label}
                 </label>
               ))}
             </div>
           </div>
+
+          {/* A style's own second colour, last, so the fields above stay where they are whichever style is picked: Stickery's letters on its stickers. */}
+          {stickery && <TextColourField label="Text colour" id="rcm-text-colour" mode={design.textMode} hue={design.textHue} shade={design.textShade} hex={design.textHex} onPick={pickText} />}
+          {/* Renaissance's script: the colour's own (cutting its gap), or black, white or its own laid over the capitals. */}
+          {design.style === "renaissance" && (
+            <TextColourField
+              label="Script colour"
+              id="rcm-script-colour"
+              mode={design.scriptMode}
+              hue={design.scriptHue}
+              shade={design.scriptShade}
+              hex={design.scriptHex}
+              autoName="Same"
+              autoSwatch={hex}
+              autoColour={hex}
+              names={["Script hue", "Script shade"]}
+              onPick={pickScript}
+            />
+          )}
         </div>
 
         <section
@@ -1244,7 +1310,7 @@ export default function ReelCoverMaker() {
               <button
                 type="button"
                 className={`${styles.tool} ${styles.tip}`}
-                onClick={() => update({ ground: dark ? "light" : "dark" })}
+                onClick={() => update({ ground: dark ? "light" : "dark" }, "alone")}
                 aria-label={dark ? "Light background" : "Dark background"}
                 data-tip={dark ? "Light background" : "Dark background"}
               >
@@ -1253,19 +1319,20 @@ export default function ReelCoverMaker() {
                   <Moon className={styles.moon} size={18} weight="bold" />
                 </span>
               </button>
-              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={shuffle} aria-label="Shuffle" data-tip="Shuffle">
+              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={shuffle} disabled={!shuffles(design.style)} aria-label="Shuffle" data-tip="Shuffle">
                 <Shuffle size={18} weight="bold" aria-hidden="true" />
               </button>
-              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={() => update({ place: HOME })} disabled={isHome(place)} aria-label="Reset text" data-tip="Reset text">
+              <button type="button" className={`${styles.tool} ${styles.tip}`} onClick={() => update({ place: HOME }, "alone")} disabled={isHome(place)} aria-label="Reset text" data-tip="Reset text">
                 <ArrowCounterClockwise size={18} weight="bold" aria-hidden="true" />
               </button>
             </div>
             <div className={styles.toolGroup} role="group" aria-label="View">
               {/* Not animated: opens the card to pick how. Animated: stops it (the owner's ask, 7 Oct). */}
               <button
+                ref={animateButton}
                 type="button"
                 className={`${styles.tool} ${styles.tip}`}
-                onClick={() => (design.animated ? update({ animated: false }) : setAnimateOpen(true))}
+                onClick={() => (design.animated ? update({ animated: false }, "alone") : setAnimateOpen(true))}
                 aria-pressed={design.animated}
                 aria-haspopup={design.animated ? undefined : "dialog"}
                 aria-label="Animate"
@@ -1298,7 +1365,7 @@ export default function ReelCoverMaker() {
                 aria-label={`${format.label} preview`}
               />
               {/* The animation playing over the cover, which stays drawn under it for its file; gone while the letters are pressed, to be placed. */}
-              {playing && <PlayCanvas request={playing.request} speed={speed} paste={playing.paste} target={playTarget} className={`${styles.canvas} ${styles.motion}`} />}
+              {playing && <PlayCanvas request={playing.request} speed={speed} paste={playing.paste} target={playTarget} clock={playClock} className={`${styles.canvas} ${styles.motion}`} />}
 
               {showGrid && <GridMask format={format} />}
               {scene && base && (
@@ -1347,7 +1414,7 @@ export default function ReelCoverMaker() {
                 ground={design.ground}
                 tile={
                   playing ? (
-                    <PlayCanvas request={playing.request} speed={speed} paste={playing.paste} target={gridWindow(format, tilePixels())} className={styles.thumbCanvas} />
+                    <PlayCanvas request={playing.request} speed={speed} paste={playing.paste} target={gridWindow(format, tilePixels())} clock={playClock} className={styles.thumbCanvas} />
                   ) : (
                     <SceneCanvas scene={scene} target={gridWindow(format, tilePixels())} slot="phone" photoFor={photoFor} />
                   )
@@ -1370,7 +1437,7 @@ export default function ReelCoverMaker() {
                   name="rcm-style"
                   className={styles.radio}
                   checked={design.style === style.id}
-                  onChange={() => update({ style: style.id })}
+                  onChange={() => update({ style: style.id }, "alone")}
                 />
                 <span className={styles.thumb}>
                   <SceneCanvas scene={thumbs?.[i] ?? null} target={wholeCover(format, THUMB_WIDTH)} slot={`thumb-${style.id}`} photoFor={photoFor} />
@@ -1398,19 +1465,18 @@ export default function ReelCoverMaker() {
                   {error}
                 </p>
               )}
+              {/* Never disabled: it looks the same whatever the cover is doing (the owner, 21 Oct: it faded each time the cover was drawn again). */}
               <button
                 type="button"
                 className={styles.exportButton}
                 onClick={() => void save()}
-                disabled={making === null && (!scene || !filled || !pictureReady)}
                 aria-busy={making !== null || (filled && !pictureReady)}
                 aria-label={making !== null ? "Stop making the video" : `${saveLabel} the ${design.animated ? "video" : "cover"} as ${exportKind}`}
                 aria-keyshortcuts={apple ? "Meta+S" : "Control+S"}
                 data-making={making !== null || undefined}
                 style={{ "--rcm-made": `${Math.round((making ?? 0) * 100)}%` } as CSSProperties}
-                title={making !== null ? "Press to stop" : exportDetail}
               >
-                <DownloadSimple size={19} weight="bold" aria-hidden="true" />
+                <DownloadSimple size={18} weight="bold" aria-hidden="true" />
                 <span className={styles.exportWord}>{making !== null ? `Preparing ${Math.round(making * 100)}%` : saveLabel}</span>
                 <span className={styles.exportKind}>{making !== null ? "Stop" : exportKind}</span>
               </button>
@@ -1446,10 +1512,10 @@ export default function ReelCoverMaker() {
           clear={!photo}
           ground={design.ground}
           onSave={(id, pace) => {
-            setAnimateOpen(false);
-            update({ animated: true, animations: { ...design.animations, [design.style]: id }, animationSpeed: pace });
+            closeAnimate();
+            update({ animated: true, animations: { ...design.animations, [design.style]: id }, animationSpeed: pace }, "alone");
           }}
-          onClose={() => setAnimateOpen(false)}
+          onClose={closeAnimate}
         />
       )}
 

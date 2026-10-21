@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { frameTimes, type Plan } from "@/components/reel-cover-maker/animate";
 import { layersMade, letGo, liquidLayer } from "@/components/reel-cover-maker/liquid-client";
 import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
@@ -169,18 +169,25 @@ interface CanvasProps {
   /** The canvas it is painted on: its pixels, and the window of the picture it shows. */
   target: LiquidTarget;
   className?: string;
+  /**
+   * When the loop began, kept by whoever plays it: so the clock runs on
+   * while the canvas is gone for a moment (a change's paste being made,
+   * the still cover shown meanwhile), and two canvases of it keep time.
+   */
+  clock?: RefObject<number | null>;
 }
 
 /**
  * An animation played in a loop, painted frame by frame at the canvas's
  * own pixels: the motion, the cover held, and again. Its clock runs on
- * through a change to the cover, so a slider dragged shows the animation
- * going on rather than starting over.
+ * through a change to the cover, so a slider dragged or a word typed shows
+ * the animation going on rather than starting over.
  */
-export function PlayCanvas({ request, speed, paste, target, className }: CanvasProps) {
+export function PlayCanvas({ request, speed, paste, target, className, clock }: CanvasProps) {
   const ref = useRef<HTMLCanvasElement>(null);
   const latest = useRef(request);
-  const begun = useRef<number | null>(null);
+  const own = useRef<number | null>(null);
+  const begun = clock ?? own;
   const targetKey = [target.width, target.height, target.scale, target.origin.x, target.origin.y].join(",");
   const key = request.key;
 
@@ -235,7 +242,7 @@ export function PlayCanvas({ request, speed, paste, target, className }: CanvasP
     };
     id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
-  }, [key, speed, paste, targetKey]);
+  }, [key, speed, paste, targetKey, begun]);
 
   return <canvas ref={ref} className={className} aria-hidden="true" />;
 }

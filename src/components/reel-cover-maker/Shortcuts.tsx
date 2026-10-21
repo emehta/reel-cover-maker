@@ -52,25 +52,30 @@ export function Shortcuts({ apple, saveLabel }: Props) {
   }, [open]);
 
   const mod = apple ? "⌘" : "Ctrl+";
-  const rows: { name: string; note?: string; keys: string[] }[][] = [
+  const option = apple ? "⌥" : "Alt";
+  const command = apple ? "⌘" : "Ctrl";
+  /** Each shortcut: what it does, the keys, and what is done with them in words (a drag is a pointer's, not a key). */
+  const rows: { name: string; keys: string[]; words?: string }[][] = [
     [
-      { name: "Bold the selected words", note: "In Stickery, bold words get the funky lettering; in Renaissance, the script", keys: [`${mod}B`] },
+      { name: "Bold the selected words", keys: [`${mod}B`] },
       { name: "Undo", keys: [`${mod}Z`] },
       { name: "Redo", keys: [apple ? "⇧⌘Z" : "Ctrl+Shift+Z"] },
       { name: saveLabel, keys: [`${mod}S`] },
     ],
     [
-      { name: "Move the selected text", note: "With Shift, ten times as far", keys: ["←", "↑", "→", "↓"] },
+      { name: "Move the selected text", keys: ["←", "↑", "→", "↓"] },
+      { name: "Ten times as far", keys: ["⇧"], words: "+ an arrow" },
       { name: "Scale it", keys: ["+", "−"] },
       { name: "Turn it", keys: ["[", "]"] },
       { name: "Let go of it", keys: ["Esc"] },
     ],
     [
-      { name: "Re-wrap the words", note: "Drag a side: the left or right to a width, the top or bottom to a height", keys: ["Drag"] },
-      { name: "Scale from a side", keys: ["⇧", "Drag"] },
-      { name: "Stretch one way", keys: [apple ? "⌘" : "Ctrl", "Drag"] },
-      { name: "Stretch a corner freely", keys: ["⇧", "Drag"] },
-      { name: "From the middle", keys: [apple ? "⌥" : "Alt", "Drag"] },
+      { name: "Re-wrap the words", keys: [], words: "Drag a side" },
+      { name: "Scale from a side", keys: ["⇧"], words: "+ drag a side" },
+      { name: "Stretch one way", keys: [command], words: "+ drag a side" },
+      { name: "Scale from a corner", keys: [], words: "Drag a corner" },
+      { name: "Stretch freely", keys: ["⇧"], words: "+ drag a corner" },
+      { name: "From the middle", keys: [option], words: "+ drag a handle" },
     ],
     [
       { name: "Leave the phone view", keys: ["Esc"] },
@@ -99,14 +104,12 @@ export function Shortcuts({ apple, saveLabel }: Props) {
           <dl key={gi} className={styles.shortcutsGroup}>
             {group.map((row) => (
               <div key={row.name} className={styles.shortcut}>
-                <dt>
-                  {row.name}
-                  {row.note && <span className={styles.shortcutNote}>{row.note}</span>}
-                </dt>
+                <dt>{row.name}</dt>
                 <dd>
                   {row.keys.map((k) => (
                     <kbd key={k}>{k}</kbd>
                   ))}
+                  {row.words && <span className={styles.shortcutWords}>{row.words}</span>}
                 </dd>
               </div>
             ))}

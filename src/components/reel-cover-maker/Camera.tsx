@@ -128,12 +128,12 @@ export function Camera({ onCapture, onClose }: Props) {
       <div className={styles.cameraBar}>
         <span className={styles.cameraSide}>
           {devices.length > 1 && (
-            <button type="button" className={styles.cameraRound} onClick={nextCamera} aria-label="Next camera" title="Next camera">
+            <button type="button" className={`${styles.cameraRound} ${styles.tip}`} onClick={nextCamera} aria-label="Next camera" data-tip="Next camera">
               <CameraRotate size={20} weight="bold" />
             </button>
           )}
         </span>
-        <button type="button" className={styles.shutter} onClick={shoot} disabled={!live} aria-label="Take the photo" title="Take the photo">
+        <button type="button" className={`${styles.shutter} ${styles.tip}`} onClick={shoot} disabled={!live} aria-label="Take the photo" data-tip="Take the photo">
           <Aperture size={26} weight="bold" />
         </button>
         <span className={styles.cameraSide} />

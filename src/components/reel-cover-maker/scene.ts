@@ -50,6 +50,11 @@ export const STYLES: readonly Style[] = [
 
 export const DEFAULT_STYLE: StyleId = "stickery";
 
+/** Whether a shuffle changes anything in a style: Echo and Mono are set the same every time, with nothing drawn by chance. */
+export function shuffles(style: StyleId): boolean {
+  return style !== "echo" && style !== "mono";
+}
+
 export function isStyleId(value: unknown): value is StyleId {
   return STYLES.some((s) => s.id === value);
 }

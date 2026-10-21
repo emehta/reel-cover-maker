@@ -62,6 +62,9 @@ export function HexField({ hex, name, onHex, onBegin, onCancel }: HexFieldProps)
   const [copied, setCopied] = useState<string | null>(null);
   const timer = useRef(0);
   const field = useRef<HTMLInputElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  /** Left by Enter or Escape: the key's focus goes back to the code it was typing, not to the page. */
+  const refocus = useRef(false);
   const editing = draft !== null;
   const isCopied = copied === hex;
   // The colour changed from elsewhere while typing (an undo): the field shows it.
@@ -70,7 +73,11 @@ export function HexField({ hex, name, onHex, onBegin, onCancel }: HexFieldProps)
     if (draft !== null && parseHex(draft) !== hex) setDraft(hex);
   }
   useEffect(() => {
-    if (!editing) return;
+    if (!editing) {
+      if (refocus.current) button.current?.focus();
+      refocus.current = false;
+      return;
+    }
     field.current?.focus();
     field.current?.select();
   }, [editing]);
@@ -106,9 +113,11 @@ export function HexField({ hex, name, onHex, onBegin, onCancel }: HexFieldProps)
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
+                refocus.current = true;
                 setDraft(null);
               } else if (event.key === "Escape") {
                 event.preventDefault();
+                refocus.current = true;
                 onCancel();
                 setDraft(null);
               }
@@ -118,6 +127,7 @@ export function HexField({ hex, name, onHex, onBegin, onCancel }: HexFieldProps)
         </span>
       ) : (
         <button
+          ref={button}
           type="button"
           className={`${styles.hexEdit} ${styles.tip}`}
           onClick={() => {
@@ -132,7 +142,7 @@ export function HexField({ hex, name, onHex, onBegin, onCancel }: HexFieldProps)
         </button>
       )}
       <button type="button" className={`${styles.copyHex} ${styles.tip}`} onClick={() => void copy()} data-tip={isCopied ? "Copied" : "Copy hex"} data-copied={isCopied || undefined} aria-label={`Copy ${name}'s hex code, ${hex}`}>
-        {isCopied ? <Check size={13} weight="bold" /> : <Copy size={13} weight="bold" />}
+        {isCopied ? <Check size={16} weight="bold" /> : <Copy size={16} weight="bold" />}
       </button>
       <span className={styles.hidden} role="status">
         {isCopied ? `${hex} copied` : ""}
@@ -255,7 +265,7 @@ export function TextColourField({ label, id, mode, hue, shade, hex, autoName = "
           />
         )}
       </div>
-      <div className={styles.segments} style={{ "--rcm-segments": TEXT_MODES.length } as CSSProperties} role="radiogroup" aria-labelledby={labelId}>
+      <div className={styles.segments} data-fit style={{ "--rcm-segments": TEXT_MODES.length } as CSSProperties} role="radiogroup" aria-labelledby={labelId}>
         {TEXT_MODES.map((m) => (
           <label key={m.id} className={styles.segment}>
             <input type="radio" name={id} className={styles.radio} checked={mode === m.id} onChange={() => onPick({ mode: m.id })} />

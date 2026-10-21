@@ -22,6 +22,15 @@ interface Props<T extends string> {
 const GAP = 6;
 const MARGIN = 8;
 
+/** The box of the card a button is in: the nearest box round it that scrolls its own content, as the maker's panels do. */
+function cardOf(button: HTMLElement): DOMRect | null {
+  for (let el = button.parentElement; el; el = el.parentElement) {
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow === "auto" || overflow === "scroll") return el.getBoundingClientRect();
+  }
+  return null;
+}
+
 /**
  * The list placed against the window: under its button, or over it where
  * there is no room under it, as wide as the button or wider, kept inside
@@ -32,7 +41,10 @@ function place(button: HTMLElement | null, list: HTMLElement | null): boolean {
   const rect = button.getBoundingClientRect();
   if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
   const width = Math.max(rect.width, 200);
-  const left = Math.max(MARGIN, Math.min(rect.left, window.innerWidth - width - MARGIN));
+  // Wider than its button, it runs from the button's left edge, or from its right where that keeps it inside the card the button is in.
+  const card = cardOf(button);
+  const fromRight = card !== null && rect.left + width > card.right && rect.right - width >= card.left;
+  const left = Math.max(MARGIN, Math.min(fromRight ? rect.right - width : rect.left, window.innerWidth - width - MARGIN));
   const height = list.scrollHeight;
   const below = window.innerHeight - rect.bottom - GAP - MARGIN;
   const above = rect.top - GAP - MARGIN;

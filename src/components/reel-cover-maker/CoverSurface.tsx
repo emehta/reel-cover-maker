@@ -104,6 +104,8 @@ function resizeCursor(u: number, v: number, angle: number): string {
 export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, onLive, selected, onSelect, photo, frame, onFrame, onEditText, inkAt, clipRef, wrapBox }: Props) {
   const clipId = useId();
   const pointers = useRef(new Map<number, Point>());
+  /** Whether the letters were selected when the last press began, for a press the browser takes back. */
+  const selectedAtDown = useRef(false);
   const gesture = useRef<Gesture | null>(null);
   const liveRef = useRef<Place | null>(null);
   const [live, setLive] = useState<Place | null>(null);
@@ -231,7 +233,10 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     if (document.activeElement !== event.currentTarget) event.currentTarget.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     const target = pointers.current.size === 1 ? hit(toPicture({ x: event.clientX, y: event.clientY }), event.pointerType !== "mouse") : null;
-    if (pointers.current.size === 1) latest.current.onSelect(target !== null);
+    if (pointers.current.size === 1) {
+      selectedAtDown.current = latest.current.selected;
+      latest.current.onSelect(target !== null);
+    }
     begin(target, { x: event.clientX, y: event.clientY });
   };
 
@@ -345,6 +350,23 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     }
   };
 
+  /**
+   * The browser took the touch for itself (a swipe that scrolls the page):
+   * nothing it began is kept, and letters it selected on the way are let go
+   * again, so scrolling past the cover never picks them up.
+   */
+  const onCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!pointers.current.has(event.pointerId)) return;
+    pointers.current.delete(event.pointerId);
+    if (pointers.current.size) return;
+    const g = gesture.current;
+    gesture.current = null;
+    show(null);
+    setGuides({ across: false, down: false });
+    setTurning(false);
+    if (!g || (g.kind === "move" && !g.moved)) latest.current.onSelect(selectedAtDown.current);
+  };
+
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     const b = latest.current.box;
     if (event.key === "Escape") {
@@ -441,14 +463,15 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     <div
       ref={surfaceRef}
       className={styles.surface}
-      style={{ cursor }}
+      // A finger's swipe up or down scrolls the page past the cover until the letters are selected (or a photo is there to move); then it is theirs.
+      style={{ cursor, touchAction: selected || photo ? "none" : "pan-y" }}
       tabIndex={0}
       role="application"
       aria-label="The cover. Press the text to select it, then drag to move it, drag its corners to scale it, its sides to re-wrap it (with Shift to scale, with Command or Control to stretch), or its top handle to turn it. Arrow keys nudge it."
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
-      onPointerCancel={onUp}
+      onPointerCancel={onCancel}
       onPointerLeave={() => {
         setHovering(false);
         if (!pointers.current.size) setCursor("default");
