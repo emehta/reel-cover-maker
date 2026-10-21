@@ -37,6 +37,9 @@ import type { LiquidTarget } from "@/components/reel-cover-maker/liquid-render";
 import {
   buildScene,
   isBackdrop,
+  textBoxRef,
+  wrapSizeOf,
+  wrapTypeOf,
   LETTERINGS,
   letteringFace,
   liquidOps,
@@ -171,15 +174,22 @@ function sceneFor(input: CoverInput, loads: number): Scene {
   // The text colour is Stickery's alone, the script's faces and colour Renaissance's: picking one builds no other style again.
   const text = input.style === "stickery" ? input.textColour ?? null : null;
   const renaissance = input.style === "renaissance" ? [input.renaissanceLook, input.scriptColour ?? null] : null;
-  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, renaissance, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, loads]);
-  let scene = scenes.get(key);
+  // A text box's width and the layout it is set again from.
+  const wrap = input.wrap ? [input.wrap.width, input.wrap.ref] : null;
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, renaissance, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, wrap, loads]);
+  // A text box's scenes, a new one at every move of a drag, are kept apart: they would push every other style's out.
+  const cache = input.wrap ? wrappedScenes : scenes;
+  let scene = cache.get(key);
   if (!scene) {
     scene = buildScene(input, measurerFor(loads));
-    scenes.set(key, scene);
-    while (scenes.size > 64) scenes.delete(scenes.keys().next().value as string);
+    cache.set(key, scene);
+    while (cache.size > (input.wrap ? 24 : 64)) cache.delete(cache.keys().next().value as string);
   }
   return scene;
 }
+
+/** Scenes set as a text box, by what they are of. */
+const wrappedScenes = new Map<string, Scene>();
 
 /** Each scene's animations as planned: planning walks the scene, so it is done once a scene. */
 const plans = new WeakMap<Scene, Map<AnimationId, Plan>>();
@@ -224,9 +234,35 @@ function placed(base: Scene, place: Place): Scene {
  * so the cover a style shows once picked is the one made ahead for it.
  */
 function coverFor(input: CoverInput, loads: number, asked: Place): { base: Scene; place: Place; scene: Scene } {
-  const base = sceneFor(input, loads);
+  const base = wrappedScene(input, loads, asked);
   const place = keepOnCover(base.readable, asked, { w: base.width, h: base.height });
   return { base, place, scene: placed(base, place) };
+}
+
+/**
+ * The scene as the style sets it, or, as a text box, its words set again
+ * wrapped to the box's width at the size the box was made at (the owner's
+ * ask, 21 Oct): never stretched, and the same size as more is typed.
+ */
+function wrappedScene(input: CoverInput, loads: number, place: Place): Scene {
+  const own = sceneFor(input, loads);
+  if (place.wrap === undefined || !own.wrapRef) return own;
+  return sceneFor({ ...input, wrap: { width: place.wrap, ref: textBoxRef(own.wrapRef, place.wrapSize, wrapTypeOf(input)) } }, loads);
+}
+
+/** A placement as a text box: the size its words are set at now kept with it, unless it already keeps one for this type. Not a text box, none. */
+function withWrapSize(input: CoverInput, loads: number, next: Place, kept: Place): Place {
+  if (next.wrap === undefined) {
+    if (!next.wrapSize) return next;
+    const rest = { ...next };
+    delete rest.wrapSize;
+    return rest;
+  }
+  const of = wrapTypeOf(input);
+  if (next.wrapSize?.of === of) return next;
+  const own = sceneFor(input, loads).wrapRef;
+  if (!own) return next;
+  return { ...next, wrapSize: wrapSizeOf(textBoxRef(own, kept.wrapSize, of), of) };
 }
 
 let shareFiles: boolean | null = null;
@@ -463,7 +499,9 @@ export default function ReelCoverMaker() {
     seed: design.seed,
     photo: photo !== null,
   };
-  const cover = measurer ? coverFor(input, loads, design.place) : null;
+  /** A text box being re-wrapped by its side, shown as it goes: the words set again at each move, which carrying the last picture cannot show. */
+  const [reflow, setReflow] = useState<Place | null>(null);
+  const cover = measurer ? coverFor(input, loads, reflow ?? design.place) : null;
   const base = cover?.base ?? null;
   /** Where the letters are, kept on the cover whatever its size now. */
   const place = cover?.place ?? design.place;
@@ -1270,8 +1308,23 @@ export default function ReelCoverMaker() {
                   height={scene.height}
                   box={base.readable.w > 0 && base.readable.h > 0 ? base.readable : null}
                   place={place}
-                  onPlace={(next) => update({ place: next })}
-                  onLive={(next) => (next ? showLive(next) : setRepaint((n) => n + 1))}
+                  onPlace={(next) => update({ place: withWrapSize(input, loads, next, design.place) })}
+                  onLive={(next) => {
+                    // Re-wrapped, or a drag that has re-wrapped (a key pressed mid-drag): the words set again for it at every move.
+                    // Moved, turned or scaled alone: the picture as it was, carried there.
+                    if (next && (next.wrap !== design.place.wrap || reflow)) {
+                      setReflow(withWrapSize(input, loads, next, design.place));
+                      return;
+                    }
+                    if (reflow) setReflow(null);
+                    if (next) showLive(next);
+                    else setRepaint((n) => n + 1);
+                  }}
+                  wrapBox={(wrap) => {
+                    if (!measurer) return null;
+                    const set = wrappedScene(input, loads, withWrapSize(input, loads, { ...design.place, wrap }, design.place));
+                    return set.wrapped ? { box: set.readable, min: set.wrapped.min } : null;
+                  }}
                   selected={selected}
                   onSelect={setSelected}
                   photo={photo}

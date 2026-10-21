@@ -236,8 +236,19 @@ on a label's row.
   - **Drag inside** to move them. Near the cover's middle they are drawn to
     it, with a guide; hold Alt to place them freely.
   - **Drag a corner** to scale them, keeping their shape (Shift lets it
-    change; Alt scales from the middle). **Drag a side** to stretch them one
-    way.
+    change freely; Alt scales from the middle).
+  - **Drag a side** and the box is a text box: the letters keep their size
+    and the words move between lines. The left or right side sets how wide
+    the lines run, the top or bottom how tall the box is (a taller box runs
+    narrower lines). The opposite side stays put, and the box never goes
+    narrower than its widest word or wider than the cover. Typing more
+    into it keeps the letters' size; the box grows to hold them. Every
+    style does this in its own way: Stickery's plain words wrap round its
+    funky word, Pasty's lines still fill the block, Renaissance's script
+    stays on its join.
+  - **Shift and a side** scales the letters keeping their shape; **Cmd
+    (Ctrl on Windows) and a side** stretches them one way. A key pressed or
+    let go mid-drag changes what the drag does at once.
   - **Drag the round handle** to turn them, any way, drawn to upright and to
     each quarter turn within three degrees; Shift turns in steps of fifteen.
   - On a phone, **two fingers** on them move, scale and turn them at once.
@@ -343,6 +354,17 @@ the scale's area), so the paste is made again where it lands. The ground,
 the photo and the grain stay put. What each handle does is pure and
 tested: a corner keeps the opposite corner where it was, a side the
 opposite side, two fingers keep their points of the letters under them.
+
+A side dragged with no key makes the box a text box: the placement keeps a
+width to wrap to (`wrap`, `wrapTo`), and each style sets its words again
+for it at the size its own layout chose (its `wrapRef`), never stretched.
+At its own width a style sets them exactly as it did, every word where it
+was, so a drag starts from what was there (tested for every style, with
+titles that once moved by a few pixels or a line); and however narrow or
+wide the box, or however much is typed into it, its words stay on the
+cover, smaller only as far as they must be. The size is kept with the placement (`wrapSize`, for
+the style and type it was made in), so typing more never changes it; in
+another style or type, that one's own size is used.
 
 ### Inkblot's ink
 

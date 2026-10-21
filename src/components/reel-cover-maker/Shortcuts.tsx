@@ -54,7 +54,7 @@ export function Shortcuts({ apple, saveLabel }: Props) {
   const mod = apple ? "⌘" : "Ctrl+";
   const rows: { name: string; note?: string; keys: string[] }[][] = [
     [
-      { name: "Bold the selected words", note: "In Stickery, bold words get the funky lettering", keys: [`${mod}B`] },
+      { name: "Bold the selected words", note: "In Stickery, bold words get the funky lettering; in Renaissance, the script", keys: [`${mod}B`] },
       { name: "Undo", keys: [`${mod}Z`] },
       { name: "Redo", keys: [apple ? "⇧⌘Z" : "Ctrl+Shift+Z"] },
       { name: saveLabel, keys: [`${mod}S`] },
@@ -64,6 +64,13 @@ export function Shortcuts({ apple, saveLabel }: Props) {
       { name: "Scale it", keys: ["+", "−"] },
       { name: "Turn it", keys: ["[", "]"] },
       { name: "Let go of it", keys: ["Esc"] },
+    ],
+    [
+      { name: "Re-wrap the words", note: "Drag a side: the left or right to a width, the top or bottom to a height", keys: ["Drag"] },
+      { name: "Scale from a side", keys: ["⇧", "Drag"] },
+      { name: "Stretch one way", keys: [apple ? "⌘" : "Ctrl", "Drag"] },
+      { name: "Stretch a corner freely", keys: ["⇧", "Drag"] },
+      { name: "From the middle", keys: [apple ? "⌥" : "Alt", "Drag"] },
     ],
     [
       { name: "Leave the phone view", keys: ["Esc"] },

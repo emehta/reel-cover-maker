@@ -9,11 +9,18 @@
  * every letter, sticker and bead of paste, so they are drawn again sharp
  * where they now are, not stretched as a picture.
  *
- * Here too: what each handle does when dragged (a corner scales and keeps
- * the box's shape, the opposite corner staying put; a side stretches one
- * way; Alt works from the middle; Shift frees a corner's shape or steps a
- * turn by fifteen degrees), and where a point lands on the box, for the
- * page to tell which handle it is on.
+ * A placement may also hold a width for the words to wrap to, as a text
+ * box's (the owner's ask, 21 Oct): the scene is set again to it, at the
+ * same size, rather than stretched.
+ *
+ * Here too: what each handle does when dragged, and where a point lands on
+ * the box, for the page to tell which handle it is on. A corner scales and
+ * keeps the box's shape, the opposite corner staying put, and with Shift
+ * scales each way freely. A side re-wraps the words: the left and right
+ * to a width, the top and bottom to a height (narrower lines for a taller
+ * box), at the same size; with Shift it scales, keeping the shape; with
+ * Cmd or Ctrl it stretches one way. Alt works from the middle; Shift on
+ * the turning handle steps it by fifteen degrees.
  *
  * Pure: the tests run it.
  */
@@ -29,9 +36,36 @@ export interface Place {
   /** Scaled across and down. */
   sx: number;
   sy: number;
+  /**
+   * The width the words wrap to, in the scene's own pixels before the
+   * placement scales them, as a text box's: absent, the style sets its
+   * lines as it would.
+   */
+  wrap?: number;
+  /**
+   * The size the box's words were set at when it was made, and what they
+   * were set in (`of`: the style and its type): a text box keeps its
+   * letters' size as more is typed into it. Set in other type, the type's
+   * own size is used.
+   */
+  wrapSize?: WrapSize;
+}
+
+/** What a text box's words were set at: the style's own measure of their size, and of its layout (scene.ts's `WrapRef`, less what is the title's own). */
+export interface WrapSize {
+  of: string;
+  size: number;
+  width: number;
+  stretch?: number;
+  most?: number;
+  tail?: number;
 }
 
 export const HOME: Place = { x: 0, y: 0, angle: 0, sx: 1, sy: 1 };
+
+/** The narrowest and widest a text box may be set to, in the scene's pixels. */
+export const MIN_WRAP = 1;
+export const MAX_WRAP = 20000;
 
 /** The least and most a box may be scaled each way. */
 export const MIN_SCALE = 0.1;
@@ -44,7 +78,13 @@ export type Point = { x: number; y: number };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** Whether the letters are where the style set them: not moved, turned, scaled or re-wrapped. */
 export function isHome(place: Place): boolean {
+  return isUnmoved(place) && place.wrap === undefined;
+}
+
+/** Whether the placement moves nothing: the scene drawn as it is, however its words were wrapped. */
+export function isUnmoved(place: Place): boolean {
   return Math.abs(place.x) < 1e-6 && Math.abs(place.y) < 1e-6 && Math.abs(place.angle) < 1e-9 && Math.abs(place.sx - 1) < 1e-9 && Math.abs(place.sy - 1) < 1e-9;
 }
 
@@ -61,13 +101,30 @@ export function wrapAngle(a: number): number {
 export function readPlace(value: unknown): Place {
   const v = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   const num = (x: unknown, fallback: number) => (typeof x === "number" && Number.isFinite(x) ? x : fallback);
-  return {
+  const placed: Place = {
     x: clamp(num(v.x, 0), -5000, 5000),
     y: clamp(num(v.y, 0), -5000, 5000),
     angle: wrapAngle(num(v.angle, 0)),
     sx: clamp(num(v.sx, 1), MIN_SCALE, MAX_SCALE),
     sy: clamp(num(v.sy, 1), MIN_SCALE, MAX_SCALE),
   };
+  if (typeof v.wrap === "number" && Number.isFinite(v.wrap) && v.wrap > 0) {
+    placed.wrap = clamp(v.wrap, MIN_WRAP, MAX_WRAP);
+    const ws = readWrapSize(v.wrapSize);
+    if (ws) placed.wrapSize = ws;
+  }
+  return placed;
+}
+
+/** A stored text box's size read defensively: null for anything not understood. */
+function readWrapSize(value: unknown): WrapSize | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  const positive = (x: unknown) => typeof x === "number" && Number.isFinite(x) && x > 0 && x < 1e6;
+  if (typeof v.of !== "string" || !positive(v.size) || !positive(v.width)) return null;
+  const out: WrapSize = { of: v.of, size: v.size as number, width: v.width as number };
+  for (const k of ["stretch", "most", "tail"] as const) if (positive(v[k])) out[k] = v[k] as number;
+  return out;
 }
 
 export function centre(rect: Rect): Point {
@@ -199,7 +256,7 @@ export function moveBy(place: Place, dx: number, dy: number): Place {
  * `fromMiddle`, the box's middle does. Never scaled below MIN_SCALE, never
  * turned inside out.
  */
-export function dragHandle(rect: Rect, from: Place, handle: { u: number; v: number }, p: Point, options: { free?: boolean; fromMiddle?: boolean } = {}): Place {
+export function dragHandle(rect: Rect, from: Place, handle: { u: number; v: number }, p: Point, options: { free?: boolean; fromMiddle?: boolean; keep?: boolean } = {}): Place {
   const c = centre(rect);
   const cos = Math.cos(from.angle);
   const sin = Math.sin(from.angle);
@@ -220,6 +277,15 @@ export function dragHandle(rect: Rect, from: Place, handle: { u: number; v: numb
   };
   let sx = span(rx, ax, handle.u, half.x, from.sx);
   let sy = span(ry, ay, handle.v, half.y, from.sy);
+  // A side with `keep`: the other way scaled by as much, so the box keeps its shape about the side that stays.
+  if (options.keep && (handle.u === 0) !== (handle.v === 0)) {
+    const k = handle.u !== 0 ? sx / from.sx : sy / from.sy;
+    const lo = MIN_SCALE / Math.min(Math.abs(from.sx), Math.abs(from.sy));
+    const hi = MAX_SCALE / Math.max(Math.abs(from.sx), Math.abs(from.sy));
+    const f = clamp(k, lo, hi);
+    sx = from.sx * f;
+    sy = from.sy * f;
+  }
   if (handle.u !== 0 && handle.v !== 0 && !options.free) {
     // A corner keeps the box's shape: one factor, from the pointer projected on the diagonal.
     const dx = handle.u * half.x * from.sx * (options.fromMiddle ? 1 : 2);
@@ -237,6 +303,61 @@ export function dragHandle(rect: Rect, from: Place, handle: { u: number; v: numb
   const shiftX = anchorBefore.x - anchorAfter.x;
   const shiftY = anchorBefore.y - anchorAfter.y;
   return { ...from, sx, sy, x: from.x + shiftX * cos - shiftY * sin, y: from.y + shiftX * sin + shiftY * cos };
+}
+
+/**
+ * The text box re-wrapped by a side handle dragged to `p`, from `from` when
+ * the drag began on `rect` (the box then): the left or right handle sets
+ * the width the words wrap to, the top or bottom one the height they
+ * should come to, which a narrower or wider wrap gives. `boxAt` is the box
+ * the scene makes for a wrap width, in its own pixels (the scene is set
+ * again for it, its letters the same size); it may keep the width from
+ * going narrower than its longest word. The side opposite the one dragged
+ * stays where it was: for the left or right handle its top too, as a text
+ * box grows downward; for the top or bottom, its middle. With
+ * `fromMiddle`, the middle stays (the top, for the left or right).
+ */
+export function wrapTo(rect: Rect, from: Place, handle: { u: number; v: number }, p: Point, boxAt: (wrap: number) => Rect, options: { fromMiddle?: boolean; least?: number; most?: number } = {}): Place {
+  const c = centre(rect);
+  const m = placeMatrix(rect, from);
+  // The pointer in the box's own frame, where the scene is set.
+  const q = apply(invert(m), p);
+  const width = rect.w;
+  const height = rect.h;
+  // Moved by as far as the pointer has come from the side grabbed: the drawn box can be wider than its wrap (paste swelling past it), and the wrap must not jump to the drawn edge.
+  const start = from.wrap ?? width;
+  const twice = options.fromMiddle ? 2 : 1;
+  let wrap: number;
+  if (handle.u !== 0) {
+    const grabbed = c.x + handle.u * (width / 2);
+    wrap = start + (q.x - grabbed) * handle.u * twice;
+  } else {
+    const grabbed = c.y + handle.v * (height / 2);
+    const target = Math.max(1, height + (q.y - grabbed) * handle.v * twice);
+    // The words keep their size, so their area does too: the width that comes to the height asked, then once more from where that landed.
+    const lo = Math.max(MIN_WRAP, options.least ?? MIN_WRAP);
+    const hi = Math.min(MAX_WRAP, options.most ?? MAX_WRAP);
+    const first = clamp((start * height) / target, lo, hi);
+    const got = boxAt(first);
+    const second = clamp((first * got.h) / target, lo, hi);
+    const again = boxAt(second);
+    wrap = Math.abs(again.h - target) < Math.abs(got.h - target) ? second : first;
+  }
+  // Never narrower than its widest word, never wider than the box may go.
+  wrap = clamp(wrap, Math.max(MIN_WRAP, options.least ?? MIN_WRAP), Math.min(MAX_WRAP, options.most ?? MAX_WRAP));
+  const next = boxAt(wrap);
+  const nc = centre(next);
+  // The point that stays, before and after: for the left or right handle,
+  // the top of the opposite side (or of the middle); for the top or bottom,
+  // the middle of the opposite edge (or the box's middle).
+  const u = options.fromMiddle ? 0 : -handle.u;
+  const v = options.fromMiddle ? 0 : -handle.v;
+  const pin = (box: Rect, bc: Point): Point => (handle.u !== 0 ? { x: bc.x + (u * box.w) / 2, y: bc.y - box.h / 2 } : { x: bc.x, y: bc.y + (v * box.h) / 2 });
+  const before = pin(rect, c);
+  const after = pin(next, nc);
+  const held = apply(m, before);
+  const moved = apply(placeMatrix(next, { ...from, x: 0, y: 0 }), after);
+  return { ...from, wrap, x: held.x - moved.x, y: held.y - moved.y };
 }
 
 /**
@@ -276,7 +397,7 @@ export function pinchTo(rect: Rect, from: Place, a0: Point, b0: Point, a: Point,
   const cos = Math.cos(turn);
   const sin = Math.sin(turn);
   const moved = { x: m.x + k * (middle.x * cos - middle.y * sin), y: m.y + k * (middle.x * sin + middle.y * cos) };
-  return { x: moved.x - c.x, y: moved.y - c.y, angle: wrapAngle(from.angle + turn), sx: from.sx * k, sy: from.sy * k };
+  return { ...from, x: moved.x - c.x, y: moved.y - c.y, angle: wrapAngle(from.angle + turn), sx: from.sx * k, sy: from.sy * k };
 }
 
 /** The placement scaled by `k` about a point of the cover, which stays where it is: a trackpad's pinch or a key, over the letters. */

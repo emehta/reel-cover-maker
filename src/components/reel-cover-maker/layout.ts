@@ -82,6 +82,8 @@ export interface FlowSpec extends Faces {
   emphasisGap?: number;
   /** A further test of a placed block, for a style that turns it. */
   fits?: (block: Block) => boolean;
+  /** Set at `maxSize` and no other, wrapped to the box's width: a text box's words set again at the size they were (the owner's ask, 21 Oct). */
+  fixedSize?: boolean;
 }
 
 /** Text measured a hair narrow is still drawn whole: every width is checked against this much less. */
@@ -370,6 +372,26 @@ function prepare(paragraphs: Paragraph[], spec: FlowSpec, measurer: Measurer): P
   return { words, extent, linesAt, fits };
 }
 
+/**
+ * The narrowest box a title's lines can be wrapped to at `size`, in pixels:
+ * its widest word, its ink past either end and the caret's room on the last
+ * word included, with the box's padding either side (so this is the flow
+ * box's width, as `flow` measures it, slack and all). Narrower, a word
+ * would have to be broken.
+ */
+export function narrowestAt(paragraphs: Paragraph[], spec: Omit<FlowSpec, "box" | "maxSize" | "minSize">, measurer: Measurer, size: number): number {
+  const words = paragraphs.map((p) => p.map((w) => measureWord(w, spec, measurer)));
+  const trailing = spec.trailing ?? 0;
+  let widest = 0;
+  words.forEach((p, pi) =>
+    p.forEach((w, wi) => {
+      const end = trailing && pi === words.length - 1 && wi === p.length - 1 ? trailing : 0;
+      widest = Math.max(widest, w.inkLeft + w.width + w.inkRight + end);
+    }),
+  );
+  return (widest + 2 * (spec.padX ?? 0)) * size / WIDTH_SLACK;
+}
+
 /** Whether a title fits its box at `size` as `flow` sets it: for a test that no larger size was missed. */
 export function flowFitsAt(paragraphs: Paragraph[], spec: FlowSpec, measurer: Measurer, size: number): boolean {
   if (!paragraphs.some((p) => p.length)) return true;
@@ -393,9 +415,10 @@ export function flow(paragraphs: Paragraph[], spec: FlowSpec, measurer: Measurer
       }
     }
     // Fewer lines read better than a short last line, if together they cost
-    // the title less than a tenth of the largest size it fits at.
+    // the title less than a tenth of the largest size it fits at; never at
+    // a size held fixed.
     const floor = lo * FEWER_LINES_COST;
-    for (;;) {
+    for (; !spec.fixedSize; ) {
       const n = linesAt(lo, false)?.length ?? 0;
       if (n < 2) break;
       const fewer = (size: number) => (linesAt(size, false)?.length ?? Infinity) < n;

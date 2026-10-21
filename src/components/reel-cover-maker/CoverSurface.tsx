@@ -15,6 +15,7 @@ import {
   pinchTo,
   scaleAbout,
   snapToMiddle,
+  wrapTo,
   turnHandle,
   turnSide,
   turnBy,
@@ -46,6 +47,12 @@ interface Props {
   inkAt: (p: Point, reach: number) => boolean;
   /** The part of the page the preview has: the box and its handles are drawn only there, never over the controls. */
   clipRef: RefObject<HTMLElement | null>;
+  /**
+   * The text box the words make wrapped to a width, in the scene's own
+   * pixels, and the narrowest they can be wrapped to: null where the style
+   * sets nothing to wrap.
+   */
+  wrapBox: (wrap: number) => { box: Rect; min: number } | null;
 }
 
 /** Sizes on screen, in CSS pixels, whatever the preview's size. */
@@ -62,7 +69,7 @@ const SLOP = 3;
 
 type Gesture =
   | { kind: "move"; from: Place; start: Point; moved: boolean }
-  | { kind: "handle"; from: Place; u: number; v: number }
+  | { kind: "handle"; from: Place; u: number; v: number; rect: Rect; last?: Point }
   | { kind: "turn"; from: Place; start: Point }
   | { kind: "pinchText"; from: Place; a0: Point; b0: Point }
   | { kind: "pan"; from: PhotoFrame; start: Point }
@@ -80,18 +87,21 @@ function resizeCursor(u: number, v: number, angle: number): string {
  * canvas. A press on the letters selects them: a box round them with a
  * handle at each corner and side and one above to turn them. Dragged
  * inside, they move, drawn to the cover's middle near it with a guide;
- * a corner scales them keeping their shape (Shift frees it, Alt scales from
- * the middle); a side stretches one way; the handle above turns them
- * (Shift in steps of fifteen degrees). Two fingers on them move, scale and
- * turn them at once. The arrow keys nudge them (Shift ten times as far);
- * Escape lets go.
+ * a corner scales them keeping their shape (Shift frees it); a side is a
+ * text box's (the owner's ask, 21 Oct): the left and right re-wrap the
+ * words to a width, the top and bottom to a height, at the same size;
+ * with Shift a side scales them keeping their shape, with Cmd or Ctrl it
+ * stretches them one way; Alt works from the middle; the handle above
+ * turns them (Shift in steps of fifteen degrees). Two fingers on them
+ * move, scale and turn them at once. The arrow keys nudge them (Shift ten
+ * times as far); Escape lets go.
  *
  * Off the letters, the photo behind them is dragged to move it, pinched or
  * scrolled to zoom about the fingers or the pointer, and double-clicked to
  * fit it whole again. Every move is worked out in the picture's own pixels
  * from where the gesture began, so nothing drifts.
  */
-export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, onLive, selected, onSelect, photo, frame, onFrame, onEditText, inkAt, clipRef }: Props) {
+export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, onLive, selected, onSelect, photo, frame, onFrame, onEditText, inkAt, clipRef, wrapBox }: Props) {
   const clipId = useId();
   const pointers = useRef(new Map<number, Point>());
   const gesture = useRef<Gesture | null>(null);
@@ -108,9 +118,9 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
   /** A trackpad's pinch on the letters, settled once it stops. */
   const wheelTimer = useRef(0);
   // The latest of what the gestures read, kept as they started from it.
-  const latest = useRef({ place, frame, box, photo, onPlace, onLive, onFrame, onSelect, selected, inkAt });
+  const latest = useRef({ place, frame, box, photo, onPlace, onLive, onFrame, onSelect, selected, inkAt, wrapBox });
   useEffect(() => {
-    latest.current = { place, frame, box, photo, onPlace, onLive, onFrame, onSelect, selected, inkAt };
+    latest.current = { place, frame, box, photo, onPlace, onLive, onFrame, onSelect, selected, inkAt, wrapBox };
   });
 
   // The picture's pixels to each of the screen's, for handles a fixed size on screen, and where the preview's room ends.
@@ -209,12 +219,13 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     if (target.kind === "turn") {
       gesture.current = { kind: "turn", from: pl, start: toPicture(p) };
       setTurning(true);
-    } else if (target.kind === "handle") gesture.current = { kind: "handle", from: pl, u: target.u, v: target.v };
+    } else if (target.kind === "handle" && latest.current.box) gesture.current = { kind: "handle", from: pl, u: target.u, v: target.v, rect: latest.current.box };
     else gesture.current = { kind: "move", from: pl, start: toPicture(p), moved: false };
   };
 
   const onDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
+    // A Ctrl press on a Mac may come as the right button: on the letters, it is a press like any other.
+    if (event.pointerType === "mouse" && event.button !== 0 && !(event.button === 2 && event.ctrlKey)) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     // Focused for the arrow keys, without the ring a keyboard's focus shows.
     if (document.activeElement !== event.currentTarget) event.currentTarget.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
@@ -223,6 +234,45 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     if (pointers.current.size === 1) latest.current.onSelect(target !== null);
     begin(target, { x: event.clientX, y: event.clientY });
   };
+
+  /**
+   * A handle dragged to `p`, the keys held saying how. A corner scales
+   * keeping its shape, or with Shift freely. A side re-wraps the words (the
+   * left or right to a width, the top or bottom to a height), with Shift
+   * scales keeping its shape, with Cmd or Ctrl stretches one way. Alt works
+   * from the middle. All worked out from the box as the drag began, so a
+   * box re-wrapped is a new one at every move.
+   */
+  const dragTo = (g: Extract<Gesture, { kind: "handle" }>, p: Point, keys: { shiftKey: boolean; altKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
+    const side = (g.u === 0) !== (g.v === 0);
+    if (!side) return show(dragHandle(g.rect, g.from, g, p, { free: keys.shiftKey, fromMiddle: keys.altKey }));
+    if (keys.metaKey || keys.ctrlKey) return show(dragHandle(g.rect, g.from, g, p, { fromMiddle: keys.altKey }));
+    if (keys.shiftKey) return show(dragHandle(g.rect, g.from, g, p, { keep: true, fromMiddle: keys.altKey }));
+    const wrapped = latest.current.wrapBox(g.from.wrap ?? g.rect.w);
+    // Nothing to wrap (no words): the side scales, keeping the shape.
+    if (!wrapped) return show(dragHandle(g.rect, g.from, g, p, { keep: true, fromMiddle: keys.altKey }));
+    // Never narrower than its widest word, never wider than the cover lets it run, the way the box is turned, at its scale.
+    const cos = Math.abs(Math.cos(g.from.angle));
+    const sin = Math.abs(Math.sin(g.from.angle));
+    const most = Math.min(cos > 1e-6 ? width / cos : Infinity, sin > 1e-6 ? height / sin : Infinity) / Math.max(1e-6, Math.abs(g.from.sx));
+    const at = (w: number) => latest.current.wrapBox(w)?.box ?? g.rect;
+    show(wrapTo(g.rect, g.from, g, p, at, { fromMiddle: keys.altKey, least: wrapped.min, most }));
+  };
+
+  // A key pressed or let go mid-drag changes what the handle does at once, without waiting for the pointer to move.
+  useEffect(() => {
+    const onKeyChange = (event: globalThis.KeyboardEvent) => {
+      const g = gesture.current;
+      if (!g || g.kind !== "handle" || !g.last || !["Shift", "Alt", "Meta", "Control"].includes(event.key)) return;
+      dragTo(g, g.last, event);
+    };
+    window.addEventListener("keydown", onKeyChange);
+    window.addEventListener("keyup", onKeyChange);
+    return () => {
+      window.removeEventListener("keydown", onKeyChange);
+      window.removeEventListener("keyup", onKeyChange);
+    };
+  });
 
   const onMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!pointers.current.has(event.pointerId)) {
@@ -250,7 +300,8 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
         return;
       }
       case "handle":
-        if (b) show(dragHandle(b, g.from, g, p, { free: event.shiftKey, fromMiddle: event.altKey }));
+        g.last = p;
+        dragTo(g, p, event);
         return;
       case "turn":
         if (b) show(turnTo(b, g.from, g.start, p, event.shiftKey));
@@ -396,7 +447,7 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
       style={{ cursor }}
       tabIndex={0}
       role="application"
-      aria-label="The cover. Press the text to select it, then drag to move it, drag its corners or sides to scale it, or its top handle to turn it. Arrow keys nudge it."
+      aria-label="The cover. Press the text to select it, then drag to move it, drag its corners to scale it, its sides to re-wrap it (with Shift to scale, with Command or Control to stretch), or its top handle to turn it. Arrow keys nudge it."
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
@@ -406,6 +457,10 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
         if (!pointers.current.size) setCursor("default");
       }}
       onKeyDown={onKey}
+      // Ctrl and a press on a Mac is a right click: on a handle it is a stretch, not the page's menu.
+      onContextMenu={(event) => {
+        if (event.ctrlKey && hit(toPicture({ x: event.clientX, y: event.clientY }))?.kind === "handle") event.preventDefault();
+      }}
       onDoubleClick={(event) => {
         const on = hit(toPicture({ x: event.clientX, y: event.clientY }));
         if (on?.kind === "inside") onEditText();

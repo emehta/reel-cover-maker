@@ -2885,6 +2885,81 @@ console.log("placing");
     }
   });
 
+  check("a side with Shift scales the box keeping its shape, the opposite side staying put", () => {
+    for (const place of PLACES) {
+      for (const h of PL.HANDLES.filter((h) => !h.u !== !h.v)) {
+        const anchor = PL.boxPoint(RECT, place, -h.u, -h.v);
+        const grabbed = PL.boxPoint(RECT, place, h.u, h.v);
+        const next = PL.dragHandle(RECT, place, h, { x: grabbed.x + (grabbed.x - anchor.x) * 0.3, y: grabbed.y + (grabbed.y - anchor.y) * 0.3 }, { keep: true });
+        assert.ok(close(PL.boxPoint(RECT, next, -h.u, -h.v), anchor, 1e-6), `${h.id}: the opposite side moved`);
+        assert.ok(near(next.sx / next.sy, place.sx / place.sy, 1e-9), `${h.id}: the box changed shape`);
+        assert.ok(near(next.sx / place.sx, 1.3, 1e-6), `${h.id}: not scaled by as far as the side went`);
+        // From the middle, the middle stays; held to the limits, the shape still kept.
+        const middle = PL.dragHandle(RECT, place, h, { x: grabbed.x + 10, y: grabbed.y + 10 }, { keep: true, fromMiddle: true });
+        assert.ok(close(PL.boxPoint(RECT, middle, 0, 0), PL.boxPoint(RECT, place, 0, 0), 1e-6));
+        const far = PL.dragHandle(RECT, place, h, { x: anchor.x + (grabbed.x - anchor.x) * 100, y: anchor.y + (grabbed.y - anchor.y) * 100 }, { keep: true });
+        assert.ok(near(far.sx / far.sy, place.sx / place.sy, 1e-9) && Math.max(Math.abs(far.sx), Math.abs(far.sy)) <= PL.MAX_SCALE + 1e-9);
+      }
+    }
+  });
+
+  check("a side without a key re-wraps the text box: the left or right to the pointer's width, the top or bottom to its height, the other side and the top kept, held between the narrowest and widest", () => {
+    // A stand-in for a style: its words, of a fixed area, in a box as wide as asked, as tall as the area needs, its top where the box's was.
+    const AREA = RECT.w * RECT.h;
+    const boxAt = (w) => ({ x: PL.centre(RECT).x - w / 2, y: RECT.y, w, h: AREA / w });
+    for (const place of PLACES) {
+      for (const u of [-1, 1]) {
+        const h = { u, v: 0 };
+        const left = PL.boxPoint(RECT, place, -u, -1);
+        const grabbed = PL.boxPoint(RECT, place, u, 0);
+        const dir = { x: grabbed.x - PL.boxPoint(RECT, place, -u, 0).x, y: grabbed.y - PL.boxPoint(RECT, place, -u, 0).y };
+        const p = { x: grabbed.x + dir.x * 0.25, y: grabbed.y + dir.y * 0.25 };
+        const next = PL.wrapTo(RECT, place, h, p, boxAt);
+        // As wide as the pointer reaches, in the box's own pixels: scaled out by the placement, a quarter wider.
+        assert.ok(near(next.wrap, RECT.w * 1.25, 1e-6), `u ${u}: wrapped to ${next.wrap}`);
+        assert.equal(next.sx, place.sx);
+        assert.equal(next.sy, place.sy);
+        assert.equal(next.angle, place.angle);
+        // The opposite side's top stays where it was, on the new box.
+        const after = boxAt(next.wrap);
+        assert.ok(close(PL.boxPoint(after, next, -u, -1), left, 1e-6), `u ${u}: the opposite top corner moved`);
+        // Held to the narrowest and widest asked.
+        assert.ok(near(PL.wrapTo(RECT, place, h, PL.boxPoint(RECT, place, -u, 0), boxAt, { least: 120 }).wrap, 120, 1e-9));
+        assert.ok(near(PL.wrapTo(RECT, place, h, { x: grabbed.x + dir.x * 50, y: grabbed.y + dir.y * 50 }, boxAt, { most: 1080 }).wrap, 1080, 1e-9));
+        // A box drawn wider than its wrap (paste swelling past it) moves by as far as the pointer goes: never to the drawn edge at the first move.
+        const swollen = { ...place, wrap: RECT.w * 0.8 };
+        assert.ok(near(PL.wrapTo(RECT, swollen, h, grabbed, boxAt).wrap, RECT.w * 0.8, 1e-9));
+        assert.ok(near(PL.wrapTo(RECT, swollen, h, p, boxAt).wrap, RECT.w * 1.05, 1e-6));
+        // From the middle: the middle of the top stays.
+        const mid = PL.wrapTo(RECT, place, h, p, boxAt, { fromMiddle: true });
+        assert.ok(near(mid.wrap, RECT.w * 1.5, 1e-6));
+        assert.ok(close(PL.boxPoint(boxAt(mid.wrap), mid, 0, -1), PL.boxPoint(RECT, place, 0, -1), 1e-6));
+      }
+      for (const v of [-1, 1]) {
+        // Dragged out by half the height: as tall as that, so narrower by as much; the opposite edge's middle kept.
+        const h = { u: 0, v };
+        const grabbed = PL.boxPoint(RECT, place, 0, v);
+        const other = PL.boxPoint(RECT, place, 0, -v);
+        const p = { x: grabbed.x + (grabbed.x - other.x) * 0.5, y: grabbed.y + (grabbed.y - other.y) * 0.5 };
+        const next = PL.wrapTo(RECT, place, h, p, boxAt);
+        assert.ok(near(boxAt(next.wrap).h, RECT.h * 1.5, 1e-6), `v ${v}: ${boxAt(next.wrap).h} tall`);
+        assert.ok(close(PL.boxPoint(boxAt(next.wrap), next, 0, -v), other, 1e-6), `v ${v}: the opposite edge moved`);
+      }
+    }
+    // Kept through every other change of the placement.
+    const boxed = { ...PL.HOME, wrap: 500, wrapSize: { of: "x", size: 100, width: 400 } };
+    for (const next of [PL.moveBy(boxed, 3, 4), PL.turnBy(boxed, 0.2), PL.scaleAbout(RECT, boxed, 1.2, { x: 0, y: 0 }), PL.turnTo(RECT, boxed, { x: 0, y: 0 }, { x: 5, y: 9 }), PL.dragHandle(RECT, boxed, { u: 1, v: 1 }, { x: 900, y: 900 }), PL.pinchTo(RECT, boxed, { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 0 }, { x: 20, y: 0 }), PL.keepOnCover(RECT, boxed, { w: 1080, h: 1920 })]) {
+      assert.equal(next.wrap, 500);
+      assert.deepEqual(next.wrapSize, boxed.wrapSize);
+    }
+    // A text box is not home, but moves nothing on its own; stored, it is read back, and anything wrong in it let go.
+    assert.ok(!PL.isHome({ ...PL.HOME, wrap: 500 }) && PL.isUnmoved({ ...PL.HOME, wrap: 500 }));
+    assert.deepEqual(PL.readPlace({ ...PL.HOME, wrap: 500, wrapSize: { of: "x", size: 100, width: 400, tail: 30 } }), { ...PL.HOME, wrap: 500, wrapSize: { of: "x", size: 100, width: 400, tail: 30 } });
+    assert.deepEqual(PL.readPlace({ ...PL.HOME, wrap: -3, wrapSize: { of: "x", size: 100, width: 400 } }), PL.HOME);
+    assert.deepEqual(PL.readPlace({ ...PL.HOME, wrap: 500, wrapSize: { of: 7, size: 100, width: 400 } }), { ...PL.HOME, wrap: 500 });
+    assert.deepEqual(PL.readPlace({ ...PL.HOME, wrap: 1e9 }), { ...PL.HOME, wrap: PL.MAX_WRAP });
+  });
+
   check("the turning handle turns by as far as the pointer goes round, in fifteen degree steps with Shift, drawn to square within three degrees", () => {
     const deg = (a) => (a * 180) / Math.PI;
     for (const place of PLACES) {
@@ -2967,6 +3042,164 @@ console.log("placing");
     assert.ok(!PL.insideBox(RECT, turned, { x: RECT.x + 4, y: RECT.y + 4 }));
     assert.ok(PL.insideBox(RECT, PL.HOME, { x: RECT.x + 4, y: RECT.y + 4 }));
     assert.ok(PL.insideBox(RECT, PL.HOME, { x: RECT.x - 3, y: c.y }, 4) && !PL.insideBox(RECT, PL.HOME, { x: RECT.x - 3, y: c.y }));
+  });
+
+  check("every style sets its words as a text box: at its own width exactly as it set them, wider in fewer lines and narrower in more, at the same size, never narrower than its widest word", () => {
+    /** Each line's words, top to bottom, and the sizes the letters are set at. */
+    const shape = (scene) => {
+      const rows = new Map();
+      const sizes = [];
+      const walk = (ops) => {
+        for (const op of ops) {
+          if (op.ops) walk(op.ops);
+          else if ((op.kind === "text" && !op.outline) || op.kind === "ink") {
+            const y = Math.round(op.y ?? (op.polygons ? INKM.loopBounds(op.polygons).y1 : 0));
+            rows.set(y, (rows.get(y) ?? 0) + 1);
+            sizes.push(op.size);
+          } else if (op.kind === "liquid") {
+            op.chains.slice(0, op.letters).forEach((_, i) => rows.set(`p${op.lineOf[i]}`, (rows.get(`p${op.lineOf[i]}`) ?? 0) + 1));
+          }
+        }
+      };
+      walk(scene.ops);
+      return { lines: rows.size, sizes: [...new Set(sizes.map((v) => v.toFixed(6)))].sort() };
+    };
+    for (const style of S.STYLES.map((st) => st.id)) {
+      for (const title of ["5 things I wish I knew before moving to Lisbon", "do what *you* want", "the art\nof slow mornings"]) {
+        const extra = style === "stickery" ? { lettering: "yesteryear" } : style.startsWith("pasty") ? { pastyLettering: "goo" } : {};
+        const own = cover(title, style, "reel", extra);
+        assert.ok(own.wrapRef && own.wrapRef.size > 0 && own.wrapRef.width > 0, `${style} "${title}": nothing to wrap from`);
+        const at = (width) => cover(title, style, "reel", { ...extra, wrap: { width, ref: own.wrapRef } });
+        // At its own width, as it was set: the same ops, the same box.
+        const same = at(own.wrapRef.width);
+        assert.deepEqual(textOps(same).map((op) => op.text), textOps(own).map((op) => op.text), `${style} "${title}": words moved at its own width`);
+        assert.equal(shape(same).lines, shape(own).lines, `${style} "${title}": lines changed at its own width`);
+        assert.ok(near(same.readable.w, own.readable.w, 1) && near(same.readable.h, own.readable.h, 1), `${style} "${title}": ${same.readable.w}x${same.readable.h} at its own width, not ${own.readable.w}x${own.readable.h}`);
+        // Wider: no more lines; narrower: no fewer; every typed letter still there; the letters the size they were (Pasty's lines each fill its block, so only its smallest is held).
+        const wide = at(own.wrapRef.width * 1.6);
+        const narrow = at(own.wrapRef.width * 0.55);
+        assert.ok(shape(wide).lines <= shape(own).lines && shape(narrow).lines >= shape(own).lines, `${style} "${title}": ${shape(narrow).lines} / ${shape(own).lines} / ${shape(wide).lines} lines`);
+        const letters = (sc) => [...stripSpaces(mainText(sc)).toLocaleLowerCase()].sort().join("");
+        if (!style.startsWith("pasty")) {
+          assert.equal(letters(wide), letters(own), `${style} "${title}": a word lost, wide`);
+          assert.equal(letters(narrow), letters(own), `${style} "${title}": a word lost, narrow`);
+          if (style === "stickery") {
+            // Stickery's funky word keeps its size; a plain line is set, as Stickery sets it, to run about the funky word's width.
+            const funky = (sc) => textOps(sc).filter((op) => !op.face.startsWith("plain-")).map((op) => op.size.toFixed(6));
+            assert.deepEqual(funky(wide), funky(own), `${style} "${title}": the funky word resized`);
+          } else assert.deepEqual(shape(wide).sizes, shape(own).sizes, `${style} "${title}": letters resized, wide`);
+        }
+        // The box is the width asked, never narrower than the widest word can go, and the words never wider than it but for that word.
+        for (const sc of [wide, narrow, at(1)]) {
+          assert.ok(sc.wrapped && sc.wrapped.width >= sc.wrapped.min - 1e-6, `${style}: no text box`);
+          assert.ok(sc.readable.w >= sc.wrapped.width - 1e-6, `${style} "${title}": the box narrower than it was set to`);
+        }
+        assert.ok(near(at(1).wrapped.width, at(1).wrapped.min, 1e-6), `${style} "${title}": wrapped narrower than its widest word`);
+        // Taller than the cover, it is made smaller to fit: never off its top and bottom.
+        assert.ok(at(1).readable.h <= 1920 + 1, `${style} "${title}": ${at(1).readable.h} tall`);
+        // The scene placed as it is (a text box, not moved) is drawn as it is.
+        assert.equal(S.placeScene(wide, { ...PL.HOME, wrap: 999 }), wide);
+      }
+    }
+  });
+
+  check("a text box never jumps on the first move of a drag, and never leaves the cover however narrow or wide it is or however much is typed into it", () => {
+    /** Where every word, sticker and bead is drawn, and the box round them. */
+    const marks = (scene) => {
+      const out = [];
+      const walk = (ops) => {
+        for (const op of ops) {
+          if (op.ops) walk(op.ops);
+          else if (op.kind === "text" && !op.outline) out.push([op.text, op.x, op.y, op.size]);
+          else if (op.kind === "ink") out.push([op.text, op.polygons[0][0], op.polygons[0][1], op.size]);
+          else if (op.kind === "liquid") out.push(...op.chains.map((c) => ["bead", c[0].x, c[0].y, c[0].r]));
+        }
+      };
+      walk(scene.ops);
+      const r = scene.readable;
+      return { out, box: [r.x, r.y, r.w, r.h] };
+    };
+    const same = (a, b) => a.out.length === b.out.length && a.out.every((m, i) => m[0] === b.out[i][0] && m.slice(1).every((v, k) => near(v, b.out[i][k + 1], 0.05))) && a.box.every((v, k) => near(v, b.box[k], 0.05));
+    const titles = [
+      "5 things I wish I knew before moving to Lisbon",
+      "How I *plan* my week",
+      "Type your *title*",
+      "of it\nless less *mmm* is why\nhow *what* 2026 that",
+      "Zürich I things\nproductivity routine changed\nabout illuminating\nŁódź",
+      "*Łódź* Zürich",
+      "Week 12 👍",
+      "*italic* to the *edge*",
+      "THE ART *of* SUMMERTIME",
+      "a",
+    ];
+    // Words no box can hold on a line, however it is set.
+    const unbreakable = ["x".repeat(49), "https://example.com/very/long/url/path/that/goes", "*" + "É".repeat(60) + "* ïñţëŗñåţîöñ 👍"];
+    for (const style of S.STYLES.map((st) => st.id)) {
+      const extra = style === "stickery" ? { lettering: "yesteryear" } : style.startsWith("pasty") ? { pastyLettering: "goo" } : {};
+      for (const title of [...titles, ...unbreakable]) {
+        const own = cover(title, style, "reel", extra);
+        if (!own.wrapRef) continue;
+        // At its own width every mark where it was: a drag starts from what is on screen.
+        if (titles.includes(title)) {
+          const at = cover(title, style, "reel", { ...extra, wrap: { width: own.wrapRef.width, ref: own.wrapRef } });
+          assert.ok(same(marks(at), marks(own)), `${style} "${title}": moved at its own width`);
+        }
+        // More typed in, at the size it was, from a box a pixel wide to one past the cover: on the cover.
+        for (const width of [1, own.wrapRef.width * 0.5, own.wrapRef.width * 2, 5000]) {
+          const r = cover(title + " and a few more words typed in", style, "reel", { ...extra, wrap: { width, ref: own.wrapRef } }).readable;
+          assert.ok(r.w <= 1080 + 1 && r.h <= 1920 + 1 && Number.isFinite(r.w + r.h), `${style} "${title}" at ${Math.round(width)}: ${r.w}x${r.h}`);
+        }
+      }
+    }
+    // Pasty fills each line to the block by its letters' size, so its own breaks are not the fewest that fit: they hold as the box widens, and go one at a time.
+    for (const style of ["pasty", "pasty-flat"]) {
+      const lineOf = (sc) => sc.ops.filter((op) => op.kind === "liquid").map((op) => op.lineOf.slice(0, op.letters).join(""));
+      const lines = (sc) => new Set(sc.ops.filter((op) => op.kind === "liquid").flatMap((op) => op.lineOf.slice(0, op.letters))).size;
+      const own = cover("do what *you* want", style, "reel", { pastyLettering: "drip" });
+      const at = (width) => cover("do what *you* want", style, "reel", { pastyLettering: "drip", wrap: { width, ref: own.wrapRef } });
+      assert.deepEqual(lineOf(at(own.wrapRef.width + 2)), lineOf(own), `${style}: its lines changed a pixel wider`);
+      assert.deepEqual(lineOf(at(own.wrapRef.width * 1.2)), lineOf(own), `${style}: its lines changed a fifth wider`);
+      let last = lines(own);
+      for (let k = 1; k <= 4; k += 0.25) {
+        const n = lines(at(own.wrapRef.width * k));
+        assert.ok(n <= last, `${style}: more lines wider`);
+        last = n;
+      }
+      assert.ok(last < lines(own), `${style}: never fewer lines, however wide`);
+    }
+    // A Renaissance title all in script is no text box: it is set as it is set, whatever is asked.
+    const script = cover("*all of it script*", "renaissance", "reel");
+    assert.equal(script.wrapRef, undefined);
+    assert.ok(same(marks(cover("*all of it script*", "renaissance", "reel", { wrap: { width: 300, ref: { size: 120, width: 300 } } })), marks(script)));
+  });
+
+  check("a text box keeps its letters' size as more is typed, in the type it was made in; in other type, that type's own size", () => {
+    const of = S.wrapTypeOf({ style: "inkblot" });
+    const short = cover("rate my setup", "inkblot", "reel");
+    const kept = S.wrapSizeOf(short.wrapRef, of);
+    const long = cover("rate my setup and my desk", "inkblot", "reel");
+    // Left to itself the longer title is set smaller; kept, at the box's size.
+    assert.ok(long.wrapRef.size < short.wrapRef.size);
+    const ref = S.textBoxRef(long.wrapRef, kept, of);
+    assert.equal(ref.size, short.wrapRef.size);
+    const boxed = cover("rate my setup and my desk", "inkblot", "reel", { wrap: { width: 1000, ref } });
+    assert.ok(boxed.readable.h < 1920, "the box made too tall to hold");
+    assert.ok(textOps(boxed).concat(boxed.ops.filter((op) => op.kind === "ink")).every((op) => near(op.size, short.wrapRef.size, 1e-6)), "typed into, its letters changed size");
+    // Too narrow for the cover's height, its letters are made smaller only so far as to fit it.
+    const tall = cover("rate my setup and my desk", "inkblot", "reel", { wrap: { width: 300, ref } });
+    assert.ok(tall.readable.h <= 1920 + 1e-6);
+    // Another type keeps nothing of it.
+    assert.equal(S.textBoxRef(long.wrapRef, kept, S.wrapTypeOf({ style: "echo" })), long.wrapRef);
+    assert.notEqual(S.wrapTypeOf({ style: "stickery", lettering: "goo" }), S.wrapTypeOf({ style: "stickery", lettering: "yesteryear" }));
+    assert.notEqual(S.wrapTypeOf({ style: "renaissance", renaissanceLook: "niche" }), S.wrapTypeOf({ style: "renaissance", renaissanceLook: "travel" }));
+    // Pasty's own breaks are for its own title alone; its advance's run past the ink scales with the size.
+    const pasty = cover("rate my setup", "pasty", "reel", { pastyLettering: "goo" });
+    const pastyLonger = cover("rate my setup and my desk", "pasty", "reel", { pastyLettering: "goo" });
+    const pof = S.wrapTypeOf({ style: "pasty", pastyLettering: "goo" });
+    const pref = S.textBoxRef(pastyLonger.wrapRef, S.wrapSizeOf(pasty.wrapRef, pof), pof);
+    assert.equal(pref.counts, undefined);
+    assert.ok(near(pref.slack, pastyLonger.wrapRef.slack * (pasty.wrapRef.size / pastyLonger.wrapRef.size), 1e-9));
+    assert.deepEqual(S.textBoxRef(pasty.wrapRef, S.wrapSizeOf(pasty.wrapRef, pof), pof).counts, pasty.wrapRef.counts);
   });
 
   check("placed letters: home changes nothing; otherwise every word and sticker drawn through the map, paste made again where it lands, the ground and photo left where they are", () => {
