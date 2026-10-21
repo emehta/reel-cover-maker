@@ -1355,10 +1355,10 @@
   border-radius: var(--rcm-r-mini);
 }
 
-/* Its fill as far either side of the chip and the code: what is left over shared between them. */
+/* The chip and code from its left, so the code never shifts as its letters change width (A to F are not as wide as each other) while a slider moves. */
 .hexEdit {
   appearance: none;
-  justify-content: center;
+  justify-content: flex-start;
   border: 0;
   background: transparent;
   color: var(--rcm-text);

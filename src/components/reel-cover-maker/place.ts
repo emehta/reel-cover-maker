@@ -59,6 +59,8 @@ export interface WrapSize {
   stretch?: number;
   most?: number;
   tail?: number;
+  /** Stickery's plain lines' sizes as the box was made with them, by run and line. */
+  fits?: Record<string, number[]>;
 }
 
 export const HOME: Place = { x: 0, y: 0, angle: 0, sx: 1, sy: 1 };
@@ -124,6 +126,13 @@ function readWrapSize(value: unknown): WrapSize | null {
   if (typeof v.of !== "string" || !positive(v.size) || !positive(v.width)) return null;
   const out: WrapSize = { of: v.of, size: v.size as number, width: v.width as number };
   for (const k of ["stretch", "most", "tail"] as const) if (positive(v[k])) out[k] = v[k] as number;
+  if (v.fits && typeof v.fits === "object" && !Array.isArray(v.fits)) {
+    const fits: Record<string, number[]> = {};
+    for (const [key, list] of Object.entries(v.fits as Record<string, unknown>)) {
+      if (/^\d+\.\d+$/.test(key) && Array.isArray(list) && list.length && list.length < 64 && list.every((f) => typeof f === "number" && f > 0 && f < 4)) fits[key] = list as number[];
+    }
+    if (Object.keys(fits).length) out.fits = fits;
+  }
   return out;
 }
 
@@ -204,6 +213,18 @@ export const HANDLES: readonly { id: string; u: -1 | 0 | 1; v: -1 | 0 | 1 }[] = 
 export function boxPoint(rect: Rect, place: Place, u: number, v: number): Point {
   const c = centre(rect);
   return apply(placeMatrix(rect, place), { x: c.x + (u * rect.w) / 2, y: c.y + (v * rect.h) / 2 });
+}
+
+/**
+ * A placement for a box that has grown or shrunk from `before` to `after`
+ * (more typed into a text box): moved so the middle of its top edge stays
+ * where it was on the cover, however it is scaled or turned, so the box
+ * grows down from its top, as a text box does.
+ */
+export function keepTop(before: Rect, after: Rect, place: Place): Place {
+  const held = boxPoint(before, place, 0, -1);
+  const moved = boxPoint(after, { ...place, x: 0, y: 0 }, 0, -1);
+  return { ...place, x: held.x - moved.x, y: held.y - moved.y };
 }
 
 /** The box's four corners on the cover, clockwise from the top left. */
@@ -317,7 +338,14 @@ export function dragHandle(rect: Rect, from: Place, handle: { u: number; v: numb
  * box grows downward; for the top or bottom, its middle. With
  * `fromMiddle`, the middle stays (the top, for the left or right).
  */
-export function wrapTo(rect: Rect, from: Place, handle: { u: number; v: number }, p: Point, boxAt: (wrap: number) => Rect, options: { fromMiddle?: boolean; least?: number; most?: number } = {}): Place {
+export function wrapTo(
+  rect: Rect,
+  from: Place,
+  handle: { u: number; v: number },
+  p: Point,
+  boxAt: (wrap: number) => Rect,
+  options: { fromMiddle?: boolean; least?: number; most?: number; hug?: (wrap: number) => number } = {},
+): Place {
   const c = centre(rect);
   const m = placeMatrix(rect, from);
   // The pointer in the box's own frame, where the scene is set.
@@ -341,7 +369,24 @@ export function wrapTo(rect: Rect, from: Place, handle: { u: number; v: number }
     const got = boxAt(first);
     const second = clamp((first * got.h) / target, lo, hi);
     const again = boxAt(second);
-    wrap = Math.abs(again.h - target) < Math.abs(got.h - target) ? second : first;
+    // Whichever of the lines there are now and the two tried comes nearest
+    // the height asked; the lines there are now on a tie, so a pixel's pull
+    // that changes no line changes nothing. Then as narrow as those lines
+    // let it be, so the frame hugs the words rather than running wide of
+    // them (a style whose lines cannot get fewer would otherwise be pulled
+    // wider with nothing in the room).
+    const tried = [
+      { w: start, h: height },
+      { w: first, h: got.h },
+      { w: second, h: again.h },
+    ];
+    let best = tried[0];
+    for (const t of tried.slice(1)) if (Math.abs(t.h - target) < Math.abs(best.h - target) - 0.5) best = t;
+    wrap = best.w;
+    if (best !== tried[0] && options.hug) {
+      const hugged = clamp(options.hug(best.w), lo, hi);
+      if (hugged < best.w && Math.abs(boxAt(hugged).h - best.h) < 0.5) wrap = hugged;
+    }
   }
   // Never narrower than its widest word, never wider than the box may go.
   wrap = clamp(wrap, Math.max(MIN_WRAP, options.least ?? MIN_WRAP), Math.min(MAX_WRAP, options.most ?? MAX_WRAP));

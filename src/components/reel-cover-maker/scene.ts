@@ -204,8 +204,8 @@ export interface Scene {
   truncated: boolean;
   /** What the style's own layout settled on, to set its words again wrapped to a width at the same size. */
   wrapRef?: WrapRef;
-  /** Set as a text box: the width its words were wrapped to (never under the narrowest they can be), and that narrowest. */
-  wrapped?: { width: number; min: number };
+  /** Set as a text box: the width its words were wrapped to (never under the narrowest they can be), that narrowest, and how wide the words themselves came out. */
+  wrapped?: { width: number; min: number; content: number };
 }
 
 /** What a style's own layout settled on, for setting its words again wrapped to a width, at the same size. */
@@ -225,6 +225,8 @@ export interface WrapRef {
   tail?: number;
   /** Each of Renaissance's scripts' sizes, as it set them: held as the box is re-wrapped. */
   scripts?: number[];
+  /** How much Stickery made each plain line smaller or larger (by the run it is in, then the line), as it set them: held with the box, so typing more never resizes a word. */
+  fits?: Record<string, number[]>;
 }
 
 /**
@@ -260,6 +262,7 @@ export function wrapSizeOf(ref: WrapRef, of: string): WrapSize {
   if (ref.stretch !== undefined) out.stretch = ref.stretch;
   if (ref.most !== undefined) out.most = ref.most;
   if (ref.tail !== undefined) out.tail = ref.tail;
+  if (ref.fits !== undefined) out.fits = ref.fits;
   return out;
 }
 
@@ -279,6 +282,7 @@ export function textBoxRef(own: WrapRef, kept: WrapSize | undefined, of: string)
   if (kept.stretch !== undefined) ref.stretch = kept.stretch;
   if (kept.most !== undefined) ref.most = kept.most;
   if (kept.tail !== undefined) ref.tail = kept.tail;
+  if (kept.fits !== undefined) ref.fits = kept.fits;
   // Pasty's own breaks are for its own title alone; Renaissance's scripts, made at the size the title was set at, at the size held.
   if (!same) {
     delete ref.counts;
@@ -1805,6 +1809,8 @@ function stickery(
    */
   const build = (size: number, delta = 0) => {
     const plainSize = size * plainScale;
+    /** Each plain run's lines' sizes, as against its plain size, as this build set them. */
+    const fitsOut: Record<string, number[]> = {};
     const colours: string[] = [];
     const stickers = groups.map((runs, gi) => {
       const next = random(mixSeed(salt, gi + 1));
@@ -1856,7 +1862,11 @@ function stickery(
               ? Math.min(1, Math.max(0.7, (ownFunkyW * 0.97) / Math.max(1, line.width)))
               : Math.min(1.25, Math.max(1, (ownFunkyW * 0.4) / Math.max(1, line.width)));
         const own = plainLines(run, base, ownFunkyW !== null ? Math.max(ownFunkyW * 1.15, base * 7) : base * 14);
-        const ownFits = own.map(fitFor);
+        // As a text box, the sizes the box was made with (a line more than it had, the last's), so typing more never resizes a word already there.
+        const runKey = `${gi}.${ri}`;
+        const held = wrap?.ref.fits?.[runKey];
+        const ownFits = held && held.length ? own.map((_, i) => held[Math.min(i, held.length - 1)]) : own.map(fitFor);
+        fitsOut[runKey] = ownFits;
         let lines = own;
         let fits = ownFits;
         if (delta !== 0 && own.length) {
@@ -2073,7 +2083,7 @@ function stickery(
       y += st.bounds.h + between(st.next, 1.2, 1.6) * st.unit;
     }
     const bounds = boxes.length ? union(boxes) : { x: 0, y: 0, w: 0, h: 0 };
-    return { texts, shapes, chains, colourOf, colours, bounds };
+    return { texts, shapes, chains, colourOf, colours, bounds, fits: fitsOut };
   };
 
   // The size: scaled to fit the measured block into the safe area a few
@@ -2088,7 +2098,7 @@ function stickery(
    * a title and size, not at every move of a drag.
    */
   const widthOf = (kind: "home" | "narrow", at: number, make: () => number) => {
-    const key = `${kind}|${salt}|${plainFace}|${at}`;
+    const key = `${kind}|${salt}|${plainFace}|${at}|${JSON.stringify(wrap?.ref.fits ?? null)}`;
     let w = stickeryWidths.get(key);
     if (w === undefined) {
       w = make();
@@ -2127,7 +2137,7 @@ function stickery(
   return {
     ops: [...made.shapes.map((op) => moveOp(op, dx, dy)), ...made.texts.map((op) => moveOp(op, dx, dy)), ...layer],
     readable,
-    ...(wrap ? { wrapped: { width: wrapWidth, min: narrowest } } : { ref: { size, width: readable.w } }),
+    ...(wrap ? { wrapped: { width: wrapWidth, min: narrowest } } : { ref: { size, width: readable.w, fits: made.fits } }),
   };
 }
 
@@ -2274,7 +2284,7 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   })();
 
   // As a text box, the box is the width it was set to, about the words, and as tall as they are; the words are never wider than it, unless one alone is.
-  const wrapped = wrap ? made.wrapped : undefined;
+  const wrapped = wrap && made.wrapped ? { ...made.wrapped, content: made.readable.w } : undefined;
   const readable = wrapped ? widened(made.readable, wrapped.width) : made.readable;
 
   // With no photo the cover is a clear picture of its letters alone (the

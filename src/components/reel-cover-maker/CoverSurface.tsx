@@ -52,7 +52,7 @@ interface Props {
    * pixels, and the narrowest they can be wrapped to: null where the style
    * sets nothing to wrap.
    */
-  wrapBox: (wrap: number) => { box: Rect; min: number } | null;
+  wrapBox: (wrap: number) => { box: Rect; min: number; content: number } | null;
 }
 
 /** Sizes on screen, in CSS pixels, whatever the preview's size. */
@@ -69,7 +69,8 @@ const SLOP = 3;
 
 type Gesture =
   | { kind: "move"; from: Place; start: Point; moved: boolean }
-  | { kind: "handle"; from: Place; u: number; v: number; rect: Rect; last?: Point }
+  /** `offset`: how far from the handle's own point the press landed, so the handle moves by as far as the pointer does and never jumps to it. */
+  | { kind: "handle"; from: Place; u: number; v: number; rect: Rect; offset: Point; last?: Point }
   | { kind: "turn"; from: Place; start: Point }
   | { kind: "pinchText"; from: Place; a0: Point; b0: Point }
   | { kind: "pan"; from: PhotoFrame; start: Point }
@@ -221,7 +222,11 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     if (target.kind === "turn") {
       gesture.current = { kind: "turn", from: pl, start: toPicture(p) };
       setTurning(true);
-    } else if (target.kind === "handle" && latest.current.box) gesture.current = { kind: "handle", from: pl, u: target.u, v: target.v, rect: latest.current.box };
+    } else if (target.kind === "handle" && latest.current.box) {
+      const at = toPicture(p);
+      const point = boxPoint(latest.current.box, pl, target.u, target.v);
+      gesture.current = { kind: "handle", from: pl, u: target.u, v: target.v, rect: latest.current.box, offset: { x: at.x - point.x, y: at.y - point.y } };
+    }
     else gesture.current = { kind: "move", from: pl, start: toPicture(p), moved: false };
   };
 
@@ -248,7 +253,9 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
    * from the middle. All worked out from the box as the drag began, so a
    * box re-wrapped is a new one at every move.
    */
-  const dragTo = (g: Extract<Gesture, { kind: "handle" }>, p: Point, keys: { shiftKey: boolean; altKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
+  const dragTo = (g: Extract<Gesture, { kind: "handle" }>, pointer: Point, keys: { shiftKey: boolean; altKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
+    // Where the handle itself is pulled to: the pointer, less how far from the handle it was pressed.
+    const p = { x: pointer.x - g.offset.x, y: pointer.y - g.offset.y };
     const side = (g.u === 0) !== (g.v === 0);
     if (!side) return show(dragHandle(g.rect, g.from, g, p, { free: keys.shiftKey, fromMiddle: keys.altKey }));
     if (keys.metaKey || keys.ctrlKey) return show(dragHandle(g.rect, g.from, g, p, { fromMiddle: keys.altKey }));
@@ -258,7 +265,8 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     if (!wrapped) return show(dragHandle(g.rect, g.from, g, p, { keep: true, fromMiddle: keys.altKey }));
     // Never narrower than its widest word; as wide as it is pulled, past the cover's edge too (the owner, 21 Oct: as in Illustrator).
     const at = (w: number) => latest.current.wrapBox(w)?.box ?? g.rect;
-    show(wrapTo(g.rect, g.from, g, p, at, { fromMiddle: keys.altKey, least: wrapped.min }));
+    const hug = (w: number) => latest.current.wrapBox(w)?.content ?? w;
+    show(wrapTo(g.rect, g.from, g, p, at, { fromMiddle: keys.altKey, least: wrapped.min, hug }));
   };
 
   // A key pressed or let go mid-drag changes what the handle does at once, without waiting for the pointer to move.

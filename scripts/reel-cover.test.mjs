@@ -2946,6 +2946,20 @@ console.log("placing");
         assert.ok(close(PL.boxPoint(boxAt(next.wrap), next, 0, -v), other, 1e-6), `v ${v}: the opposite edge moved`);
       }
     }
+    // Lines that cannot change (a style whose words are already as few lines as they go): a pull on the top or bottom changes nothing, never widening the box with nothing in the room.
+    const fixed = (w) => ({ x: PL.centre(RECT).x - w / 2, y: RECT.y, w, h: RECT.h });
+    for (const v of [-1, 1]) {
+      for (const by of [1, 10, -10]) {
+        const grabbed = PL.boxPoint(RECT, PL.HOME, 0, v);
+        const next = PL.wrapTo(RECT, { ...PL.HOME, wrap: RECT.w }, { u: 0, v }, { x: grabbed.x, y: grabbed.y + v * by }, fixed, { hug: (w) => w });
+        assert.ok(near(next.wrap, RECT.w, 1e-9), `v ${v} by ${by}: wrapped to ${next.wrap}`);
+      }
+    }
+    // Lines in steps (a line more every 100 px narrower), the words never wider than 400: pulled taller, the box narrows to the lines that come nearest, and hugs them.
+    const stepped = (w) => ({ x: PL.centre(RECT).x - w / 2, y: RECT.y, w, h: 60 * Math.ceil(1200 / Math.max(1, w)) });
+    const tall = PL.wrapTo({ ...RECT, h: stepped(RECT.w).h }, { ...PL.HOME, wrap: RECT.w }, { u: 0, v: 1 }, { x: 0, y: 1e4 }, stepped, { hug: (w) => Math.min(w, 400), least: 50 });
+    assert.ok(tall.wrap < RECT.w, `pulled taller, ${tall.wrap} wide`);
+
     // Kept through every other change of the placement.
     const boxed = { ...PL.HOME, wrap: 500, wrapSize: { of: "x", size: 100, width: 400 } };
     for (const next of [PL.moveBy(boxed, 3, 4), PL.turnBy(boxed, 0.2), PL.scaleAbout(RECT, boxed, 1.2, { x: 0, y: 0 }), PL.turnTo(RECT, boxed, { x: 0, y: 0 }, { x: 5, y: 9 }), PL.dragHandle(RECT, boxed, { u: 1, v: 1 }, { x: 900, y: 900 }), PL.pinchTo(RECT, boxed, { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 0 }, { x: 20, y: 0 }), PL.keepOnCover(RECT, boxed, { w: 1080, h: 1920 })]) {
@@ -2958,6 +2972,17 @@ console.log("placing");
     assert.deepEqual(PL.readPlace({ ...PL.HOME, wrap: -3, wrapSize: { of: "x", size: 100, width: 400 } }), PL.HOME);
     assert.deepEqual(PL.readPlace({ ...PL.HOME, wrap: 500, wrapSize: { of: 7, size: 100, width: 400 } }), { ...PL.HOME, wrap: 500 });
     assert.deepEqual(PL.readPlace({ ...PL.HOME, wrap: 1e9 }), { ...PL.HOME, wrap: PL.MAX_WRAP });
+    // Stickery's held sizes are read back, and anything not sizes let go.
+    assert.deepEqual(PL.readPlace({ ...PL.HOME, wrap: 500, wrapSize: { of: "x", size: 100, width: 400, fits: { "0.1": [0.8, 1] } } }).wrapSize.fits, { "0.1": [0.8, 1] });
+    assert.equal(PL.readPlace({ ...PL.HOME, wrap: 500, wrapSize: { of: "x", size: 100, width: 400, fits: { a: [1], "0.2": ["big"] } } }).wrapSize.fits, undefined);
+    // Typed into, a box grows down from the middle of its top, however it is placed.
+    for (const place of PLACES) {
+      const after = { ...RECT, y: RECT.y - 40, h: RECT.h + 80, x: RECT.x - 10, w: RECT.w + 20 };
+      const kept = PL.keepTop(RECT, after, place);
+      assert.ok(close(PL.boxPoint(after, kept, 0, -1), PL.boxPoint(RECT, place, 0, -1), 1e-6), "the top moved as it grew");
+      assert.equal(kept.angle, place.angle);
+      assert.equal(kept.sx, place.sx);
+    }
   });
 
   check("the turning handle turns by as far as the pointer goes round, in fifteen degree steps with Shift, drawn to square within three degrees", () => {
@@ -3226,6 +3251,20 @@ console.log("placing");
     assert.equal(S.textBoxRef(long.wrapRef, kept, S.wrapTypeOf({ style: "echo" })), long.wrapRef);
     assert.notEqual(S.wrapTypeOf({ style: "stickery", lettering: "goo" }), S.wrapTypeOf({ style: "stickery", lettering: "yesteryear" }));
     assert.notEqual(S.wrapTypeOf({ style: "renaissance", renaissanceLook: "niche" }), S.wrapTypeOf({ style: "renaissance", renaissanceLook: "travel" }));
+    // Stickery's plain lines keep the sizes the box was made with as more is typed: "sweet after all" never grows or shrinks for a word typed after it.
+    {
+      const sof = S.wrapTypeOf({ style: "stickery", lettering: "damion" });
+      const first = cover("Maybe *not so* sweet after all", "stickery", "reel", { lettering: "damion" });
+      const keptSize = S.wrapSizeOf(first.wrapRef, sof);
+      const sizeOf = (title) => {
+        const own = cover(title, "stickery", "reel", { lettering: "damion" });
+        const sc = cover(title, "stickery", "reel", { lettering: "damion", wrap: { width: first.wrapRef.width * 0.8, ref: S.textBoxRef(own.wrapRef, keptSize, sof) } });
+        return textOps(sc).filter((op) => ["sweet", "after", "all"].includes(op.text)).map((op) => op.size.toFixed(6));
+      };
+      const before = sizeOf("Maybe *not so* sweet after all");
+      assert.ok(before.length === 3);
+      for (const more of [" and", " and then", " and then some"]) assert.deepEqual(sizeOf(`Maybe *not so* sweet after all${more}`).slice(0, 3), before, `typing "${more}" resized the words`);
+    }
     // Pasty's own breaks are for its own title alone; its advance's run past the ink scales with the size.
     const pasty = cover("rate my setup", "pasty", "reel", { pastyLettering: "goo" });
     const pastyLonger = cover("rate my setup and my desk", "pasty", "reel", { pastyLettering: "goo" });

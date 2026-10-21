@@ -396,9 +396,19 @@ npm run build   # the static site, in out/
   - Renaissance holds its scripts' sizes, scaled when typing changes the
     size its own layout would choose.
   `Place.wrapSize` keeps the size for the style and type it was made in
-  (`wrapTypeOf`, `textBoxRef`), so typing more never resizes the letters.
-  A re-wrap is shown by setting the scene again at each move (`reflow` in
-  the page), not by carrying the last picture.
+  (`wrapTypeOf`, `textBoxRef`), and Stickery's plain lines' sizes
+  (`fits`), so typing more never resizes a word; another style picked
+  for the box keys it again to that style at once (`update`), and typing
+  grows the box down from its top (`keepTop`). A handle moves by as far
+  as the pointer does from where it was pressed (`offset`), never to the
+  pointer, so a press off a handle's centre never jumps. The top and
+  bottom take whichever of the lines there are and the two tried comes
+  nearest the height asked, the lines there are on a tie, and hug the
+  words they pick (`hug`, `Scene.wrapped.content`). A re-wrap is shown
+  by setting the scene again at each move (`reflow` in the page), not by
+  carrying the last picture, the next move waiting for the last one's
+  paste (`waitingReflow`), so a paste style updates as fast as it is
+  drawn rather than not at all until the pointer rests.
 - **The cover is the text's canvas** (`CoverSurface`): a press on the
   letters selects them (on a phone, a swipe up or down over the cover
   scrolls the page until the letters are selected or a photo is there to

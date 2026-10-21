@@ -27,7 +27,7 @@ import { forgetPhoto, loadPhoto, savePhoto } from "@/components/reel-cover-maker
 import { PlayCanvas, usePaste, type PlayRequest } from "@/components/reel-cover-maker/Motion";
 import { PhoneView } from "@/components/reel-cover-maker/PhoneView";
 import { PhotoControls } from "@/components/reel-cover-maker/PhotoControls";
-import { HOME, invert, isHome, keepOnCover, multiply, placeMatrix, type Matrix, type Place, type Point } from "@/components/reel-cover-maker/place";
+import { HOME, invert, isHome, keepOnCover, keepTop, multiply, placeMatrix, type Matrix, type Place, type Point } from "@/components/reel-cover-maker/place";
 import { textColour } from "@/components/reel-cover-maker/palettes";
 import { isApple, subscribeNothing } from "@/components/reel-cover-maker/platform";
 import { fileName, FILE_TYPE, isAndroid, isInAppBrowser, saveMethod, videoName, type SaveMethod } from "@/components/reel-cover-maker/save";
@@ -540,6 +540,8 @@ export default function ReelCoverMaker() {
   const input = inputOf(design);
   /** A text box being re-wrapped by its side, shown as it goes: the words set again at each move, which carrying the last picture cannot show. */
   const [reflow, setReflow] = useState<Place | null>(null);
+  /** The latest move of a re-wrap, waiting for the paste of the one before it to be made. */
+  const waitingReflow = useRef<Place | null>(null);
   const cover = measurer ? coverFor(input, loads, reflow ?? design.place) : null;
   const base = cover?.base ?? null;
   /** Where the letters are, kept on the cover whatever its size now. */
@@ -562,6 +564,14 @@ export default function ReelCoverMaker() {
   const draft = layersFor(scene, scene && draftSize(scene));
   /** A quick draft of the picture can be shown while it is made: its paste made smaller, and the photo in. */
   const draftReady = draft.ready && !draft.failed && photoChecked;
+  // The paste of a re-wrap on screen made: the move that waited for it is set now.
+  useEffect(() => {
+    if (!reflow || !draftReady || !waitingReflow.current) return;
+    const next = waitingReflow.current;
+    waitingReflow.current = null;
+    setReflow(next);
+  }, [reflow, draftReady]);
+
   /** What the drawn picture is of; a prepared file is handed over only if it is of the same. */
   const key = JSON.stringify([
     design.text,
@@ -602,7 +612,18 @@ export default function ReelCoverMaker() {
     const current = designRef.current;
     const history = step === "alone" ? seal(historyRef.current) : historyRef.current;
     historyRef.current = step ? record(history, current, Object.keys(change), performance.now()) : seal(history);
-    show({ ...current, ...change });
+    const next = { ...current, ...change };
+    if (next.place.wrap !== undefined && measurer) {
+      // A text box given another style or type keeps the size that type sets its words at, from now on: else each word typed would set them all again.
+      next.place = withWrapSize(inputOf(next), loads, next.place, next.place);
+      // Typed into, it grows down from its top, as a text box does, rather than out from its middle.
+      if (change.text !== undefined) {
+        const before = wrappedScene(inputOf(current), loads, current.place).readable;
+        const after = wrappedScene(inputOf(next), loads, next.place).readable;
+        if (Math.abs(after.h - before.h) > 0.01 || Math.abs(after.y - before.y) > 0.01) next.place = keepTop(before, after, next.place);
+      }
+    }
+    show(next);
   };
 
   const undo = () => {
@@ -1380,9 +1401,13 @@ export default function ReelCoverMaker() {
                     // Re-wrapped, or a drag that has re-wrapped (a key pressed mid-drag): the words set again for it at every move.
                     // Moved, turned or scaled alone: the picture as it was, carried there.
                     if (next && (next.wrap !== design.place.wrap || reflow)) {
-                      setReflow(withWrapSize(input, loads, next, design.place));
+                      const wrapped = withWrapSize(input, loads, next, design.place);
+                      // Paste still being made for the last move: this one waits for it, so a drag shows each in turn rather than none until it rests.
+                      if (reflow && !draftReady) waitingReflow.current = wrapped;
+                      else setReflow(wrapped);
                       return;
                     }
+                    waitingReflow.current = null;
                     if (reflow) setReflow(null);
                     if (next) showLive(next);
                     else setRepaint((n) => n + 1);
@@ -1390,7 +1415,7 @@ export default function ReelCoverMaker() {
                   wrapBox={(wrap) => {
                     if (!measurer) return null;
                     const set = wrappedScene(input, loads, withWrapSize(input, loads, { ...design.place, wrap }, design.place));
-                    return set.wrapped ? { box: set.readable, min: set.wrapped.min } : null;
+                    return set.wrapped ? { box: set.readable, min: set.wrapped.min, content: set.wrapped.content } : null;
                   }}
                   selected={selected}
                   onSelect={setSelected}
