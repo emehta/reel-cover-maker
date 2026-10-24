@@ -172,25 +172,29 @@ on a label's row.
   left, twice at the right), and **Save**, and the
   cover plays it, in the preview and on the phone, sharp at the screen's
   own pixels, until the sparkle is pressed again to stop. Each lays the
-  cover down over a few seconds and ends on it exactly:
+  cover down over a few seconds and ends on it exactly, but for Jitter,
+  which never stops:
   - Renaissance: **Written** (the capitals rise in line by line, then the
     script is written across them as a pen writes it, its gap in them
     following the pen), **Word by word** and **Line by line**.
-  - Stickery: **Type and draw** (its plain words typed, its funky words
+  - Stickery: **Spell** (its plain words typed, its funky words
     written as a pen writes them, stroke by stroke, traced from the letters
     themselves, or piped bead by bead in Goo, and the sticker's paper laid
     step by step under each letter as it comes), **Slap** (each sticker
     brought down from in front of the screen, bigger than the cover and out
     of focus as if near the eye, its shadow closing in under it, slapped
     flat where it lands and the ones already down knocked back), **Pop**
-    (each springs on) and **Reveal** (each comes into focus out of
-    nothing).
+    (each springs on), **Reveal** (each comes into focus out of
+    nothing) and **Jitter**.
   - Pasty and Pasty Flat: **Written live** (letter after letter, each
     stroke piped as if by hand, the light on what is laid unchanged as more
-    comes).
+    comes) and **Jitter**.
   - Inkblot: **Written** (each word traced as a pen writes it, word after
     word), **Word by word** and **Line by line** (each comes into focus out
-    of nothing, as ink soaks in).
+    of nothing, as ink soaks in), and **Jitter**.
+  - **Jitter** is Shuffle pressed again and again: the cover rearranged
+    four times a second, round twelve shuffles, the cover's own first. It
+    loops with no pause, and its video loops too, with no held end.
   - Echo: **Ripple** (the words, then each echo out from them), **Spread**
     (the echoes slide out from the words to their places), **Cascade**
     (every line drops in, top to bottom).

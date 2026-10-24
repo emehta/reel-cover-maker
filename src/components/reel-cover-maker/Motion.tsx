@@ -113,7 +113,7 @@ export function usePaste(request: PlayRequest | null, target: LiquidTarget | nul
       const { request: asked, target: full } = latest.current;
       if (!asked || !full) return;
       void (async () => {
-        const times = frameTimes(asked.plan.duration, PASTE_FPS);
+        const times = frameTimes(asked.plan.duration, PASTE_FPS, asked.plan.loops);
         // Made smaller where every frame of it at full size would not fit the budget: the finished paste is the largest.
         const last = liquidOps(asked.plan.frame(asked.plan.duration));
         await layersMade(last, full, `${asked.slot}:size`, "thumb", controller.signal);
@@ -122,18 +122,22 @@ export function usePaste(request: PlayRequest | null, target: LiquidTarget | nul
           return sum + (layer ? layer.w * layer.h * (op.shadow ? 2 : 1) : 0);
         }, 0);
         letGo(`${asked.slot}:size`);
-        const bytes = area * 4 * times.length;
+        // A frame that is the scene before it again (a Jitter's beat lasts several) shares that one's layers: only the different ones are counted, and kept.
+        const scenes = times.map((t) => asked.plan.frame(t));
+        const distinct = scenes.filter((scene, i) => i === 0 || scene !== scenes[i - 1]).length;
+        const bytes = area * 4 * distinct;
         const k = bytes > PASTE_BUDGET ? Math.sqrt(PASTE_BUDGET / bytes) : 1;
         const at: LiquidTarget = k < 1 ? { width: Math.max(1, Math.round(full.width * k)), height: Math.max(1, Math.round(full.height * k)), scale: full.scale * k, origin: full.origin } : full;
         const ahead = 3;
-        const opsOf = times.map((t) => liquidOps(asked.plan.frame(t)));
+        const opsOf = scenes.map((scene) => liquidOps(scene));
         const ask = (i: number) => layersMade(opsOf[i], at, `${asked.slot}:${i % ahead}`, "thumb", controller.signal);
         const pending: Promise<boolean>[] = [];
         for (let i = 0; i < Math.min(ahead, times.length); i += 1) pending[i] = ask(i);
         try {
           for (let i = 0; i < times.length; i += 1) {
             if (!(await pending[i])) return;
-            frames.push(opsOf[i].map((op: LiquidOp) => ({ paste: keep(liquidLayer(op, at, "paste"), at), shadow: op.shadow ? keep(liquidLayer(op, at, "shadow"), at) : null })));
+            if (i > 0 && scenes[i] === scenes[i - 1]) frames.push(frames[i - 1]);
+            else frames.push(opsOf[i].map((op: LiquidOp) => ({ paste: keep(liquidLayer(op, at, "paste"), at), shadow: op.shadow ? keep(liquidLayer(op, at, "shadow"), at) : null })));
             if (i + ahead < times.length) pending[i + ahead] = ask(i + ahead);
           }
         } finally {
@@ -206,14 +210,15 @@ export function PlayCanvas({ request, speed, paste, target, className, clock }: 
     const { plan } = latest.current;
     const look = latest.current.look();
     const origin = { x: ox, y: oy };
-    const loop = plan.duration / speed + PLAY_HOLD;
+    // A loop (Jitter) goes round again at once; anything else stands finished a moment first.
+    const loop = plan.duration / speed + (plan.loops ? 0 : PLAY_HOLD);
     begun.current ??= performance.now();
     let shown = "";
     let id = 0;
     const tick = (now: number) => {
       // A frame's time can be a moment before the loop began: never before its first frame.
       const played = (Math.max(0, now - (begun.current ?? now)) / 1000) % loop;
-      const t = Math.min(plan.duration, played * speed);
+      const t = plan.loops ? Math.min(plan.duration - 1e-9, played * speed) : Math.min(plan.duration, played * speed);
       // With paste, the frame it was made for; without, the moment itself.
       const index = paste === "none" ? -1 : Math.min(paste.times.length - 1, Math.floor(t * PASTE_FPS));
       const at = paste === "none" ? t : paste.times[index];

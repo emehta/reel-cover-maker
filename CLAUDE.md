@@ -217,10 +217,26 @@ npm run build   # the static site, in out/
   scale (`speedPlace`, `speedAtPlace`), caught at 1 near the middle.
   Renaissance has Written (capitals rise in line by line, then the script
   is penned across them, its gap cut round what the pen has written:
-  `cutAround`), Word by word and Line by line; Stickery has Type and draw, Slap, Pop and Reveal; Pasty and Pasty Flat
-  Written live; Inkblot Written (each printed word traced as a pen writes
-  it, word after word), Word by word and Line by line (into focus out of
-  nothing, as ink soaks in). All at once, Pasty's Pop and Rise were cut ("so bad"; 8
+  `cutAround`), Word by word and Line by line; Stickery has Spell (Type
+  and draw until the owner renamed it, 24 Oct; its id is still
+  `type-draw`, so saved covers open on it), Slap, Pop, Reveal and Jitter;
+  Pasty and Pasty Flat Written live and Jitter; Inkblot Written (each
+  printed word traced as a pen writes it, word after word), Word by word,
+  Line by line (into focus out of nothing, as ink soaks in) and Jitter.
+  **Jitter** (the owner's ask, 24 Oct: Shuffle pressed again and again)
+  goes round the cover as Shuffle makes it, a new shuffle each beat, four
+  a second (`JITTER_RATE`) round a loop of twelve (`JITTER_COUNT`), the
+  cover's own shuffle first and the rest worked out from it
+  (`jitterSeeds`), so the preview and the video are the same every time.
+  It is the one animation that loops (`Plan.loops`): it plays round again
+  at once, with no finished cover stood after it, and its video has no
+  held end and no frame of its start again at its end (`frameTimes`,
+  `holdFrames` with `loops`). Its scenes are the page's own covers at
+  each seed, in the same place (`Shuffle` in the page), made only as each
+  first comes round (Inkblot costs about 40 ms a cover); a beat's paste is
+  made once and shared by the frames it lasts (`usePaste`). Not for
+  Renaissance yet (the owner will decide its animations), nor Echo or
+  Mono, which a shuffle does not change. All at once, Pasty's Pop and Rise were cut ("so bad"; 8
   Oct: "I don't want rise"), so do not bring them back; Stickery's Pop
   came back on the owner's ask of 8 Oct ("keep pop"). Every
   animation (`animate.ts`, pure, tested) is a function of time on the
@@ -236,7 +252,7 @@ npm run build   # the static site, in out/
   moment after so a bowl fills as the pen passes, each ink pixel taking
   its nearest line point's time straight across the stroke), drawn part
   written by `writer.ts`; with no page to trace in, paint wipes it on.
-  In Type and draw the sticker's paper comes with its words (the owner, 8
+  In Spell the sticker's paper comes with its words (the owner, 8
   Oct: it was "already there"): each sticker shape carries the grid its
   steps were cut on (`grid`), its cells are timed by the letter laid
   nearest each (`paperCells`, `paperTimes`, earlier where two are as

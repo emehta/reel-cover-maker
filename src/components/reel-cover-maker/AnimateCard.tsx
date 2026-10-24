@@ -82,7 +82,7 @@ export function AnimateCard({ options, current, speed, requestFor, target, still
           <X size={18} weight="bold" aria-hidden="true" />
         </button>
       </div>
-      <div className={styles.animateTiles} role="radiogroup" aria-labelledby="rcm-animate-title" style={{ "--rcm-ratio": String(ratio), "--rcm-ratio-n": ratio, "--rcm-count": options.length } as CSSProperties}>
+      <div className={styles.animateTiles} role="radiogroup" aria-labelledby="rcm-animate-title" data-many={options.length > 4 || undefined} style={{ "--rcm-ratio": String(ratio), "--rcm-ratio-n": ratio, "--rcm-count": options.length } as CSSProperties}>
         {options.map((option) => (
           <Tile key={option.id} option={option} picked={picked === option.id} onPick={() => setPicked(option.id)} onChoose={() => onSave(option.id, pace)} request={requestFor(option.id)} speed={pace} target={target} still={still} clear={clear} ground={ground} />
         ))}

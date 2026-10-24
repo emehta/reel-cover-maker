@@ -198,7 +198,7 @@ const wrappedScenes = new Map<string, Scene>();
 /** Each scene's animations as planned: planning walks the scene, so it is done once a scene. */
 const plans = new WeakMap<Scene, Map<AnimationId, Plan>>();
 
-function planFor(scene: Scene, style: Design["style"], id: AnimationId, measurer: Measurer): Plan {
+function planFor(scene: Scene, style: Design["style"], id: AnimationId, measurer: Measurer, shuffle: Shuffle): Plan {
   let byId = plans.get(scene);
   if (!byId) {
     byId = new Map();
@@ -206,11 +206,14 @@ function planFor(scene: Scene, style: Design["style"], id: AnimationId, measurer
   }
   let made = byId.get(id);
   if (!made) {
-    made = animationPlan(scene, style, id, measurer);
+    made = animationPlan(scene, style, id, measurer, 1, shuffle);
     byId.set(id, made);
   }
   return made;
 }
+
+/** What Jitter goes round from: the cover's own shuffle, and the cover made at another. */
+type Shuffle = { seed: number; cover: (seed: number) => Scene };
 
 /** How soon after a video is begun a press on its button stops it: sooner is a double click's second half. */
 const STOP_AFTER_MS = 800;
@@ -712,12 +715,14 @@ export default function ReelCoverMaker() {
   const speed = design.animationSpeed;
   /** The canvas the animation plays on over the preview: its pixels on screen, so it is as sharp as the cover. */
   const playTarget = wholeCover(format, Math.max(240, Math.min(format.width, shownWidth)));
+  /** The cover as Shuffle would make it, for Jitter: everything as it is but the shuffle, in the same place. */
+  const shuffled: Shuffle = { seed: design.seed, cover: (seed) => coverFor({ ...input, seed }, loads, design.place).scene };
   // Played while the letters are not being moved: pressed, they stand still to be placed.
   const playRequest: PlayRequest | null =
     design.animated && scene && measurer && photoChecked && !selected
       ? {
           key: `${key}|${animation}`,
-          plan: planFor(scene, design.style, animation, measurer),
+          plan: planFor(scene, design.style, animation, measurer, shuffled),
           look: () => ({ font: fontCss, grain: grain(), photo: photoForRef.current(scene) }),
           slot: "motion-main",
         }
@@ -994,7 +999,7 @@ export default function ReelCoverMaker() {
       return;
     }
     if (!scene || !measurer || !filled) return;
-    const full = animationPlan(scene, design.style, animation, measurer, speed);
+    const full = animationPlan(scene, design.style, animation, measurer, speed, shuffled);
     const kind: VideoKind = photo ? "mp4" : "mov";
     const fileTitle = videoName(design.text, design.format, kind);
     const controller = new AbortController();
@@ -1006,8 +1011,9 @@ export default function ReelCoverMaker() {
     // Stopped while it encodes: the encoders let go at once.
     controller.signal.addEventListener("abort", () => maker?.close(), { once: true });
     try {
-      const times = frameTimes(full.duration, VIDEO_FPS);
-      maker = await videoJob(kind, times.length, holdFrames(VIDEO_FPS), { cores: navigator.hardwareConcurrency || 4, touch: window.matchMedia(TOUCH_QUERY).matches });
+      // A loop (Jitter) has no held end, and no frame of its start again at its end, so a player looping it never stutters.
+      const times = frameTimes(full.duration, VIDEO_FPS, full.loops);
+      maker = await videoJob(kind, times.length, holdFrames(VIDEO_FPS, full.loops), { cores: navigator.hardwareConcurrency || 4, touch: window.matchMedia(TOUCH_QUERY).matches });
       if (controller.signal.aborted) throw new DOMException("Called off.", "AbortError");
       const encoder = maker;
       setMaking(0.04);
@@ -1528,7 +1534,7 @@ export default function ReelCoverMaker() {
           target={wholeCover(format, CARD_WIDTH)}
           requestFor={(id) => ({
             key: `card|${key}|${id}`,
-            plan: planFor(scene, design.style, id, measurer),
+            plan: planFor(scene, design.style, id, measurer, shuffled),
             look: () => ({ font: fontCss, grain: grain(), photo: photoForRef.current(scene) }),
             slot: `motion-card-${id}`,
           })}

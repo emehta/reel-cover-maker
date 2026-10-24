@@ -2532,6 +2532,19 @@
   .animateTiles {
     gap: 10px;
   }
+
+  /* Five (Stickery's) would each be a thumb's width on a phone: three over two, the two centred under them. */
+  .animateTiles[data-many] {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .animateTiles[data-many] > * {
+    grid-column: span 2;
+  }
+
+  .animateTiles[data-many] > :nth-child(4) {
+    grid-column: 2 / span 2;
+  }
 }
 
 /* Inside an app's own browser: the cover alone, to press and hold. */

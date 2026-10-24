@@ -279,10 +279,10 @@ export async function videoJob(kind: VideoKind, frames: number, hold: number, de
       try {
         if (added !== frames || !last) throw new Error(`The video was given ${added} of its ${frames} frames.`);
         const joiner = encoders[0];
-        // The held end: the finished cover encoded once, by whichever encoder is free first.
-        await joiner.write("hold.png", new Uint8Array(await (last as Blob).arrayBuffer()));
+        // The held end: the finished cover encoded once, by whichever encoder is free first; a loop has none.
+        if (hold > 0) await joiner.write("hold.png", new Uint8Array(await (last as Blob).arrayBuffer()));
         const pieces = await Promise.all(made);
-        await joiner.exec(holdArgs(VIDEO_FPS, "hold.png", "hold.mov"));
+        if (hold > 0) await joiner.exec(holdArgs(VIDEO_FPS, "hold.png", "hold.mov"));
         // Every run beside the first, already in the joiner, handed to it to join.
         for (let r = 1; r < pieces.length; r += 1) await joiner.write(`run${r}.mov`, pieces[r]);
         const list = joinList(runs.map((_, r) => `run${r}.mov`), hold > 0 ? "hold.mov" : null, hold);

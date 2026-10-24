@@ -3401,22 +3401,24 @@ const ANIMATED = [
   ["mono", {}],
 ];
 
-check("every animation of every style starts with less than the cover and ends on it exactly, within the longest a motion runs, its frames valid all the way", () => {
+check("every animation of every style starts with less than the cover (Jitter, a loop of whole covers, with the cover itself) and ends on it exactly, within the longest a motion runs, its frames valid all the way", () => {
   for (const title of ["How I *plan* my week", "things *aren't*\n*what* they seem\nand *more*"]) {
     for (const [style, extra] of ANIMATED) {
       const scene = cover(title, style, "reel", extra);
       const whole = shown(scene);
       assert.ok(AN.animationsFor(style).length >= 1, `${style} offers no animation`);
       for (const { id } of AN.animationsFor(style)) {
-        const p = AN.plan(scene, style, id, measurer);
+        const shuffle = { seed: 99, cover: (seed) => cover(title, style, "reel", { ...extra, seed }) };
+        const p = AN.plan(scene, style, id, measurer, 1, shuffle);
         const name = `${style} ${JSON.stringify(extra)} ${id}`;
         assert.ok(p.duration > 0.3 && p.duration <= AN.LONGEST + 1e-9, `${name} runs ${p.duration}s`);
         assert.equal(p.frame(p.duration), scene, `${name} does not end on the cover`);
-        assert.equal(p.frame(p.duration + 5), scene);
-        assert.ok(near(AN.videoLength(p), p.duration + AN.HOLD, 1e-12));
-        // At its start the cover is not yet laid: less of it is drawn, or (Slap) it is all still in the air.
+        if (!p.loops) assert.equal(p.frame(p.duration + 5), scene);
+        assert.ok(near(AN.videoLength(p), p.duration + (p.loops ? 0 : AN.HOLD), 1e-12));
+        // At its start the cover is not yet laid: less of it is drawn, or (Slap) it is all still in the air; a loop starts on the cover itself.
         const first = shown(p.frame(0));
-        if (id === "slap") assert.notDeepEqual(p.frame(0).ops, scene.ops, `${name} starts with the cover laid`);
+        if (p.loops) assert.equal(p.frame(0), scene, `${name} does not start on the cover`);
+        else if (id === "slap") assert.notDeepEqual(p.frame(0).ops, scene.ops, `${name} starts with the cover laid`);
         else assert.ok(first.chars + first.shapes + first.paste < whole.chars + whole.shapes + whole.paste - 1e-6, `${name} starts with the cover drawn`);
         for (let t = 0; t <= p.duration; t += 1 / 30) {
           const frame = p.frame(t);
@@ -3485,7 +3487,7 @@ check("Inkblot's Written writes each printed word as a pen does, word after word
   // Each word is finished before the next is begun.
   for (let i = 1; i < words.length; i += 1) assert.ok(done.get(words[i - 1].text + words[i - 1].line) <= order[i] + 1 / 60);
   assert.equal(p.frame(p.duration), scene);
-  assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.name), ["Written", "Word by word", "Line by line"]);
+  assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.name), ["Written", "Word by word", "Line by line", "Jitter"]);
   // An emoji comes in faded, never out of focus (a blur casts it in one colour), and with its own line.
   const emoji = cover("hello\n👍\nworld", "inkblot", "reel");
   for (const id of ["words", "lines"]) {
@@ -3520,7 +3522,7 @@ check("a chain piped part way is its first part by length, the nozzle's bead bet
   assert.deepEqual(AN.chainPart([chain[0]], 0.3), [chain[0]]);
 });
 
-check("Stickery's Type and draw sets each sticker's words in reading order, plain ones typed and funky ones written on, its paper with them", () => {
+check("Stickery's Spell (Type and draw until 24 Oct) sets each sticker's words in reading order, plain ones typed and funky ones written on, its paper with them", () => {
   const scene = cover("things *aren't*\n*what* they seem", "stickery", "reel", { lettering: "yesteryear" });
   const p = AN.plan(scene, "stickery", "type-draw", measurer);
   const firstSeen = new Map();
@@ -3640,12 +3642,62 @@ check("Echo's Ripple and Spread bring the words first and each ring after the on
   assert.ok(near(boxAt(p.duration - 1e-6).x, cursor.x, 0.5), "the cursor does not land where the cover has it");
 });
 
-check("the animations on offer: Stickery types and draws, slaps, pops or reveals, Pasty and Pasty Flat are written live, and what was cut is gone", () => {
-  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.id), ["type-draw", "slap", "pop", "reveal"]);
-  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.name), ["Type and draw", "Slap", "Pop", "Reveal"]);
-  for (const style of ["pasty", "pasty-flat"]) assert.deepEqual(AN.animationsFor(style).map((a) => a.id), ["written"]);
+check("the animations on offer: Stickery spells, slaps, pops, reveals or jitters, Pasty and Pasty Flat are written live or jitter, Inkblot jitters too, and what was cut is gone", () => {
+  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.id), ["type-draw", "slap", "pop", "reveal", "jitter"]);
+  assert.deepEqual(AN.animationsFor("stickery").map((a) => a.name), ["Spell", "Slap", "Pop", "Reveal", "Jitter"]);
+  for (const style of ["pasty", "pasty-flat"]) assert.deepEqual(AN.animationsFor(style).map((a) => a.id), ["written", "jitter"]);
+  assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.id), ["written", "words", "lines", "jitter"]);
+  // Not Renaissance yet (the owner, 24 Oct), and not Echo or Mono, which a shuffle does not change.
+  for (const style of ["renaissance", "echo", "mono"]) assert.ok(!AN.offers(style, "jitter"), `${style} offers Jitter`);
+  for (const style of S.STYLES) assert.equal(AN.offers(style.id, "jitter"), S.shuffles(style.id) && style.id !== "renaissance", `${style.id}: Jitter where a shuffle changes the cover`);
   for (const cut of ["rise", "together", "swell"]) for (const style of S.STYLES) assert.ok(!AN.offers(style.id, cut), `${style.id} still offers ${cut}`);
   for (const style of S.STYLES) if (style.id !== "stickery") for (const only of ["pop", "reveal", "slap"]) assert.ok(!AN.offers(style.id, only), `${style.id} offers ${only}`);
+});
+
+check("Jitter goes round the cover's own shuffle and eleven more, four a second, a beat each, starting and ending on the cover as it is, the same every time, and loops with no held end", () => {
+  const seeds = AN.jitterSeeds(529062331);
+  assert.equal(seeds.length, AN.JITTER_COUNT);
+  assert.equal(seeds[0], 529062331, "it starts on the cover's own shuffle");
+  assert.equal(new Set(seeds).size, seeds.length, "a shuffle twice");
+  assert.deepEqual(AN.jitterSeeds(529062331), seeds, "not the same every time");
+  assert.ok(seeds.every((v) => Number.isInteger(v) && v >= 0 && v <= 2 ** 30), "a seed out of range");
+  assert.notDeepEqual(AN.jitterSeeds(7).slice(1), seeds.slice(1), "every cover jitters through the same shuffles");
+  for (const [style, title, extra] of [["stickery", "Maybe *not so* sweet after all", { lettering: "damion" }], ["stickery", "rate my setup", { lettering: "goo" }], ["pasty", "rate my setup", { pastyLettering: "goo" }], ["pasty-flat", "do what you want", { pastyLettering: "drip" }], ["inkblot", "How I *plan* my week", {}]]) {
+    const seed = 4242;
+    const scene = cover(title, style, "reel", { ...extra, seed });
+    const asked = [];
+    const shuffle = { seed, cover: (s) => (asked.push(s), cover(title, style, "reel", { ...extra, seed: s })) };
+    const p = AN.plan(scene, style, "jitter", measurer, 1, shuffle);
+    assert.equal(p.loops, true);
+    assert.ok(near(p.duration, AN.JITTER_COUNT / AN.JITTER_RATE, 1e-9));
+    assert.equal(asked.length, 0, `${style}: shuffles made before they were needed`);
+    assert.equal(p.frame(0), scene, `${style}: it does not start on the cover`);
+    assert.equal(p.frame(p.duration), scene, `${style}: round the loop is not the cover again`);
+    // A beat each: the same scene through a beat, a new one at the next.
+    const beat = 1 / AN.JITTER_RATE;
+    const beats = Array.from({ length: AN.JITTER_COUNT }, (_, k) => p.frame(k * beat + beat / 2));
+    for (let k = 0; k < AN.JITTER_COUNT; k += 1) assert.equal(p.frame(k * beat + 0.01), beats[k], `${style}: beat ${k} changed within itself`);
+    assert.equal(new Set(beats).size, AN.JITTER_COUNT, `${style}: a beat shown twice in a round`);
+    assert.deepEqual(asked, AN.jitterSeeds(seed).slice(1), `${style}: not the shuffles in turn`);
+    // Each beat a cover rearranged: no two the same picture.
+    const marks = (sc) => JSON.stringify(sc.ops.map((op) => (op.kind === "liquid" ? op.chains.slice(0, 3).map((c) => c[0]) : op.kind === "ink" ? op.polygons[0].slice(0, 6) : op)));
+    assert.equal(new Set(beats.map(marks)).size, AN.JITTER_COUNT, `${style}: two beats drawn the same`);
+    // Played twice as fast, it goes round in half the time, the same beats.
+    const fast = AN.plan(scene, style, "jitter", measurer, 2, shuffle);
+    assert.ok(near(fast.duration, p.duration / 2, 1e-9));
+    assert.equal(marks(fast.frame((3 * beat + beat / 2) / 2)), marks(beats[3]));
+    // As a video: no held end, and its last frame leads into its first, never the start shown twice.
+    const times = AN.frameTimes(p.duration, 30, true);
+    assert.equal(times.length, Math.round(p.duration * 30));
+    assert.ok(times[times.length - 1] < p.duration);
+    assert.equal(AN.holdFrames(30, true), 0);
+    assert.ok(near(AN.videoLength(p), p.duration, 1e-9));
+  }
+  // Every other animation still ends on the cover and holds it.
+  assert.ok(AN.holdFrames(30) > 0);
+  // With no way to make a shuffle (nothing to shuffle by), it stands on the cover.
+  const still = cover("rate my setup", "stickery", "reel", { lettering: "goo" });
+  assert.equal(AN.plan(still, "stickery", "jitter", measurer).frame(1.3), still);
 });
 
 check("the speed slider has the animation's own speed in its middle, half as fast at one end and twice at the other, sliding smoothly between", () => {
@@ -3798,7 +3850,7 @@ check("Pop springs each sticker on from small, past its size and back; Reveal br
   for (const p of [pop, reveal]) assert.equal(p.frame(p.duration), scene);
 });
 
-check("Type and draw lays a sticker's paper under each letter as it comes: it only grows, every letter typed is on it, and it ends the sticker exactly", () => {
+check("Spell lays a sticker's paper under each letter as it comes: it only grows, every letter typed is on it, and it ends the sticker exactly", () => {
   const area = (polygons) => polygons.reduce((sum, poly) => {
     let a = 0;
     for (let i = 0; i < poly.length; i += 2) {

@@ -48,7 +48,7 @@ import { isBackdrop, pasteKey, type LiquidOp, type Op, type Scene, type StyleId 
 import { fillHoles, insidePolygon, polygonBounds, traceCells, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { graphemes } from "@/components/reel-cover-maker/title";
 
-export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade";
+export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade";
 
 export interface Animation {
   id: AnimationId;
@@ -57,14 +57,22 @@ export interface Animation {
 
 /** Each style's animations, the one it starts on first. */
 export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
+  // Type and draw is Spell (the owner, 24 Oct); its id is kept, so a cover saved on it opens on it.
   stickery: [
-    { id: "type-draw", name: "Type and draw" },
+    { id: "type-draw", name: "Spell" },
     { id: "slap", name: "Slap" },
     { id: "pop", name: "Pop" },
     { id: "reveal", name: "Reveal" },
+    { id: "jitter", name: "Jitter" },
   ],
-  pasty: [{ id: "written", name: "Written live" }],
-  "pasty-flat": [{ id: "written", name: "Written live" }],
+  pasty: [
+    { id: "written", name: "Written live" },
+    { id: "jitter", name: "Jitter" },
+  ],
+  "pasty-flat": [
+    { id: "written", name: "Written live" },
+    { id: "jitter", name: "Jitter" },
+  ],
   renaissance: [
     { id: "written", name: "Written" },
     { id: "words", name: "Word by word" },
@@ -74,6 +82,7 @@ export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
     { id: "written", name: "Written" },
     { id: "words", name: "Word by word" },
     { id: "lines", name: "Line by line" },
+    { id: "jitter", name: "Jitter" },
   ],
   echo: [
     { id: "ripple", name: "Ripple" },
@@ -134,6 +143,62 @@ export interface Plan {
   duration: number;
   /** The scene at `t` seconds: nothing yet at 0, the cover itself from `duration` on. */
   frame(t: number): Scene;
+  /**
+   * Its frames run round with no end (Jitter): played, it starts again at
+   * once, with no finished cover stood after it; made a video, it has no
+   * held end, and its last frame leads back into its first.
+   */
+  loops?: boolean;
+}
+
+/**
+ * Jitter (the owner's ask, 24 Oct): the cover as Shuffle makes it, again
+ * and again, a new one each beat, round a loop of this many. Its own pace
+ * is four a second: the speed slider takes it from two to eight.
+ */
+export const JITTER_COUNT = 12;
+export const JITTER_RATE = 4;
+
+/**
+ * The shuffles a Jitter goes round: the cover's own first, so it starts as
+ * the cover is, then the rest worked out from it, the same every time it is
+ * played or saved, none of them twice.
+ */
+export function jitterSeeds(seed: number): number[] {
+  const out = [seed];
+  let h = (Math.floor(Math.abs(seed)) ^ 0x9e3779b9) >>> 0;
+  for (let k = 1; out.length < JITTER_COUNT; k += 1) {
+    h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+    h = Math.imul(h ^ (h >>> 13) ^ k, 0xc2b2ae35) >>> 0;
+    const next = (h % 2 ** 30) + 1;
+    if (!out.includes(next)) out.push(next);
+  }
+  return out;
+}
+
+/**
+ * A Jitter: the scenes of `seeds`, a beat each, made only as each first
+ * comes round (a cover set again costs Inkblot about a twenty-fifth of a
+ * second), the cover itself once the loop is round.
+ */
+function jitter(scene: Scene, seeds: readonly number[], shuffled: (seed: number) => Scene, pace: number): Plan {
+  const made = new Map<number, Scene>([[0, scene]]);
+  const at = (step: number) => {
+    let hit = made.get(step);
+    if (!hit) {
+      hit = shuffled(seeds[step]);
+      made.set(step, hit);
+    }
+    return hit;
+  };
+  return {
+    duration: seeds.length / JITTER_RATE / pace,
+    loops: true,
+    frame(t: number): Scene {
+      const step = Math.floor(Math.max(0, t) * pace * JITTER_RATE + 1e-9) % seeds.length;
+      return at(step);
+    },
+  };
 }
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -1319,8 +1384,10 @@ function echo(scene: Scene, id: AnimationId, measurer: Measurer): Built {
  * The animation `id` of a cover's scene in `style`, at `speed` (1 its own,
  * 2 twice as fast, 0.5 half): every time in it divided by the speed.
  */
-export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Measurer, speed = 1): Plan {
+export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Measurer, speed = 1, shuffle?: { seed: number; cover: (seed: number) => Scene }): Plan {
   const pace = speedOf(speed);
+  // Without a way to make the cover shuffled (a test of another animation), Jitter stands still on the cover.
+  if (id === "jitter") return jitter(scene, shuffle ? jitterSeeds(shuffle.seed) : [0], shuffle ? shuffle.cover : () => scene, pace);
   const built: Built =
     style === "stickery"
       ? stickery(scene, id, measurer)
@@ -1353,18 +1420,23 @@ export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Me
   };
 }
 
-/** How long a video of a plan runs: the motion, then the cover held. */
+/** How long a video of a plan runs: the motion, then the cover held; a loop, its round alone. */
 export function videoLength(p: Plan): number {
-  return p.duration + HOLD;
+  return p.duration + (p.loops ? 0 : HOLD);
 }
 
-/** The moments a motion of `duration` is drawn at, `fps` a second: from nothing at 0 to the cover itself, last. */
-export function frameTimes(duration: number, fps: number): number[] {
+/**
+ * The moments a motion of `duration` is drawn at, `fps` a second: from
+ * nothing at 0 to the cover itself, last. A loop's stop a frame short of
+ * its end, which is its start again.
+ */
+export function frameTimes(duration: number, fps: number, loops = false): number[] {
+  if (loops) return Array.from({ length: Math.max(1, Math.round(duration * fps)) }, (_, i) => i / fps);
   const count = Math.max(1, Math.ceil(duration * fps - 1e-9));
   return Array.from({ length: count + 1 }, (_, i) => Math.min(duration, i / fps));
 }
 
-/** How many frames a video holds the finished cover for, after the motion's last. */
-export function holdFrames(fps: number): number {
-  return Math.round(HOLD * fps);
+/** How many frames a video holds the finished cover for, after the motion's last: none for a loop. */
+export function holdFrames(fps: number, loops = false): number {
+  return loops ? 0 : Math.round(HOLD * fps);
 }
