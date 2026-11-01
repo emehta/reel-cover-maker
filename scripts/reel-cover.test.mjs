@@ -40,6 +40,7 @@ const AN = await import("@/components/reel-cover-maker/animate");
 const VID = await import("@/components/reel-cover-maker/video");
 const WO = await import("@/components/reel-cover-maker/write-on");
 const INKM = await import("@/components/reel-cover-maker/ink");
+const RUN = await import("@/components/reel-cover-maker/ink-run");
 const REN = await import("@/components/reel-cover-maker/renaissance");
 
 let passed = 0;
@@ -3372,7 +3373,7 @@ function shown(scene) {
   const walk = (ops, alpha) => {
     for (const op of ops) {
       if (op.kind === "fade") walk(op.ops, alpha * op.alpha);
-      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "knockout") walk(op.ops, alpha);
+      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "knockout" || op.kind === "clip") walk(op.ops, alpha);
       // A shadow cast shows nothing of the cover; something out of focus is still there.
       else if (op.kind === "blur") walk(op.ops, op.tint ? 0 : alpha);
       else if (op.kind === "write") walk(op.ops, alpha * op.at);
@@ -3487,7 +3488,7 @@ check("Inkblot's Written writes each printed word as a pen does, word after word
   // Each word is finished before the next is begun.
   for (let i = 1; i < words.length; i += 1) assert.ok(done.get(words[i - 1].text + words[i - 1].line) <= order[i] + 1 / 60);
   assert.equal(p.frame(p.duration), scene);
-  assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.name), ["Written", "Word by word", "Line by line", "Jitter"]);
+  assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.name), ["Written", "Word by word", "Line by line", "Wick", "Jitter"]);
   // An emoji comes in faded, never out of focus (a blur casts it in one colour), and with its own line.
   const emoji = cover("hello\n👍\nworld", "inkblot", "reel");
   for (const id of ["words", "lines"]) {
@@ -3642,16 +3643,312 @@ check("Echo's Ripple and Spread bring the words first and each ring after the on
   assert.ok(near(boxAt(p.duration - 1e-6).x, cursor.x, 0.5), "the cursor does not land where the cover has it");
 });
 
-check("the animations on offer: Stickery spells, slaps, pops, reveals or jitters, Pasty and Pasty Flat are written live or jitter, Inkblot jitters too, and what was cut is gone", () => {
+check("the animations on offer: Stickery spells, slaps, pops, reveals or jitters, Pasty and Pasty Flat are written live, jelly or jitter, Renaissance is engraved too, Inkblot wicks and jitters, and what was cut is gone", () => {
   assert.deepEqual(AN.animationsFor("stickery").map((a) => a.id), ["type-draw", "slap", "pop", "reveal", "jitter"]);
   assert.deepEqual(AN.animationsFor("stickery").map((a) => a.name), ["Spell", "Slap", "Pop", "Reveal", "Jitter"]);
-  for (const style of ["pasty", "pasty-flat"]) assert.deepEqual(AN.animationsFor(style).map((a) => a.id), ["written", "jitter"]);
-  assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.id), ["written", "words", "lines", "jitter"]);
+  for (const style of ["pasty", "pasty-flat"]) {
+    assert.deepEqual(AN.animationsFor(style).map((a) => a.id), ["written", "jelly", "jitter"]);
+    assert.deepEqual(AN.animationsFor(style).map((a) => a.name), ["Written live", "Jelly", "Jitter"]);
+  }
+  assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.id), ["written", "words", "lines", "wick", "jitter"]);
+  assert.deepEqual(AN.animationsFor("renaissance").map((a) => a.id), ["written", "words", "lines", "engraved"]);
+  assert.deepEqual(AN.animationsFor("renaissance").map((a) => a.name), ["Written", "Word by word", "Line by line", "Engraved"]);
+  // The owner's picks of 31 Oct, each for its own material alone.
+  for (const style of S.STYLES) {
+    assert.equal(AN.offers(style.id, "engraved"), style.id === "renaissance", `${style.id}: Engraved`);
+    assert.equal(AN.offers(style.id, "wick"), style.id === "inkblot", `${style.id}: Wick`);
+    assert.equal(AN.offers(style.id, "jelly"), style.id === "pasty" || style.id === "pasty-flat", `${style.id}: Jelly`);
+  }
   // Not Renaissance yet (the owner, 24 Oct), and not Echo or Mono, which a shuffle does not change.
   for (const style of ["renaissance", "echo", "mono"]) assert.ok(!AN.offers(style, "jitter"), `${style} offers Jitter`);
   for (const style of S.STYLES) assert.equal(AN.offers(style.id, "jitter"), S.shuffles(style.id) && style.id !== "renaissance", `${style.id}: Jitter where a shuffle changes the cover`);
   for (const cut of ["rise", "together", "swell"]) for (const style of S.STYLES) assert.ok(!AN.offers(style.id, cut), `${style.id} still offers ${cut}`);
   for (const style of S.STYLES) if (style.id !== "stickery") for (const only of ["pop", "reveal", "slap"]) assert.ok(!AN.offers(style.id, only), `${style.id} offers ${only}`);
+});
+
+/** Each clip in a frame: what it shows, and the polygons it is shown through, in the order drawn. */
+function clipsIn(scene) {
+  const out = [];
+  const walk = (ops) => {
+    for (const op of ops) {
+      if (op.kind === "clip") out.push(op);
+      else if ("ops" in op) walk(op.ops);
+    }
+  };
+  walk(scene.ops);
+  return out;
+}
+
+/** The text and printed ink of a scene, each op as it is, in the order drawn. */
+function lettersIn(scene) {
+  const out = [];
+  const walk = (ops) => {
+    for (const op of ops) {
+      if (op.kind === "text" || op.kind === "ink") out.push(op);
+      else if ("ops" in op) walk(op.ops);
+    }
+  };
+  walk(scene.ops);
+  return out;
+}
+
+/** The area a set of loops encloses, holes taken out. */
+const enclosed = (loops) => Math.abs(loops.reduce((sum, l) => sum + INKM.loopArea(l), 0));
+
+check("Engraved cuts each letter's contour, then lines across the lockup that deepen until the letters are solid, the cover's own letters shown through them, and ends on the cover", () => {
+  for (const extra of [{}, { renaissanceLook: "niche", scriptColour: "#141414" }, { renaissanceLook: "travel" }]) {
+    for (const title of ["The art *of* summertime", "find *your*\nniche"]) {
+      const scene = cover(title, "renaissance", "reel", extra);
+      const texts = lettersIn(scene);
+      const p = AN.plan(scene, "renaissance", "engraved", measurer);
+      const name = `${title} ${JSON.stringify(extra)}`;
+      assert.ok(p.duration > 1.2 && p.duration < 2.2, `${name}: runs ${p.duration}s`);
+      assert.equal(p.frame(p.duration), scene);
+      assert.equal(clipsIn(p.frame(0)).length, 0, `${name}: something cut at its start`);
+      const cut = new Map();
+      for (let t = 0; t < p.duration; t += 1 / 30) {
+        const frame = p.frame(t);
+        // Only the letters, each the cover's own, shown through what is cut, and still in the knockout they share, so the script cuts its gap.
+        const inKnockout = frame.ops.filter((op) => op.kind === "knockout").flatMap((op) => clipsIn({ ops: op.ops }));
+        assert.equal(inKnockout.length, clipsIn(frame).length, `${name}: a letter out of its knockout at ${t.toFixed(2)}`);
+        for (const clip of clipsIn(frame)) {
+          assert.equal(clip.ops.length, 1);
+          assert.ok(texts.includes(clip.ops[0]), `${name}: a letter not the cover's own at ${t.toFixed(2)}`);
+          // Cut only ever further: every line longer or wider, never shorter.
+          const area = clip.polygons.reduce((sum, poly) => sum + Math.abs(INKM.loopArea(poly)), 0);
+          assert.ok(area >= (cut.get(clip.ops[0]) ?? 0) - 1e-6, `${name}: less cut at ${t.toFixed(2)}`);
+          cut.set(clip.ops[0], area);
+        }
+      }
+      const shownBy = (t) => new Map(clipsIn(p.frame(t)).map((c) => [c.ops[0], c.polygons]));
+      // Each letter's contour is cut all round before the lines come.
+      const early = shownBy(0.45);
+      for (const op of texts) {
+        const loops = measurer.outline(op.face, op.text).map((l) => l.map((v, i) => (i % 2 ? op.y + v * op.size : op.x + v * op.size)));
+        // Every point round it, its first among them, where the cut began and ended.
+        for (const loop of loops) {
+          for (let i = 0; i < loop.length; i += 2) {
+            const j = (i + 2) % loop.length;
+            for (const f of [0, 0.5]) {
+              const px = loop[i] + (loop[j] - loop[i]) * f;
+              const py = loop[i + 1] + (loop[j + 1] - loop[i + 1]) * f;
+              assert.notEqual(winding(early.get(op) ?? [], px, py), 0, `${name}: "${op.text}" not cut round by 0.45s`);
+            }
+          }
+        }
+      }
+      // By its last frame the lines have met over every letter: nothing jumps on as it ends.
+      const last = shownBy(p.duration - 1e-6);
+      for (const op of texts) {
+        const b = measurer.bounds(op.face, op.text);
+        const x0 = op.x - b.left * op.size * (op.sx ?? 1);
+        const w = (b.left + b.right) * op.size * (op.sx ?? 1) + (op.nib ?? 0);
+        const y0 = op.y - b.ascent * op.size;
+        const h = (b.ascent + b.descent) * op.size;
+        for (let i = 1; i < 12; i += 1) for (let j = 1; j < 8; j += 1) assert.notEqual(winding(last.get(op) ?? [], x0 + (w * i) / 12, y0 + (h * j) / 8), 0, `${name}: "${op.text}" not solid at its end`);
+      }
+    }
+  }
+  // The lines lie across the lockup as it is set: turned, scaled and moved, each letter shows the same lines in its own frame.
+  const base = cover("The art *of* summertime", "renaissance", "reel");
+  const placed = S.placeScene(base, { x: 40, y: -60, angle: 0.5, sx: 1.2, sy: 1.2 });
+  const a = clipsIn(AN.plan(base, "renaissance", "engraved", measurer).frame(0.9));
+  const b = clipsIn(AN.plan(placed, "renaissance", "engraved", measurer).frame(0.9));
+  assert.equal(a.length, b.length);
+  a.forEach((clip, i) => {
+    assert.equal(clip.polygons.length, b[i].polygons.length);
+    clip.polygons.forEach((poly, j) => poly.forEach((v, k) => assert.ok(near(v, b[i].polygons[j][k], 1e-6), "the lines did not turn with the lockup")));
+  });
+});
+
+check("Wick drops ink on each printed word in reading order, which runs along the word as one piece and only ever further, its wet edge showing and drying behind it, and ends on the cover's own print", () => {
+  const scene = cover("things aren't\nwhat they seem", "inkblot", "reel");
+  const words = lettersIn(scene).filter((op) => op.kind === "ink");
+  const p = AN.plan(scene, "inkblot", "wick", measurer);
+  assert.ok(p.duration > 1 && p.duration <= AN.LONGEST, `runs ${p.duration}s`);
+  assert.equal(p.frame(p.duration), scene);
+  const begun = new Map();
+  const reached = new Map();
+  for (let t = 0; t < p.duration; t += 1 / 60) {
+    const frame = p.frame(t);
+    for (const clip of clipsIn(frame)) {
+      const ink = clip.ops[0];
+      const word = words.find((w) => w.polygons === ink.polygons);
+      // What shows inside the ink's run is the word's own print, wet (darker) or dry.
+      assert.ok(word && clip.ops.length === 1, `something other than a word's print at ${t.toFixed(2)}`);
+      if (!begun.has(word)) begun.set(word, t);
+      if (ink.color !== word.color) assert.ok(P.contrast(ink.color, word.color) >= 1.2, "the wet edge does not show");
+      else {
+        // Dry ink only ever further.
+        const area = enclosed(clip.polygons);
+        assert.ok(area >= (reached.get(word) ?? 0) * 0.995 - 4, `"${word.text}" dried back at ${t.toFixed(2)}`);
+        reached.set(word, area);
+      }
+    }
+    // The drop, pooled darker, on its word.
+    for (const op of lettersIn(frame)) {
+      if (op.kind !== "ink" || !op.key.endsWith("|blot")) continue;
+      const word = words.find((w) => op.key === `${w.key}|blot`);
+      const b = INKM.loopBounds(word.polygons);
+      const c = INKM.loopBounds(op.polygons);
+      assert.ok((c.x0 + c.x1) / 2 >= b.x0 && (c.x0 + c.x1) / 2 <= b.x1 && (c.y0 + c.y1) / 2 >= b.y0 && (c.y0 + c.y1) / 2 <= b.y1, "a drop off its word");
+      assert.ok(P.contrast(op.color, word.color) >= 1.2, "the drop does not show");
+    }
+  }
+  const order = words.map((w) => begun.get(w));
+  assert.ok(order.every((v) => v !== undefined), "a word never wet");
+  for (let i = 1; i < order.length; i += 1) assert.ok(order[i] > order[i - 1], `"${words[i].text}" before "${words[i - 1].text}"`);
+  // Just before its end, the last word's print is dry all through: nothing jumps on as it ends.
+  const last = words[words.length - 1];
+  const end = clipsIn(p.frame(p.duration - 1e-4)).filter((c) => c.ops[0].polygons === last.polygons && c.ops[0].color === last.color);
+  const box = INKM.loopBounds(last.polygons);
+  for (let i = 1; i < 30; i += 1) {
+    for (let j = 1; j < 12; j += 1) {
+      const x = box.x0 + ((box.x1 - box.x0) * i) / 30;
+      const y = box.y0 + ((box.y1 - box.y0) * j) / 12;
+      if (winding(last.polygons, x, y) === 0) continue;
+      assert.ok(!end.length || end.some((c) => winding(c.polygons, x, y) !== 0), "the last word is not dry at its end");
+    }
+  }
+  // An emoji, which no drop prints, comes in faded at its turn.
+  const emoji = cover("hello\n👍\nworld", "inkblot", "reel");
+  const q = AN.plan(emoji, "inkblot", "wick", measurer);
+  let seen = 0;
+  let hello = null;
+  let thumb = null;
+  for (let t = 0; t <= q.duration; t += 1 / 60) {
+    let alpha = 0;
+    const walk = (ops, a) => {
+      for (const op of ops) {
+        if (op.kind === "fade") walk(op.ops, a * op.alpha);
+        else if ("ops" in op) walk(op.ops, a);
+        else if (op.kind === "text" && op.text === "👍") alpha = a * (op.alpha ?? 1);
+        else if (op.kind === "ink" && op.text === "hello" && hello === null) hello = t;
+      }
+    };
+    walk(q.frame(t).ops, 1);
+    assert.ok(alpha >= seen - 1e-9, "the emoji faded back");
+    if (alpha > 0 && thumb === null) thumb = t;
+    seen = alpha;
+  }
+  assert.ok(hello !== null && thumb !== null && thumb > hello, "the emoji came before the word before it");
+  assert.equal(seen, 1);
+  // An emoji at the end is in by the time the word before it is dry: no stretch of nothing at the end.
+  assert.ok(near(AN.plan(cover("hello\n👍", "inkblot", "reel"), "inkblot", "wick", measurer).duration, AN.plan(cover("hello", "inkblot", "reel"), "inkblot", "wick", measurer).duration, 1e-9), "a dead stretch after an emoji");
+  // The wet edge shows on any ink: deeper on a coloured or light one, catching the light on black.
+  for (const colour of [{ hue: 0, shade: 0.02, ground: "light" }, { hue: 0, shade: 0.5, ground: "light" }, { hue: 200, shade: 0.6, ground: "dark" }]) {
+    const tinted = cover("sweet", "inkblot", "reel", colour);
+    const word = lettersIn(tinted).find((op) => op.kind === "ink");
+    const mid = clipsIn(AN.plan(tinted, "inkblot", "wick", measurer).frame(0.3)).map((c) => c.ops[0].color);
+    assert.ok(mid.some((c) => c !== word.color && P.contrast(c, word.color) >= 1.2), `no wet edge to see on ${word.color}`);
+  }
+});
+
+check("ink runs from a drop along the print, as far as it is through the ink, and only dearly across bare cloth", () => {
+  const square = [[0, 0, 0, 100, 100, 100, 100, 0]];
+  const run = RUN.inkRun(square, 2);
+  assert.ok(run && run.drop.x > 30 && run.drop.x < 70 && run.drop.y > 30 && run.drop.y < 70, "the drop is not on the heaviest ink");
+  const at = (r, x, y) => r.run[Math.round((y - r.oy) / r.step) * r.W + Math.round((x - r.ox) / r.step)];
+  // Through the ink, the run is the way across it, to within the grid's eight ways round.
+  for (const [x, y] of [[90, 50], [10, 10], [50, 95], [80, 20]]) {
+    const straight = Math.hypot(x - run.drop.x, y - run.drop.y);
+    assert.ok(at(run, x, y) >= straight - 2.5 && at(run, x, y) <= straight * 1.09 + 2.5, `run ${at(run, x, y)} to ${x},${y} against ${straight}`);
+  }
+  // Across a gap of bare cloth, every step costs a dozen.
+  const two = [[0, 0, 0, 60, 60, 60, 60, 0], [80, 0, 80, 60, 140, 60, 140, 0]];
+  const apart = RUN.inkRun(two, 2);
+  assert.ok(at(apart, 82, 30) - at(apart, 58, 30) > 20 * RUN.BARE_COST * 0.8, "the ink ran across the gap as if it were ink");
+  // Run far enough, it holds all of the print; run nowhere, none of it.
+  const all = RUN.runTo(run, run.far + 1);
+  for (let x = 2; x < 100; x += 7) for (let y = 2; y < 100; y += 7) assert.notEqual(winding(all, x, y), 0);
+  assert.ok(enclosed(RUN.runTo(run, 3)) < 200);
+  assert.equal(RUN.inkRun([], 2), null);
+});
+
+check("Jelly taps the letters left to right, each squashed onto its own line and wobbling to rest, round a loop that starts and stays on the cover till it comes round, its gloss kept, quickened by the speed", () => {
+  for (const [style, extra] of [["pasty", { pastyLettering: "goo" }], ["pasty", { pastyLettering: "drip" }], ["pasty-flat", { pastyLettering: "goo-even" }]]) {
+    const scene = cover("rate my\nsetup", style, "reel", extra);
+    const paste = liquidOf(scene);
+    const p = AN.plan(scene, style, "jelly", measurer);
+    const name = `${style} ${JSON.stringify(extra)}`;
+    assert.ok(p.loops, `${name} does not loop`);
+    assert.ok(near(p.duration, AN.JELLY_LOOP, 1e-9));
+    assert.ok(near(AN.plan(scene, style, "jelly", measurer, 2).duration, AN.JELLY_LOOP / 2, 1e-9), "not quickened by the speed");
+    assert.equal(p.frame(0), scene);
+    const ys = paste.chains.flatMap((c) => c.map((b) => b.y));
+    const tall = Math.max(...ys) - Math.min(...ys);
+    const radii = paste.chains.flatMap((c) => c.map((b) => b.r)).sort((a, b) => a - b);
+    const first = new Map();
+    let moving = 0;
+    for (let t = 0; t < p.duration; t += 1 / 120) {
+      const frame = p.frame(t);
+      if (frame === scene) continue;
+      moving += 1;
+      const q = liquidOf(frame);
+      assert.equal(q.chains.length, paste.chains.length);
+      assert.equal(q.colourOf, paste.colourOf);
+      assert.equal(q.seed, paste.seed);
+      assert.equal(q.radius, radii[Math.floor(radii.length / 2)], "its gloss not kept");
+      q.chains.forEach((c, i) => {
+        assert.equal(c.length, paste.chains[i].length);
+        c.forEach((b, j) => {
+          const was = paste.chains[i][j];
+          assert.ok(Number.isFinite(b.x + b.y + b.r) && b.r > 0, `${name}: a bad bead at ${t.toFixed(3)}`);
+          // Squashed and swayed, never thrown: no bead further than a fifth of the paste's height.
+          assert.ok(Math.hypot(b.x - was.x, b.y - was.y) < tall * 0.2, `${name}: a bead thrown at ${t.toFixed(3)}`);
+          if (i < paste.letters && Math.hypot(b.x - was.x, b.y - was.y) > 1e-6 && !first.has(paste.glyphOf[i])) first.set(paste.glyphOf[i], t);
+        });
+      });
+    }
+    assert.ok(moving > 60, `${name} hardly moves`);
+    // Every letter at rest, exactly, for the loop's last stretch.
+    for (let t = 1.55; t < p.duration; t += 1 / 120) assert.equal(p.frame(t), scene, `${name} still moving at ${t.toFixed(3)}`);
+    // Tapped left to right across the title, whatever line each is on.
+    const middle = (g) => {
+      const xs = paste.chains.filter((_, i) => i < paste.letters && paste.glyphOf[i] === g).flatMap((c) => c.map((b) => b.x));
+      return (Math.min(...xs) + Math.max(...xs)) / 2;
+    };
+    const glyphs = [...first.keys()].sort((a, b) => middle(a) - middle(b));
+    assert.equal(glyphs.length, new Set(paste.glyphOf.slice(0, paste.letters)).size, `${name}: a letter never tapped`);
+    // (Two letters about as far across, on two lines, may go either way: a droplet goes with its letter.)
+    for (let i = 0; i < glyphs.length; i += 1) for (let j = i + 1; j < glyphs.length; j += 1) if (middle(glyphs[j]) - middle(glyphs[i]) > 25) assert.ok(first.get(glyphs[j]) >= first.get(glyphs[i]), `${name}: tapped out of order`);
+  }
+  // Placed letters squash onto their own lines, whichever way they are turned, flipped or scaled: the placed cover's jelly is the plain cover's, placed.
+  const base = cover("rate my\nsetup", "pasty", "reel", { pastyLettering: "goo" });
+  const plain = liquidOf(AN.plan(base, "pasty", "jelly", measurer).frame(0.15));
+  for (const place of [{ angle: 0.6, sx: 1, sy: 1 }, { angle: 2.1, sx: 1, sy: 1 }, { angle: Math.PI, sx: 1, sy: 1 }, { angle: 0, sx: 1, sy: -1 }, { angle: -0.4, sx: 1.3, sy: 1.3 }]) {
+    const placed = S.placeScene(base, { x: 30, y: -50, ...place });
+    const m = placed.placed;
+    const moved = liquidOf(AN.plan(placed, "pasty", "jelly", measurer).frame(0.15));
+    const was = liquidOf(placed);
+    let most = 0;
+    let off = 0;
+    plain.chains.forEach((c, i) =>
+      c.forEach((bead, j) => {
+        const dx = bead.x - liquidOf(base).chains[i][j].x;
+        const dy = bead.y - liquidOf(base).chains[i][j].y;
+        const ex = m[0] * dx + m[2] * dy;
+        const ey = m[1] * dx + m[3] * dy;
+        most = Math.max(most, Math.hypot(dx, dy));
+        off = Math.max(off, Math.hypot(moved.chains[i][j].x - was.chains[i][j].x - ex, moved.chains[i][j].y - was.chains[i][j].y - ey));
+      }),
+    );
+    assert.ok(most > 5 && off < 1e-6 * most, `placed ${JSON.stringify(place)}, it squashes ${off} off its own lines (of ${most.toFixed(2)})`);
+  }
+  // A short word, unturned, squashes down onto its line, not sideways, whatever its capitals and descenders.
+  for (const title of ["Ty", "yo", "Lg", "My"]) {
+    const scene = cover(title, "pasty", "reel", { pastyLettering: "goo" });
+    const at = liquidOf(AN.plan(scene, "pasty", "jelly", measurer).frame(0.1));
+    let across = 0;
+    let down = 0;
+    at.chains.forEach((c, i) =>
+      c.forEach((bead, j) => {
+        across += Math.abs(bead.x - liquidOf(scene).chains[i][j].x);
+        down += Math.abs(bead.y - liquidOf(scene).chains[i][j].y);
+      }),
+    );
+    assert.ok(down > across * 1.5, `"${title}" squashes sideways (${across.toFixed(0)} across, ${down.toFixed(0)} down)`);
+  }
 });
 
 check("Jitter goes round the cover's own shuffle and eleven more, four a second, a beat each, starting and ending on the cover as it is, the same every time, and loops with no held end", () => {

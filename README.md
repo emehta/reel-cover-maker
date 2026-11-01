@@ -172,11 +172,14 @@ on a label's row.
   left, twice at the right), and **Save**, and the
   cover plays it, in the preview and on the phone, sharp at the screen's
   own pixels, until the sparkle is pressed again to stop. Each lays the
-  cover down over a few seconds and ends on it exactly, but for Jitter,
-  which never stops:
+  cover down over a few seconds and ends on it exactly, but for Jitter
+  and Jelly, which never stop:
   - Renaissance: **Written** (the capitals rise in line by line, then the
     script is written across them as a pen writes it, its gap in them
-    following the pen), **Word by word** and **Line by line**.
+    following the pen), **Word by word**, **Line by line** and **Engraved**
+    (each letter's contour cut as an engraver cuts a plate, then fine lines
+    across the lockup, a second pass crossing them, deepening until the
+    letters are solid).
   - Stickery: **Spell** (its plain words typed, its funky words
     written as a pen writes them, stroke by stroke, traced from the letters
     themselves, or piped bead by bead in Goo, and the sticker's paper laid
@@ -188,10 +191,16 @@ on a label's row.
     nothing) and **Jitter**.
   - Pasty and Pasty Flat: **Written live** (letter after letter, each
     stroke piped as if by hand, the light on what is laid unchanged as more
-    comes) and **Jitter**.
+    comes), **Jelly** (a tap runs across the title, left to right, and each
+    letter squashes onto its line and wobbles to rest like jelly, its shine
+    moving with it; it loops, the cover still for a moment before it comes
+    round) and **Jitter**.
   - Inkblot: **Written** (each word traced as a pen writes it, word after
     word), **Word by word** and **Line by line** (each comes into focus out
-    of nothing, as ink soaks in), and **Jitter**.
+    of nothing, as ink soaks in), **Wick** (a drop of ink lands on each
+    word in turn and runs out along its letters as ink runs through cotton,
+    quick and then slowing, its wet edge darker and drying behind it) and
+    **Jitter**.
   - **Jitter** is Shuffle pressed again and again: the cover rearranged
     four times a second, round twelve shuffles, the cover's own first. It
     loops with no pause, and its video loops too, with no held end.
@@ -202,7 +211,8 @@ on a label's row.
     word**.
 
   Animated, **Download** saves a video at 1080 wide and 30 frames a second,
-  the motion and then the cover held for a second and a half. With no
+  the motion and then the cover held for a second and a half (a loop, once
+  round, with no held end). With no
   photo it is a QuickTime movie (.mov) in ProRes 4444 with its
   transparency, so it lays over a video in any editor (Final Cut,
   Premiere, DaVinci Resolve, CapCut) or on an iPhone; with a photo, an
@@ -495,6 +505,7 @@ Only the plain face chosen is loaded.
 | `PhoneView.tsx`, `phone.ts` | The phone view: a whole iPhone to scale, the cover in the middle of @eshaan.tm's profile grid |
 | `ColourField.tsx` | A colour's sliders, its hex code to type or copy, and Stickery's Text colour field |
 | `animate.ts` | Each style's animations, as a function of time on the cover's own scene, and a sticker's paper laid under its words |
+| `ink-run.ts` | Inkblot's Wick: how far a drop's ink runs to each point of a printed word, along the print and dearly across bare cloth |
 | `write-on.ts`, `writer.ts` | A script word written as a pen would: its strokes traced from its ink, and drawn part written |
 | `Motion.tsx`, `AnimateCard.tsx` | An animation played on the page, painted live at the screen's pixels (paste made ahead), and the card to pick one and its speed in |
 | `animation-frames.ts` | A video's frames, drawn at full size |

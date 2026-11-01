@@ -217,12 +217,44 @@ npm run build   # the static site, in out/
   scale (`speedPlace`, `speedAtPlace`), caught at 1 near the middle.
   Renaissance has Written (capitals rise in line by line, then the script
   is penned across them, its gap cut round what the pen has written:
-  `cutAround`), Word by word and Line by line; Stickery has Spell (Type
-  and draw until the owner renamed it, 24 Oct; its id is still
+  `cutAround`), Word by word, Line by line and Engraved; Stickery has Spell
+  (Type and draw until the owner renamed it, 24 Oct; its id is still
   `type-draw`, so saved covers open on it), Slap, Pop, Reveal and Jitter;
-  Pasty and Pasty Flat Written live and Jitter; Inkblot Written (each
-  printed word traced as a pen writes it, word after word), Word by word,
-  Line by line (into focus out of nothing, as ink soaks in) and Jitter.
+  Pasty and Pasty Flat Written live, Jelly and Jitter; Inkblot Written
+  (each printed word traced as a pen writes it, word after word), Word by
+  word, Line by line (into focus out of nothing, as ink soaks in), Wick
+  and Jitter.
+  **Engraved, Wick and Jelly** are the owner's picks (31 Oct) of twenty
+  tried on a lab branch (five a style for Stickery, Renaissance, Inkblot
+  and Pasty, built by agents and critiqued frame by frame); they turned
+  the other seventeen down as "too weird", Stickery's five (peel, cut,
+  backing, squeegee, flutter) included: a style's name is not its motion,
+  so do not make its animations act out stickers. **Engraved** shows each
+  letter, the cover's own op, through a `clip` op: its contour cut first
+  (`Measurer.outline` with a `Pen`, the letters as the cover letters them:
+  squeeze, broad pen and weight), then two passes of lines across the
+  lockup's own frame (so they turn with a placement) deepening until they
+  meet; every shape of a clip runs the same way round (`forwards`), or two
+  crossing would cancel by the nonzero rule and cut a hole. **Wick** drops
+  ink on each printed word in reading order: `ink-run.ts` works out once
+  a word, on a grid about a hundredth of its em apart and never more than
+  40,000 points (`runStep`), how far the ink runs to each point (Dijkstra
+  along the print, bare cloth twelve times dearer, the twill's grain), and
+  a frame only traces how far it has run (`runTo`): the cover's own print
+  inside that, and over it the wet edge (deeper, or catching the light on
+  near-black ink) with a hole where it has dried, so dry meets wet with no
+  seam and it ends on the print edge for edge (the lab's version printed
+  every word again each frame: 20 ms, spikes of 150). An emoji comes in
+  over its own short slot, so one at the end leaves no dead stretch.
+  **Jelly** is a loop (`JELLY_LOOP`, like Jitter's `Plan.loops`): each
+  letter's beads squashed onto its line and swayed, lit again each frame,
+  worked out in the letters' own frame (`Scene.placed`, the map
+  `placeScene` drew them through), so turned, flipped or scaled letters
+  squash onto their own lines exactly; each line's foot is a line through
+  its letters' feet, robust to descenders. A still frame is the cover
+  object itself, so its paste is made once. (A first version guessed the
+  lines' turn from the letters' middles: "Ty" read as turned 51 degrees
+  and squashed sideways, and past 90 degrees a letter squashed onto its top.)
   **Jitter** (the owner's ask, 24 Oct: Shuffle pressed again and again)
   goes round the cover as Shuffle makes it, a new shuffle each beat, four
   a second (`JITTER_RATE`) round a loop of twelve (`JITTER_COUNT`), the
@@ -235,7 +267,7 @@ npm run build   # the static site, in out/
   each seed, in the same place (`Shuffle` in the page), made only as each
   first comes round (Inkblot costs about 40 ms a cover); a beat's paste is
   made once and shared by the frames it lasts (`usePaste`). Not for
-  Renaissance yet (the owner will decide its animations), nor Echo or
+  Renaissance (its animations are the four above), nor Echo or
   Mono, which a shuffle does not change. All at once, Pasty's Pop and Rise were cut ("so bad"; 8
   Oct: "I don't want rise"), so do not bring them back; Stickery's Pop
   came back on the owner's ask of 8 Oct ("keep pop"). Every

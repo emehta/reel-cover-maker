@@ -15,15 +15,23 @@
  *   comes into focus out of nothing). The owner, 8 Oct: the paper "already
  *   there", Slap "coming from the bottom", Rise not wanted, Pop kept.
  * - Pasty and Pasty Flat: Written live (letter after letter, each stroke
- *   piped as if by hand). All at once and Pop were cut (the owner, 7 Oct:
- *   "so bad").
+ *   piped as if by hand), and Jelly (a loop: a tap runs across the title
+ *   and each letter squashes onto its line and wobbles to rest, lit again
+ *   as it moves). All at once and Pop were cut (the owner, 7 Oct: "so bad").
  * - Renaissance: Written (the capitals rise in line by line, then the
  *   script is written across them as a pen writes it, its gap in them
  *   following the pen), Word by word and Line by line (each rises in, in
- *   the order the lockup is read, the script where it falls).
+ *   the order the lockup is read, the script where it falls), and Engraved
+ *   (each letter's contour cut, then two passes of fine lines across the
+ *   lockup that deepen until the letters are solid).
  * - Inkblot: Written (each printed word traced as a pen writes it, word
  *   after word in reading order), Word by word and Line by line (each comes
- *   into focus out of nothing, as ink soaks into the cloth).
+ *   into focus out of nothing, as ink soaks into the cloth), and Wick (a
+ *   drop of ink on each word that runs along its letters, its wet edge
+ *   darker, drying behind it).
+ * - Engraved, Wick and Jelly are the owner's picks of twenty tried (31
+ *   Oct); the other seventeen, and all five for Stickery, were turned down
+ *   ("too weird").
  * - Echo: Ripple (the words, then each echo out from them in turn), Spread
  *   (the echoes slide out from the words to their places), Cascade (every
  *   line drops in, top to bottom).
@@ -41,14 +49,17 @@
  */
 
 import type { FaceId, Measurer } from "@/components/reel-cover-maker/faces";
-import { loopBounds } from "@/components/reel-cover-maker/ink";
+import { loopArea, loopBounds } from "@/components/reel-cover-maker/ink";
+import { inkRun, runStep, runTo, type InkRun } from "@/components/reel-cover-maker/ink-run";
 import type { Bead, Chain } from "@/components/reel-cover-maker/liquid";
+import { mixSeed, noise1, noise2, random } from "@/components/reel-cover-maker/noise";
+import { luminance, rgb } from "@/components/reel-cover-maker/palettes";
 import { apply, invert, multiply, type Matrix, type Point } from "@/components/reel-cover-maker/place";
 import { isBackdrop, pasteKey, type LiquidOp, type Op, type Scene, type StyleId } from "@/components/reel-cover-maker/scene";
 import { fillHoles, insidePolygon, polygonBounds, traceCells, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { graphemes } from "@/components/reel-cover-maker/title";
 
-export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade";
+export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade" | "engraved" | "wick" | "jelly";
 
 export interface Animation {
   id: AnimationId;
@@ -65,23 +76,28 @@ export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
     { id: "reveal", name: "Reveal" },
     { id: "jitter", name: "Jitter" },
   ],
+  // Engraved, Wick and Jelly: the owner's picks of twenty tried, 31 Oct.
   pasty: [
     { id: "written", name: "Written live" },
+    { id: "jelly", name: "Jelly" },
     { id: "jitter", name: "Jitter" },
   ],
   "pasty-flat": [
     { id: "written", name: "Written live" },
+    { id: "jelly", name: "Jelly" },
     { id: "jitter", name: "Jitter" },
   ],
   renaissance: [
     { id: "written", name: "Written" },
     { id: "words", name: "Word by word" },
     { id: "lines", name: "Line by line" },
+    { id: "engraved", name: "Engraved" },
   ],
   inkblot: [
     { id: "written", name: "Written" },
     { id: "words", name: "Word by word" },
     { id: "lines", name: "Line by line" },
+    { id: "wick", name: "Wick" },
     { id: "jitter", name: "Jitter" },
   ],
   echo: [
@@ -384,8 +400,8 @@ export function chainPart(chain: Chain, part: number): Chain {
 
 /** The finished paste's typical radius, as its layer would find it: the median bead's. */
 function typicalRadius(op: LiquidOp): number {
-  const radii = op.chains.flatMap((c) => c.map((b) => b.r)).sort((p, q) => p - q);
-  return radii.length ? radii[Math.floor(radii.length / 2)] : 1;
+  const radii = op.chains.flatMap((c) => c.map((b) => b.r));
+  return radii.length ? median(radii) : 1;
 }
 
 /**
@@ -1078,6 +1094,179 @@ function pasty(scene: Scene): Built {
   };
 }
 
+// Jelly.
+
+/**
+ * Jelly (the owner's pick, 31 Oct): the finished letters set like jelly,
+ * round a loop that starts and ends on the cover standing still. A tap
+ * runs across the title, a letter every twentieth of a second, and each
+ * is squashed down onto its line, springs up and wobbles three times to
+ * rest, a tall letter a little slower than a short one, its top swaying.
+ * Its own pace is the loop's length; the speed slider quickens it.
+ */
+export const JELLY_LOOP = 2.3;
+
+/** How long a letter shakes from the moment it is tapped: at rest, exactly, well before the loop comes round. */
+const JELLY_SHAKE = 0.95;
+
+/** How hard a letter is squashed at first, as a share of its height, and how far its top sways across. */
+const JELLY_SQUASH = 0.205;
+const JELLY_SWAY = 0.05;
+
+/** The middle value of some numbers. */
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
+/**
+ * How the paste's letters wobble, worked out in the letters' own frame
+ * (as the style set them, before the owner's placement moved, turned or
+ * flipped them), where the lines run across and up is up: each letter's
+ * chains (a droplet goes with the letter nearest it), its middle across,
+ * the foot of its line under it and the line's height, how slowly it
+ * rings, and its place in the tap's run across the title.
+ */
+interface Jellied {
+  letters: { chains: number[]; across: number; base: number; height: number; tall: number; rank: number }[];
+  /** From the cover to the letters' own frame, and back. */
+  toLetters: Matrix;
+  toCover: Matrix;
+}
+
+function jellied(op: LiquidOp, placed: Matrix): Jellied {
+  const toLetters = invert(placed);
+  const own = op.chains.map((c) => c.map((b) => apply(toLetters, b)));
+  const byGlyph = new Map<number, number[]>();
+  for (let i = 0; i < op.letters; i += 1) {
+    const g = op.glyphOf[i] ?? i;
+    byGlyph.set(g, [...(byGlyph.get(g) ?? []), i]);
+  }
+  const letters = [...byGlyph.values()];
+  const lineOf = (g: number[]) => op.lineOf[g[0]] ?? 0;
+  // How much the placement scales a bead's reach, so a box round the beads is round their ink.
+  const reach = Math.sqrt(Math.abs(toLetters[0] * toLetters[3] - toLetters[1] * toLetters[2]));
+  const boxes = letters.map((chains) => {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const c of chains) {
+      own[c].forEach((p, j) => {
+        const r = op.chains[c][j].r * reach;
+        x0 = Math.min(x0, p.x - r);
+        x1 = Math.max(x1, p.x + r);
+        y0 = Math.min(y0, p.y - r);
+        y1 = Math.max(y1, p.y + r);
+      });
+    }
+    return { x0, x1, y0, y1 };
+  });
+  const across = boxes.map((b) => (b.x0 + b.x1) / 2);
+  const R = typicalRadius(op) * reach;
+  // Each line's foot under each letter: a line through its letters' feet, a descender's foot never pulling it (the middle of the slopes between every two, and of where they put it), and its height the middle of its letters'.
+  const feet = new Map<number, { at: (x: number) => number; height: number }>();
+  for (const line of new Set(letters.map(lineOf))) {
+    const on = letters.map((_, g) => g).filter((g) => lineOf(letters[g]) === line);
+    const slopes: number[] = [];
+    if (on.length >= 3) {
+      for (let i = 0; i < on.length; i += 1) {
+        for (let j = i + 1; j < on.length; j += 1) {
+          const dx = across[on[j]] - across[on[i]];
+          if (Math.abs(dx) > 1e-6) slopes.push((boxes[on[j]].y1 - boxes[on[i]].y1) / dx);
+        }
+      }
+    }
+    const slope = slopes.length ? median(slopes) : 0;
+    const level = median(on.map((g) => boxes[g].y1 - slope * across[g]));
+    const at = (x: number) => level + slope * x;
+    feet.set(line, { at, height: Math.max(R * 4, median(on.map((g) => at(across[g]) - boxes[g].y0))) });
+  }
+  // Each droplet goes with the letter nearest it, and wobbles with it.
+  const groups = letters.map((g) => [...g]);
+  if (groups.length) {
+    const centres = boxes.map((b) => ({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }));
+    for (let i = op.letters; i < op.chains.length; i += 1) {
+      const bead = own[i]?.[0];
+      if (!bead) continue;
+      let best = 0;
+      centres.forEach((c, g) => {
+        if (Math.hypot(c.x - bead.x, c.y - bead.y) < Math.hypot(centres[best].x - bead.x, centres[best].y - bead.y)) best = g;
+      });
+      groups[best].push(i);
+    }
+  }
+  const order = across.map((_, g) => g).sort((a, b) => across[a] - across[b] || a - b);
+  const rank = new Array<number>(letters.length);
+  order.forEach((g, n) => (rank[g] = n));
+  return {
+    toLetters,
+    toCover: placed,
+    letters: groups.map((chains, g) => {
+      const foot = feet.get(lineOf(letters[g])) ?? { at: () => boxes[g].y1, height: boxes[g].y1 - boxes[g].y0 };
+      // A taller letter rings slower, as a taller jelly does.
+      const tall = Math.min(1.15, Math.max(0.85, Math.sqrt(foot.height / Math.max(R, boxes[g].y1 - boxes[g].y0))));
+      return { chains, across: across[g], base: foot.at(across[g]), height: foot.height, tall, rank: rank[g] };
+    }),
+  };
+}
+
+/** The paste with its letters as they are `at` seconds into Jelly's loop; the paste itself where none is moving. */
+function jellyAt(op: LiquidOp, made: Jellied, at: number): LiquidOp {
+  const stagger = Math.min(0.05, 0.6 / Math.max(1, made.letters.length));
+  const { toLetters, toCover } = made;
+  const chains: Chain[] = [...op.chains];
+  let moved = false;
+  for (const letter of made.letters) {
+    const s = at - (0.03 + stagger * letter.rank);
+    if (s <= 0 || s >= JELLY_SHAKE) continue;
+    moved = true;
+    const ring = 4 * letter.tall;
+    // Brought to rest exactly before the loop's stillness.
+    const rest = 1 - easeInOut((s - JELLY_SHAKE * 0.7) / (JELLY_SHAKE * 0.3));
+    const fade = Math.exp(-4 * s) * rest;
+    const squash = -JELLY_SQUASH * fade * Math.sin(2 * Math.PI * ring * s);
+    const sway = JELLY_SWAY * fade * Math.sin(2 * Math.PI * ring * 0.9 * s);
+    const { base, height, across } = letter;
+    for (const c of letter.chains) {
+      chains[c] = op.chains[c].map((b) => {
+        // In the letters' own frame: squashed onto its foot and swayed, its top lagging most; then back onto the cover.
+        const p = apply(toLetters, b);
+        const h = (base - p.y) / height;
+        const lean = -sway * height * h * (1 + 0.5 * Math.abs(h));
+        const q = apply(toCover, { x: across + (p.x - across) * (1 - 0.55 * squash) + lean, y: base - (base - p.y) * (1 + squash) });
+        return { x: q.x, y: q.y, r: b.r * (1 - 0.3 * squash) };
+      });
+    }
+  }
+  if (!moved) return op;
+  // Lit as the finished paste is, its gloss kept, so its shine squashes and slides with it.
+  const radius = typicalRadius(op);
+  return { ...op, chains, key: `${pasteKey(chains, op.colourOf, op.tone, op.finish, op.pool)}|r${radius.toFixed(2)}`, radius };
+}
+
+/** Jelly, at `pace`: a loop, the cover itself whenever no letter is moving. */
+function jelly(scene: Scene, pace: number): Plan {
+  const pastes = new Map<LiquidOp, Jellied>();
+  for (const leaf of leavesOf(scene.ops)) if (leaf.op.kind === "liquid") pastes.set(leaf.op, jellied(leaf.op, scene.placed ?? IDENTITY));
+  return {
+    duration: JELLY_LOOP / pace,
+    loops: true,
+    frame(t: number): Scene {
+      const at = (((Math.max(0, t) * pace) % JELLY_LOOP) + JELLY_LOOP) % JELLY_LOOP;
+      let moved = false;
+      const ops = mapLeaves(scene.ops, (op) => {
+        const made = op.kind === "liquid" ? pastes.get(op) : undefined;
+        if (!made || op.kind !== "liquid") return op;
+        const now = jellyAt(op, made, at);
+        if (now !== op) moved = true;
+        return now;
+      });
+      return moved ? { ...scene, ops } : scene;
+    },
+  };
+}
+
 /** A line of text as its words, each where it falls in the line. */
 function wordsOf(op: Extract<Op, { kind: "text" }>, measurer: Measurer): Extract<Op, { kind: "text" }>[] {
   const out: Extract<Op, { kind: "text" }>[] = [];
@@ -1191,6 +1380,134 @@ function soak(centre: Point, start: number, length: number, t: number, size: num
   return { alpha: easeInOut(clamp01(u / 0.8)), blur: size * 0.09 * haze, move: about(centre.x, centre.y, 1 + 0.035 * haze) };
 }
 
+// Wick.
+
+/**
+ * Wick's timing, in seconds: a drop a word this far apart, each word wet
+ * through in FILL, its wet edge drying LAG behind; and how soon after it
+ * lands a drop's run is first shown, so its first frame is not already a
+ * stroke long.
+ */
+const WICK_GAP = 0.18;
+const WICK_FILL = 0.74;
+const WICK_LAG = 0.12;
+const WICK_SOON = 0.015;
+
+/** How long an emoji, which no drop prints, takes to come in at its turn. */
+const WICK_EMOJI = 0.35;
+
+/** The blot a drop makes as it lands, then soaks into the word: its radius, in em, `tau` seconds after it lands. */
+const blotAt = (tau: number) => (tau < 0.045 ? 0.13 * easeOut(tau / 0.045) : 0.13 * (1 - easeInOut((tau - 0.045) / 0.32)));
+
+/**
+ * Ink as it is wet, or pooled where a drop fell (`k` the more), in #rrggbb:
+ * deeper, taken `k` of the way to black; ink already nearly black, which
+ * can go no deeper, catches the light instead, taken a little toward white.
+ * Anything not written as #rrggbb as it is.
+ */
+function wet(colour: string, k: number): string {
+  if (!/^#[0-9a-f]{6}$/i.test(colour)) return colour;
+  const dark = luminance(colour) < 0.03;
+  const [r, g, b] = rgb(colour).map((v) => Math.round(dark ? v + (255 - v) * k * 0.55 : v * (1 - k)));
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+/** A loop run the other way round: a hole in what it is drawn with. */
+function backwards(loop: Polygon): Polygon {
+  const out: number[] = [];
+  for (let i = loop.length - 2; i >= 0; i -= 2) out.push(loop[i], loop[i + 1]);
+  return out;
+}
+
+/**
+ * A loop run the one way round every shape of a clip runs: a clip fills by
+ * the nonzero rule, so two shapes that overlap run opposite ways would cut
+ * a hole where they cross. Only a hole is run backwards.
+ */
+function forwards(loop: Polygon): Polygon {
+  return loopArea(loop) >= 0 ? loop : backwards(loop);
+}
+
+/**
+ * Wick (the owner's pick, 31 Oct): a drop of ink on each printed word's
+ * heaviest stroke, word after word in reading order, a dark round blot as
+ * it lands that soaks away, running out both ways along the letters as
+ * ink runs through cotton (as far as the square root of the time, quick
+ * at first and slowing), never across a gap (ink-run.ts), its wet edge
+ * darker and drying behind it. What shows inside the ink's run is the
+ * cover's own print, so it ends on it edge for edge. An emoji, which no
+ * drop prints, comes in at its turn.
+ */
+function wick(scene: Scene): Built {
+  const items = leavesOf(scene.ops).filter((l) => l.op.kind === "ink" || l.op.kind === "text");
+  const drops = items.map((_, i) => i * WICK_GAP);
+  const ends = drops.map((d, i) => d + (items[i].op.kind === "ink" ? WICK_FILL + WICK_LAG : WICK_EMOJI));
+  const natural = items.length ? Math.max(...ends) : 0;
+  const k = fitted(natural);
+  const index = new Map<Op, number>(items.map((l, i) => [l.op, i]));
+  // Each word's run, worked out once, when its drop first lands.
+  const runs = new Map<Op, { ink: InkRun; speed: number } | null>();
+  const runOf = (leaf: Leaf, op: Extract<Op, { kind: "ink" }>, i: number) => {
+    if (!runs.has(op)) {
+      const em = op.size;
+      const m = leaf.world;
+      // The cloth's twill, on the cover whatever turns the words: the ink runs a little ahead along its threads.
+      const grain = (x: number, y: number) => {
+        const cx = m[0] * x + m[2] * y + m[4];
+        const cy = m[1] * x + m[3] * y + m[5];
+        return 0.007 * em * noise2(0xf1b + i, (cx * 0.447 - cy * 0.894) / (em * 0.08), (cx * 0.894 + cy * 0.447) / (em * 0.012));
+      };
+      const ink = inkRun(op.polygons, runStep(op.polygons, em), grain);
+      // As fast as it must run to wet the whole word, and a little past, in its time.
+      runs.set(op, ink ? { ink, speed: (ink.far + 0.05 * em) / (Math.sqrt(WICK_FILL + WICK_SOON) - Math.sqrt(WICK_SOON)) } : null);
+    }
+    return runs.get(op) ?? null;
+  };
+  return {
+    duration: natural * k,
+    look: (leaf, t) => {
+      const i = index.get(leaf.op);
+      if (i === undefined || leaf.op.kind !== "text" || t / k >= ends[i]) return null;
+      return { alpha: easeOut(span(t / k, drops[i], WICK_EMOJI)) };
+    },
+    replace: (leaf, t) => {
+      const i = index.get(leaf.op);
+      const op = leaf.op;
+      if (i === undefined || op.kind !== "ink") return null;
+      const tn = t / k;
+      const tau = tn - drops[i];
+      if (tau <= 0) return [];
+      if (tn >= ends[i]) return null;
+      const made = runOf(leaf, op, i);
+      if (!made) return null;
+      const { ink, speed } = made;
+      const reach = speed * (Math.sqrt(tau + WICK_SOON) - Math.sqrt(WICK_SOON));
+      const dried = tau > WICK_LAG ? speed * (Math.sqrt(tau - WICK_LAG + WICK_SOON) - Math.sqrt(WICK_SOON)) : -Infinity;
+      const out: Op[] = [];
+      // The print as far as the ink has run, and over it its wet edge, where it has not yet dried: one print under, so the dry
+      // ink meets the wet with no seam, and once it is all dry it is the cover's print exactly.
+      const run = runTo(ink, reach);
+      if (run.length) {
+        out.push({ kind: "clip", polygons: run, ops: [op] });
+        const dry = Number.isFinite(dried) ? runTo(ink, dried).map(backwards) : [];
+        out.push({ kind: "clip", polygons: [...run, ...dry], ops: [{ ...op, color: wet(op.color, 0.3) }] });
+      }
+      // The drop itself, pooled dark where it fell, soaking away.
+      const r = blotAt(tau) * op.size;
+      if (r > 0.5) {
+        const blot: number[] = [];
+        for (let a = 0; a < 40; a += 1) {
+          const angle = (a / 40) * Math.PI * 2;
+          const wobble = 1 + 0.08 * noise1(11 + i, Math.cos(angle) * 1.7 + 3) + 0.05 * noise1(13 + i, Math.sin(angle) * 2.3 + 5);
+          blot.push(ink.drop.x + Math.cos(angle) * r * wobble, ink.drop.y + Math.sin(angle) * r * wobble);
+        }
+        out.push({ ...op, polygons: [blot], color: wet(op.color, 0.5), key: `${op.key}|blot` });
+      }
+      return out;
+    },
+  };
+}
+
 /**
  * Inkblot: its printed words in reading order. Written traces each as a pen
  * writes it, word after word, a pen's lift between them and a longer one
@@ -1199,6 +1516,7 @@ function soak(centre: Point, start: number, length: number, t: number, size: num
  * nothing, as ink soaks into the cloth.
  */
 function inkblot(scene: Scene, id: AnimationId, measurer: Measurer): Built {
+  if (id === "wick") return wick(scene);
   const words = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "ink" | "text" }> } => l.op.kind === "ink" || l.op.kind === "text");
   // An emoji, set as text, carries its line as a printed word does.
   const lines = words.map((w) => w.op.line ?? 0);
@@ -1252,6 +1570,217 @@ function inkblot(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   };
 }
 
+// Engraved.
+
+/**
+ * Engraved's passes of the burin: the angle its lines lie at across the
+ * lockup, in radians, and the stretch of seconds they are begun in, in no
+ * order, many at once. The second crosses the first at a narrow angle, as
+ * a line engraver lays tone: lozenges, not a mesh.
+ */
+const ENGRAVE_PASSES = [
+  { angle: -0.75, from: 0.28, to: 0.6 },
+  { angle: -0.22, from: 0.72, to: 0.9 },
+] as const;
+
+/** When the letters' contours are begun (in turn across the lockup over CONTOUR_SWEEP) and how long each takes to go round, in seconds. */
+const CONTOUR_AT = 0.04;
+const CONTOUR_SWEEP = 0.12;
+const CONTOUR_ROUND = 0.26;
+
+/** How long a line takes to cut along its length; when the lines deepen (in turn across the lockup over DEEPEN_SWEEP) and how long each takes; in seconds. */
+const LINE_CUT = 0.24;
+const DEEPEN_AT = 1.05;
+const DEEPEN_SWEEP = 0.28;
+const DEEPEN = 0.3;
+
+/** A loop's points moved `by` out to its left as it runs, each along the line square to the way it runs there; `closed`, round its end to its start. */
+function offset(points: Point[], by: number, closed: boolean): number[] {
+  const out: number[] = [];
+  const n = points.length;
+  points.forEach((p, i) => {
+    const before = closed ? points[(i - 1 + n) % n] : points[Math.max(0, i - 1)];
+    const after = closed ? points[(i + 1) % n] : points[Math.min(n - 1, i + 1)];
+    const dx = after.x - before.x;
+    const dy = after.y - before.y;
+    const length = Math.hypot(dx, dy) || 1;
+    out.push(p.x - (dy / length) * by, p.y + (dx / length) * by);
+  });
+  return out;
+}
+
+/**
+ * The first `part` of a closed loop, by its length, as a band `width` wide
+ * along it: what the burin has cut round it so far. Cut all round, it is a
+ * ring, its edge on either side a loop of its own, so it has no seam.
+ */
+function cutRound(loop: Polygon, part: number, width: number): Polygon[] {
+  const n = loop.length / 2;
+  if (n < 2 || part <= 0) return [];
+  const points: Point[] = [];
+  for (let i = 0; i < n; i += 1) points.push({ x: loop[i * 2], y: loop[i * 2 + 1] });
+  if (part >= 1) {
+    const a = offset(points, width / 2, true);
+    const b = offset(points, -width / 2, true);
+    const [outer, inner] = Math.abs(loopArea(a)) >= Math.abs(loopArea(b)) ? [a, b] : [b, a];
+    return [forwards(outer), backwards(forwards(inner))];
+  }
+  // Round the loop from its first point back to it, as far as it is cut: the first part of it by length, as paste is piped.
+  const run: Point[] = chainPart([...points, points[0]].map((p) => ({ ...p, r: 0 })), part);
+  if (run.length < 2) return [];
+  return [forwards([...offset(run, width / 2, false), ...backwards(offset(run, -width / 2, false))])];
+}
+
+/**
+ * Engraved (the owner's pick, 31 Oct): the lockup cut as an engraver cuts
+ * a plate. Each letter's contour is cut first, all round, in full ink, so
+ * the title reads at once; then a pass of fine lines across the letters,
+ * each drawn along its length from one end or the other, many at once, a
+ * second pass crossing them; and the lines deepen in turn across the
+ * lockup until they meet and the letters are solid. Only the letters take
+ * the lines, each shown through them as the cover draws it, the script
+ * among them, its gap cut through the capitals' lines as they are. The
+ * lines lie across the lockup as it is set, so they turn with it.
+ */
+function engraved(scene: Scene, measurer: Measurer): Built {
+  type TextLeaf = Leaf & { op: Extract<Op, { kind: "text" }> };
+  const texts = leavesOf(scene.ops).filter((l): l is TextLeaf => l.op.kind === "text");
+  if (!texts.length) return { duration: 0, look: () => null };
+  // The lockup's own frame, under any turn or placement round it: its first letters'.
+  const frame = texts[0].world;
+  const intoFrame = new Map<Op, Matrix>(texts.map((l) => [l.op, multiply(invert(frame), l.world)]));
+  const caps = texts.find((l) => l.op.face.startsWith("caps-"));
+  const cap = caps ? measurer.metrics(caps.op.face).cap * caps.op.size : texts[0].op.size * 0.7;
+  // Every letter's box, its gap round it, in the lockup's frame.
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const l of texts) {
+    const b = textBox(l.op, measurer);
+    const gap = l.op.knock ?? 0;
+    const m = intoFrame.get(l.op) ?? IDENTITY;
+    for (const [x, y] of [
+      [b.x - gap, b.y - gap],
+      [b.x + b.w + gap, b.y - gap],
+      [b.x - gap, b.y + b.h + gap],
+      [b.x + b.w + gap, b.y + b.h + gap],
+    ]) {
+      const p = apply(m, { x, y });
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
+  }
+  const letters = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  const pad = 0.2 * cap;
+  const box = { x: x0 - pad, y: y0 - pad, w: letters.w + 2 * pad, h: letters.h + 2 * pad };
+  const centre = centreOf(box);
+  // Lines two of the cover's pixels wide at least, so they hold at its own size; deepened past the gap between them, so they meet.
+  const spacing = Math.max(8, 0.062 * cap);
+  const fine = Math.max(2.2, 0.22 * spacing);
+  const solid = spacing * 1.1;
+  // The contour's band: half of it falls inside the letter, and that is the line seen.
+  const contour = Math.max(5, 0.032 * cap);
+  /** How far across the lockup a point of its frame is, 0 at its left to 1 at its right. */
+  const acrossOf = (x: number) => Math.min(1, Math.max(0, (x - letters.x) / Math.max(1, letters.w)));
+
+  // Each letter's contour, as the cover letters it, in its own frame, begun in turn across the lockup.
+  const contours = new Map<Op, { loop: Polygon; at: number }[]>();
+  for (const l of texts) {
+    const { op } = l;
+    const loops = measurer.outline?.(op.face, op.text, { sx: op.sx, nib: (op.nib ?? 0) / op.size, bold: (op.bold ?? 0) / op.size }) ?? [];
+    const m = intoFrame.get(op) ?? IDENTITY;
+    contours.set(
+      op,
+      loops.map((loop) => {
+        const own = loop.map((v, i) => (i % 2 ? op.y + v * op.size : op.x + v * op.size));
+        let left = Infinity;
+        for (let i = 0; i < own.length; i += 2) left = Math.min(left, apply(m, { x: own[i], y: own[i + 1] }).x);
+        return { loop: own, at: CONTOUR_AT + CONTOUR_SWEEP * acrossOf(left) };
+      }),
+    );
+  }
+
+  // The lines of each pass across the box: each one's place across, when it is begun and from which end, and when it deepens.
+  const passes = ENGRAVE_PASSES.map((pass, pi) => {
+    const u = { x: Math.cos(pass.angle), y: Math.sin(pass.angle) };
+    const n = { x: -u.y, y: u.x };
+    const corners = [
+      { x: box.x, y: box.y },
+      { x: box.x + box.w, y: box.y },
+      { x: box.x, y: box.y + box.h },
+      { x: box.x + box.w, y: box.y + box.h },
+    ];
+    const along = corners.map((c) => c.x * u.x + c.y * u.y);
+    const across = corners.map((c) => c.x * n.x + c.y * n.y);
+    const n0 = Math.min(...across);
+    const n1 = Math.max(...across);
+    const count = Math.ceil((n1 - n0) / spacing) + 1;
+    const middle = centre.x * n.x + centre.y * n.y;
+    // Begun in no order, the same every time.
+    const next = random(mixSeed(0xe9a7, pi));
+    const lines = Array.from({ length: count }, (_, i) => {
+      const o = n0 + (i + 0.5) * spacing - (count * spacing - (n1 - n0)) / 2;
+      return {
+        o,
+        start: pass.from + (pass.to - pass.from) * next(),
+        deepen: DEEPEN_AT + DEEPEN_SWEEP * acrossOf(centre.x + (o - middle) * n.x),
+        back: next() < 0.5,
+      };
+    });
+    return { u, n, u0: Math.min(...along), u1: Math.max(...along), lines };
+  });
+  const natural = DEEPEN_AT + DEEPEN_SWEEP + DEEPEN;
+  const k = fitted(natural);
+
+  /** Every line cut by `t`, in the lockup's frame: worked out once a frame, for every letter. */
+  let made: { t: number; polygons: Polygon[] } | null = null;
+  const cutBy = (t: number): Polygon[] => {
+    if (made && made.t === t) return made.polygons;
+    const polygons: Polygon[] = [];
+    for (const p of passes) {
+      const at = (s: number, o: number) => [s * p.u.x + o * p.n.x, s * p.u.y + o * p.n.y];
+      for (const line of p.lines) {
+        const g = easeOut(span(t, line.start, LINE_CUT));
+        if (g <= 0) continue;
+        const width = fine + (solid - fine) * easeInOut(span(t, line.deepen, DEEPEN));
+        // Drawn along its length, from one end or the other.
+        const s0 = line.back ? p.u1 - (p.u1 - p.u0) * g : p.u0;
+        const s1 = line.back ? p.u1 : p.u0 + (p.u1 - p.u0) * g;
+        const a = line.o - width / 2;
+        const b = line.o + width / 2;
+        polygons.push(forwards([...at(s0, a), ...at(s1, a), ...at(s1, b), ...at(s0, b)]));
+      }
+    }
+    made = { t, polygons };
+    return polygons;
+  };
+
+  return {
+    duration: natural * k,
+    look: () => null,
+    replace: (leaf, now) => {
+      if (leaf.op.kind !== "text") return null;
+      const t = now / k;
+      const round = (contours.get(leaf.op) ?? []).flatMap((c) => cutRound(c.loop, easeInOut(span(t, c.at, CONTOUR_ROUND)), contour));
+      // The lines, carried from the lockup's frame into the letter's own.
+      const toOwn = invert(intoFrame.get(leaf.op) ?? IDENTITY);
+      const lines = cutBy(t).map((p) => {
+        const out: number[] = [];
+        for (let i = 0; i < p.length; i += 2) {
+          const q = apply(toOwn, { x: p[i], y: p[i + 1] });
+          out.push(q.x, q.y);
+        }
+        return out;
+      });
+      const polygons = [...round, ...lines];
+      return polygons.length ? [{ kind: "clip", polygons, ops: [leaf.op] }] : [];
+    },
+  };
+}
+
 /**
  * Renaissance: its lines of capitals and its scripts, in the order the
  * lockup is read (top to bottom, a script where it falls between two
@@ -1260,6 +1789,7 @@ function inkblot(scene: Scene, id: AnimationId, measurer: Measurer): Built {
  * each word, or each line, in as it is read.
  */
 function renaissanceIn(scene: Scene, id: AnimationId, measurer: Measurer): Built {
+  if (id === "engraved") return engraved(scene, measurer);
   const texts = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "text" }> } => l.op.kind === "text");
   const isCaps = (l: { op: Extract<Op, { kind: "text" }> }) => l.op.face.startsWith("caps-");
   const read = <T extends Leaf>(leaves: T[]) => [...leaves].sort((a, b) => {
@@ -1388,6 +1918,7 @@ export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Me
   const pace = speedOf(speed);
   // Without a way to make the cover shuffled (a test of another animation), Jitter stands still on the cover.
   if (id === "jitter") return jitter(scene, shuffle ? jitterSeeds(shuffle.seed) : [0], shuffle ? shuffle.cover : () => scene, pace);
+  if (id === "jelly") return jelly(scene, pace);
   const built: Built =
     style === "stickery"
       ? stickery(scene, id, measurer)

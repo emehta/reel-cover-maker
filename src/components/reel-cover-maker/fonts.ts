@@ -254,8 +254,13 @@ export function measurerFor(loadsSeen: number): Measurer {
       }
       return cols;
     },
-    outline(face, text) {
-      const key = `${face}\u0000${text}`;
+    outline(face, text, pen) {
+      const sx = pen?.sx ?? 1;
+      const nib = pen?.nib ?? 0;
+      const bold = pen?.bold ?? 0;
+      const lettered = sx !== 1 || nib > 0 || bold > 0;
+      // A plain outline keeps the key it always had: Inkblot's prints are kept by the outline they were printed from.
+      const key = lettered ? `${face}\u0000${text}\u0000${sx.toFixed(4)},${nib.toFixed(4)},${bold.toFixed(4)}` : `${face}\u0000${text}`;
       let loops = outlines.get(key);
       if (!loops) {
         loops = [];
@@ -263,11 +268,13 @@ export function measurerFor(loadsSeen: number): Measurer {
         if (tracer && text.trim()) {
           // Drawn at the tracing size with a clear border, read back, and its
           // edge followed where the ink is half on (the face's own edge, to a
-          // fraction of a pixel), then brought back to em.
-          const pad = 4;
-          const left = Math.ceil(b.left * TRACE_SIZE) + pad;
+          // fraction of a pixel), then brought back to em. Lettered as a cover
+          // letters it (paint.ts): squeezed, the pen's copies across, its
+          // added ink round them, all in the squeezed frame.
+          const pad = 4 + Math.ceil((bold / 2) * TRACE_SIZE);
+          const left = Math.ceil(b.left * sx * TRACE_SIZE) + pad;
           const above = Math.ceil(b.ascent * TRACE_SIZE) + pad;
-          const width = Math.max(1, Math.ceil((b.left + b.right) * TRACE_SIZE) + pad * 2);
+          const width = Math.max(1, Math.ceil((b.left + b.right + nib) * sx * TRACE_SIZE) + pad * 2);
           const height = Math.max(1, above + Math.ceil(b.descent * TRACE_SIZE) + pad);
           tracer.canvas.width = width;
           tracer.canvas.height = height;
@@ -275,7 +282,18 @@ export function measurerFor(loadsSeen: number): Measurer {
           tracer.textBaseline = "alphabetic";
           tracer.textAlign = "left";
           tracer.fillStyle = "#000";
-          tracer.fillText(text, left, above);
+          tracer.strokeStyle = "#000";
+          tracer.lineJoin = "round";
+          tracer.lineWidth = bold * TRACE_SIZE;
+          tracer.translate(left, above);
+          tracer.scale(sx, 1);
+          const steps = nib > 0 ? Math.min(64, Math.max(2, Math.ceil(nib * TRACE_SIZE))) : 0;
+          for (let i = 0; i <= steps; i += 1) {
+            const dx = steps ? (nib * TRACE_SIZE * i) / steps : 0;
+            tracer.fillText(text, dx, 0);
+            if (bold > 0) tracer.strokeText(text, dx, 0);
+          }
+          tracer.setTransform(1, 0, 0, 1, 0, 0);
           const data = tracer.getImageData(0, 0, width, height).data;
           const alpha = new Uint8Array(width * height);
           for (let i = 0; i < alpha.length; i += 1) alpha[i] = data[i * 4 + 3];

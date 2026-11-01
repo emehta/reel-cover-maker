@@ -105,8 +105,23 @@ export interface Measurer {
    * `Loop`), the face's own joins, kerning and accents in them: what
    * Inkblot prints from. The same object each time for the same text, so
    * its print is made once. Absent where there is no page to trace in.
+   *
+   * With `pen`, the ink as a cover letters it (paint.ts): squeezed across,
+   * its broad pen's weight and its added ink round it, as Renaissance sets
+   * its capitals and scripts; the outline an engraver cuts round (animate.ts).
    */
-  outline?(face: FaceId, text: string): readonly Loop[];
+  outline?(face: FaceId, text: string, pen?: Pen): readonly Loop[];
+}
+
+/**
+ * How a text is lettered beyond its face, as a text op carries it, in em:
+ * drawn `sx` of its width, a broad pen's copies `nib` across to the right
+ * (squeezed with the rest), and a stroke `bold` wide round its ink.
+ */
+export interface Pen {
+  sx?: number;
+  nib?: number;
+  bold?: number;
 }
 
 export interface InkColumn {

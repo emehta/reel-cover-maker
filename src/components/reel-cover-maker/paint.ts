@@ -442,6 +442,13 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       for (const inner of op.ops) draw(ctx, scene, inner, options, within, inLayer);
       return;
     }
+    case "clip":
+      ctx.save();
+      outline(ctx, op.polygons);
+      ctx.clip();
+      for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
+      ctx.restore();
+      return;
     case "write": {
       const only = op.ops.length === 1 ? op.ops[0] : null;
       const word = only && (only.kind === "text" || only.kind === "ink") ? only : null;

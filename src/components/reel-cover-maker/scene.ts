@@ -21,7 +21,7 @@ import type { Finish } from "@/components/reel-cover-maker/liquid-render";
 import { mixSeed, random, between, hashString } from "@/components/reel-cover-maker/noise";
 import { paletteFor, readableOn, type Ground, type Palette } from "@/components/reel-cover-maker/palettes";
 import { polygonBounds, steppedOutline, type Polygon } from "@/components/reel-cover-maker/stepped";
-import { apply, isUnmoved, mappedBounds, placeMatrix, strokeScale, type Matrix, type Place, type WrapSize } from "@/components/reel-cover-maker/place";
+import { apply, isUnmoved, mappedBounds, multiply, placeMatrix, strokeScale, type Matrix, type Place, type WrapSize } from "@/components/reel-cover-maker/place";
 import { graphemes, parseTitle, type Paragraph } from "@/components/reel-cover-maker/title";
 
 export type StyleId = "stickery" | "renaissance" | "inkblot" | "pasty" | "pasty-flat" | "echo" | "mono";
@@ -192,7 +192,15 @@ export type Op =
    * animation's frame, a sticker coming into being (animate.ts). With
    * `tint`, only their shape is drawn, in that colour: a shadow cast.
    */
-  | { kind: "blur"; radius: number; tint?: string; ops: Op[] };
+  | { kind: "blur"; radius: number; tint?: string; ops: Op[] }
+  /**
+   * Ops shown only inside `polygons` (in the op's own frame, by the
+   * nonzero rule): an animation's frame, a word printed part way or cut by
+   * an engraver's lines so far (animate.ts). Paste inside is clipped too.
+   * It clips where it is drawn, so it is never put inside a `blur`, whose
+   * ops are drawn off the canvas and cast back.
+   */
+  | { kind: "clip"; polygons: Polygon[]; ops: Op[] };
 
 export interface Scene {
   width: number;
@@ -206,6 +214,14 @@ export interface Scene {
   wrapRef?: WrapRef;
   /** Set as a text box: the width its words were wrapped to (never under the narrowest they can be), that narrowest, and how wide the words themselves came out. */
   wrapped?: { width: number; min: number; content: number };
+  /**
+   * The map the owner's placement drew the letters through (moved, turned,
+   * scaled or flipped), from the style's own frame to the cover: for an
+   * animation that works in the letters' own frame (Jelly squashes each
+   * letter onto its own line, whichever way it is turned). Absent where
+   * they are where the style set them.
+   */
+  placed?: Matrix;
 }
 
 /** What a style's own layout settled on, for setting its words again wrapped to a width, at the same size. */
@@ -2228,7 +2244,7 @@ export function placeScene(scene: Scene, place: Place): Scene {
     }
   }
   flush();
-  return { ...scene, ops, readable: mappedBounds(m, scene.readable) };
+  return { ...scene, ops, readable: mappedBounds(m, scene.readable), placed: scene.placed ? multiply(m, scene.placed) : m };
 }
 
 /** Every liquid layer in a scene, in the order they are drawn. */
@@ -2237,7 +2253,7 @@ export function liquidOps(scene: Scene): LiquidOp[] {
   const walk = (ops: Op[]) => {
     for (const op of ops) {
       if (op.kind === "liquid") out.push(op);
-      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write" || op.kind === "blur" || op.kind === "knockout") walk(op.ops);
+      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write" || op.kind === "blur" || op.kind === "knockout" || op.kind === "clip") walk(op.ops);
     }
   };
   walk(scene.ops);

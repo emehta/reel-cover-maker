@@ -372,8 +372,8 @@ export function printLoops(outline: readonly Loop[], seed: number, print: Print 
   return loops;
 }
 
-/** A grid of points `1 / G` em apart over loops' box, `pad` em round it. */
-interface Grid {
+/** A grid of points `1 / G` em apart over loops' box, `pad` em round it (in whatever unit the loops are in: Wick's grid is in pixels). */
+export interface Grid {
   ox: number;
   oy: number;
   W: number;
@@ -381,7 +381,7 @@ interface Grid {
   G: number;
 }
 
-function gridOver(loops: readonly Loop[], pad: number, G: number): Grid | null {
+export function gridOver(loops: readonly Loop[], pad: number, G: number): Grid | null {
   const box = loopBounds(loops);
   if (!box) return null;
   const ox = box.x0 - pad - 2 / G;
@@ -428,7 +428,7 @@ function edgeDistances(loops: readonly Loop[], g: Grid, band: number): Float32Ar
 }
 
 /** 1 where a grid point is inside `loops` by the nonzero rule, as a canvas fills them, else 0. */
-function insideOf(loops: readonly Loop[], g: Grid): Uint8Array {
+export function insideOf(loops: readonly Loop[], g: Grid): Uint8Array {
   const { ox, oy, W, H, G } = g;
   const crossings: { x: number; dir: number }[][] = Array.from({ length: H }, () => []);
   for (const loop of loops) {
