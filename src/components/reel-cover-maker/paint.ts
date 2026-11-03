@@ -9,6 +9,7 @@
  */
 
 import type { FaceId } from "@/components/reel-cover-maker/faces";
+import { isStill, reachOf, surfaceAt, type Surface } from "@/components/reel-cover-maker/ripple";
 import type { LiquidOp, Op, Scene } from "@/components/reel-cover-maker/scene";
 
 /** The part of a 2D context painting uses, so a test can stand in for one. */
@@ -176,7 +177,7 @@ function softLayer(ctx: PaintTarget, layer: { image: CanvasImageSource; sx: numb
 
 /** Whether any text in `ops` cuts a gap round itself. */
 function cuts(ops: Op[]): boolean {
-  return ops.some((op) => (op.kind === "text" ? !!(op.knock || op.knockShape) : "ops" in op && cuts(op.ops)));
+  return ops.some((op) => (op.kind === "text" ? !!(op.knock || op.knockShape) : op.kind === "ripple" && op.cut?.length ? true : "ops" in op && cuts(op.ops)));
 }
 
 /** A text's letters drawn by `how` where it is, squeezed across from its start if it is. */
@@ -449,6 +450,9 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       for (const inner of op.ops) draw(ctx, scene, inner, options, haze, inLayer);
       ctx.restore();
       return;
+    case "ripple":
+      rippled(ctx, scene, op, options, haze, inLayer);
+      return;
     case "write": {
       const only = op.ops.length === 1 ? op.ops[0] : null;
       const word = only && (only.kind === "text" || only.kind === "ink") ? only : null;
@@ -466,6 +470,260 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       wipe(ctx, scene, op, options, haze, inLayer);
     }
   }
+}
+
+/** The canvas a rippled layer is handed back to the page from, grown to the largest area asked for and never shrunk. */
+let rippleOut: HTMLCanvasElement | null = null;
+
+function rippleOutput(w: number, h: number): CanvasRenderingContext2D | null {
+  if (typeof document === "undefined") return null;
+  rippleOut ??= document.createElement("canvas");
+  if (rippleOut.width < w) rippleOut.width = w;
+  if (rippleOut.height < h) rippleOut.height = h;
+  return rippleOut.getContext("2d");
+}
+
+/**
+ * A fresh canvas for a rippled layer to be drawn in and read back. Fresh,
+ * and not marked as read often, so the browser letters it as it letters
+ * the page's own canvas: one kept and read every frame is moved off the
+ * graphics card, where text's edges come out a little different, and the
+ * cover then stepped at the moment the water stilled.
+ */
+function rippleLayer(w: number, h: number): CanvasRenderingContext2D | null {
+  if (typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  return canvas.getContext("2d");
+}
+
+/** Whether any of `ops` is paste, whose layer is placed in the canvas's own pixels and so cannot be drawn into a layer of an area. */
+function holdsPaste(ops: Op[]): boolean {
+  return ops.some((op) => op.kind === "liquid" || ("ops" in op && holdsPaste(op.ops)));
+}
+
+/** How far apart the surface is worked out, in canvas pixels: water is smooth at this scale, and every pixel between is read from the four round it. */
+const RIPPLE_STEP = 2;
+
+/** The surface worked out on the canvas's grid, in blocks of this many points a side, only where a frame asks for it. */
+const FIELD_BLOCK = 32;
+
+/** Each surface's grid on the canvas it was last drawn on: a frame's letters, each under the same water, share it. */
+const fields = new WeakMap<Surface, { key: string; blocks: Map<number, Float32Array> }>();
+
+/**
+ * The surface at a point of the canvas's grid (every `RIPPLE_STEP` canvas
+ * pixels): how far the eye is sent there, in canvas pixels, and the light
+ * added, each point worked out the first time it is asked for.
+ */
+function fieldOf(surface: Surface, k: number, o: { x: number; y: number }) {
+  const key = `${k}|${o.x},${o.y}`;
+  let made = fields.get(surface);
+  if (!made || made.key !== key) {
+    made = { key, blocks: new Map() };
+    fields.set(surface, made);
+  }
+  const { blocks } = made;
+  const out: [number, number, number] = [0, 0, 0];
+  return (gx: number, gy: number): [number, number, number] => {
+    const bx = Math.floor(gx / FIELD_BLOCK);
+    const by = Math.floor(gy / FIELD_BLOCK);
+    const id = by * 65536 + bx;
+    let block = blocks.get(id);
+    if (!block) {
+      // Four numbers a point: how far across and down, the light, and whether it is worked out yet.
+      block = new Float32Array(FIELD_BLOCK * FIELD_BLOCK * 4);
+      blocks.set(id, block);
+    }
+    const i = ((gy - by * FIELD_BLOCK) * FIELD_BLOCK + (gx - bx * FIELD_BLOCK)) * 4;
+    if (!block[i + 3]) {
+      const s = surfaceAt(surface, (gx * RIPPLE_STEP + 0.5) / k + o.x, (gy * RIPPLE_STEP + 0.5) / k + o.y);
+      block[i] = s.dx * k;
+      block[i + 1] = s.dy * k;
+      block[i + 2] = s.light;
+      block[i + 3] = 1;
+    }
+    out[0] = block[i];
+    out[1] = block[i + 1];
+    out[2] = block[i + 2];
+    return out;
+  };
+}
+
+/**
+ * Ops seen through water: drawn as a layer of the area alone, under the
+ * same transform, then every pixel shown from where the surface sends the
+ * eye (read between pixels by their alpha, so an edge never darkens), with
+ * the light it adds, and a flat colour's edge drawn back to a pixel's width
+ * as far as it is moved. In a knockout layer the cut is rippled the same
+ * and taken out of what is under it first. Where it moves nothing, or there
+ * is no page to make a layer in, the ops are drawn as they are.
+ */
+function rippled(ctx: PaintTarget, scene: Scene, op: Extract<Op, { kind: "ripple" }>, options: PaintOptions, haze?: Haze, inLayer = false) {
+  const target = (ctx as Partial<CanvasRenderingContext2D>).canvas as { width: number; height: number } | undefined;
+  const m = (ctx as Partial<Pick<CanvasRenderingContext2D, "getTransform">>).getTransform?.();
+  const { surface } = op;
+  const plainly = () => {
+    if (op.cut && inLayer && !haze) {
+      for (const inner of op.cut) {
+        ctx.save();
+        ctx.globalCompositeOperation = "destination-out";
+        draw(ctx, scene, inner, options, undefined, false);
+        ctx.restore();
+      }
+    }
+    for (const inner of op.ops) draw(ctx, scene, inner, options, haze, false);
+  };
+  if (haze || !target || !m || isStill(surface) || holdsPaste(op.ops) || typeof document === "undefined") {
+    plainly();
+    return;
+  }
+  const k = options.scale;
+  const o = options.origin ?? { x: 0, y: 0 };
+  const reach = reachOf(surface) * k + 2;
+  const x0 = Math.max(0, Math.floor((op.area.x - o.x) * k - reach));
+  const y0 = Math.max(0, Math.floor((op.area.y - o.y) * k - reach));
+  const x1 = Math.min(target.width, Math.ceil((op.area.x + op.area.w - o.x) * k + reach));
+  const y1 = Math.min(target.height, Math.ceil((op.area.y + op.area.h - o.y) * k + reach));
+  const rw = x1 - x0;
+  const rh = y1 - y0;
+  if (rw <= 0 || rh <= 0) return;
+  // The surface on a coarse grid over the area, once for the cut and the letters alike, and for every letter under the same water this frame (`fieldOf`).
+  const field = fieldOf(surface, k, o);
+  const gw = Math.ceil(rw / RIPPLE_STEP) + 2;
+  const gh = Math.ceil(rh / RIPPLE_STEP) + 2;
+  const grid = new Float32Array(gw * gh * 3);
+  const gx0 = Math.floor(x0 / RIPPLE_STEP);
+  const gy0 = Math.floor(y0 / RIPPLE_STEP);
+  const fx0 = x0 / RIPPLE_STEP - gx0;
+  const fy0 = y0 / RIPPLE_STEP - gy0;
+  for (let gy = 0; gy < gh; gy += 1) {
+    for (let gx = 0; gx < gw; gx += 1) {
+      // Read off the shared grid, which lies on the canvas's own multiples of the step.
+      const at = field(gx0 + gx, gy0 + gy);
+      const g = (gy * gw + gx) * 3;
+      grid[g] = at[0];
+      grid[g + 1] = at[1];
+      grid[g + 2] = at[2];
+    }
+  }
+  const pass = (ops: Op[], mode: GlobalCompositeOperation, lit: boolean): boolean => {
+    const layer = rippleLayer(rw, rh);
+    const out = rippleOutput(rw, rh);
+    if (!layer || !out) return false;
+    layer.setTransform(m.a, m.b, m.c, m.d, m.e - x0, m.f - y0);
+    layer.textAlign = "left";
+    layer.textBaseline = "alphabetic";
+    for (const inner of ops) draw(layer, scene, inner, options, undefined, false);
+    const src = layer.getImageData(0, 0, rw, rh).data;
+    const img = out.createImageData(rw, rh);
+    const dst = img.data;
+    // Only where there is something to see, or near enough to be moved there.
+    let bx0 = rw;
+    let by0 = rh;
+    let bx1 = -1;
+    let by1 = -1;
+    for (let y = 0; y < rh; y += 1) {
+      const row = y * rw * 4 + 3;
+      for (let x = 0; x < rw; x += 1) {
+        if (src[row + x * 4] === 0) continue;
+        if (x < bx0) bx0 = x;
+        if (x > bx1) bx1 = x;
+        if (y < by0) by0 = y;
+        by1 = y;
+      }
+    }
+    if (bx1 < 0) return true;
+    const pad = Math.ceil(reach) + 1;
+    const ya = Math.max(0, by0 - pad);
+    const yb = Math.min(rh, by1 + pad + 1);
+    const xa = Math.max(0, bx0 - pad);
+    const xb = Math.min(rw, bx1 + pad + 1);
+    for (let y = ya; y < yb; y += 1) {
+      const gyf = y / RIPPLE_STEP + fy0;
+      const gy = Math.min(gh - 2, Math.floor(gyf));
+      const fy = gyf - gy;
+      for (let x = xa; x < xb; x += 1) {
+        const gxf = x / RIPPLE_STEP + fx0;
+        const gx = Math.min(gw - 2, Math.floor(gxf));
+        const fx = gxf - gx;
+        const a = (gy * gw + gx) * 3;
+        const b = a + 3;
+        const c = a + gw * 3;
+        const d = c + 3;
+        const w00 = (1 - fx) * (1 - fy);
+        const w10 = fx * (1 - fy);
+        const w01 = (1 - fx) * fy;
+        const w11 = fx * fy;
+        const mx = grid[a] * w00 + grid[b] * w10 + grid[c] * w01 + grid[d] * w11;
+        const my = grid[a + 1] * w00 + grid[b + 1] * w10 + grid[c + 1] * w01 + grid[d + 1] * w11;
+        const i = (y * rw + x) * 4;
+        // Water too calm here to move or light anything: the pixel as it is.
+        if (mx * mx + my * my < 0.0025 && (!lit || grid[a + 2] + grid[b + 2] + grid[c + 2] + grid[d + 2] < 0.002)) {
+          dst[i] = src[i];
+          dst[i + 1] = src[i + 1];
+          dst[i + 2] = src[i + 2];
+          dst[i + 3] = src[i + 3];
+          continue;
+        }
+        const sx = x + mx;
+        const sy = y + my;
+        const ix = Math.floor(sx);
+        const iy = Math.floor(sy);
+        const tx = sx - ix;
+        const ty = sy - iy;
+        let r = 0;
+        let g = 0;
+        let bl = 0;
+        let al = 0;
+        for (let j = 0; j < 4; j += 1) {
+          const qx = ix + (j & 1);
+          const qy = iy + (j >> 1);
+          if (qx < 0 || qy < 0 || qx >= rw || qy >= rh) continue;
+          const q = (qy * rw + qx) * 4;
+          const aw = src[q + 3] * (j & 1 ? tx : 1 - tx) * (j >> 1 ? ty : 1 - ty);
+          if (aw <= 0) continue;
+          r += src[q] * aw;
+          g += src[q + 1] * aw;
+          bl += src[q + 2] * aw;
+          al += aw;
+        }
+        if (al <= 0.01) continue;
+        r /= al;
+        g /= al;
+        bl /= al;
+        if (lit) {
+          const light = Math.min(1, grid[a + 2] * w00 + grid[b + 2] * w10 + grid[c + 2] * w01 + grid[d + 2] * w11);
+          if (light > 0) {
+            r += (255 - r) * light;
+            g += (255 - g) * light;
+            bl += (255 - bl) * light;
+          }
+        }
+        let alpha = Math.min(255, al);
+        // A flat colour's edge, softened by reading between pixels, drawn back to a pixel's width, as far as this pixel is moved: still, it is the cover's own edge.
+        if (surface.crisp) alpha = Math.min(255, Math.max(0, (alpha - 127.5) * (1 + 0.7 * Math.min(1, Math.sqrt(mx * mx + my * my))) + 127.5));
+        dst[i] = r;
+        dst[i + 1] = g;
+        dst[i + 2] = bl;
+        dst[i + 3] = alpha;
+      }
+    }
+    out.setTransform(1, 0, 0, 1, 0, 0);
+    out.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = mode;
+    ctx.drawImage(out.canvas, 0, 0, rw, rh, x0, y0, rw, rh);
+    ctx.restore();
+    return true;
+  };
+  if (op.cut?.length && inLayer && !pass(op.cut, "destination-out", false)) {
+    plainly();
+    return;
+  }
+  if (!pass(op.ops, "source-over", true)) plainly();
 }
 
 /** How many canvas pixels the context draws for one of the picture's here, every turn and scale it is under taken in. */

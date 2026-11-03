@@ -42,6 +42,7 @@ const WO = await import("@/components/reel-cover-maker/write-on");
 const INKM = await import("@/components/reel-cover-maker/ink");
 const RUN = await import("@/components/reel-cover-maker/ink-run");
 const REN = await import("@/components/reel-cover-maker/renaissance");
+const RIP = await import("@/components/reel-cover-maker/ripple");
 
 let passed = 0;
 const check = (name, fn) => {
@@ -3643,7 +3644,7 @@ check("Echo's Ripple and Spread bring the words first and each ring after the on
   assert.ok(near(boxAt(p.duration - 1e-6).x, cursor.x, 0.5), "the cursor does not land where the cover has it");
 });
 
-check("the animations on offer: Stickery spells, slaps, pops, reveals or jitters, Pasty and Pasty Flat are written live, jelly or jitter, Renaissance is engraved too, Inkblot wicks and jitters, and what was cut is gone", () => {
+check("the animations on offer: Stickery spells, slaps, pops, reveals or jitters, Pasty and Pasty Flat are written live, jelly or jitter, Renaissance is engraved, ribboned or dropped too, Inkblot wicks and jitters, and what was cut is gone", () => {
   assert.deepEqual(AN.animationsFor("stickery").map((a) => a.id), ["type-draw", "slap", "pop", "reveal", "jitter"]);
   assert.deepEqual(AN.animationsFor("stickery").map((a) => a.name), ["Spell", "Slap", "Pop", "Reveal", "Jitter"]);
   for (const style of ["pasty", "pasty-flat"]) {
@@ -3651,13 +3652,16 @@ check("the animations on offer: Stickery spells, slaps, pops, reveals or jitters
     assert.deepEqual(AN.animationsFor(style).map((a) => a.name), ["Written live", "Jelly", "Jitter"]);
   }
   assert.deepEqual(AN.animationsFor("inkblot").map((a) => a.id), ["written", "words", "lines", "wick", "jitter"]);
-  assert.deepEqual(AN.animationsFor("renaissance").map((a) => a.id), ["written", "words", "lines", "engraved"]);
-  assert.deepEqual(AN.animationsFor("renaissance").map((a) => a.name), ["Written", "Word by word", "Line by line", "Engraved"]);
+  assert.deepEqual(AN.animationsFor("renaissance").map((a) => a.id), ["written", "words", "lines", "engraved", "ribbon", "drop"]);
+  assert.deepEqual(AN.animationsFor("renaissance").map((a) => a.name), ["Written", "Word by word", "Line by line", "Engraved", "Ribbon", "Drop"]);
   // The owner's picks of 31 Oct, each for its own material alone.
   for (const style of S.STYLES) {
     assert.equal(AN.offers(style.id, "engraved"), style.id === "renaissance", `${style.id}: Engraved`);
     assert.equal(AN.offers(style.id, "wick"), style.id === "inkblot", `${style.id}: Wick`);
     assert.equal(AN.offers(style.id, "jelly"), style.id === "pasty" || style.id === "pasty-flat", `${style.id}: Jelly`);
+    // The owner's picks of 3 Nov, Renaissance's alone.
+    assert.equal(AN.offers(style.id, "ribbon"), style.id === "renaissance", `${style.id}: Ribbon`);
+    assert.equal(AN.offers(style.id, "drop"), style.id === "renaissance", `${style.id}: Drop`);
   }
   // Not Renaissance yet (the owner, 24 Oct), and not Echo or Mono, which a shuffle does not change.
   for (const style of ["renaissance", "echo", "mono"]) assert.ok(!AN.offers(style, "jitter"), `${style} offers Jitter`);
@@ -3759,6 +3763,186 @@ check("Engraved cuts each letter's contour, then lines across the lockup that de
     assert.equal(clip.polygons.length, b[i].polygons.length);
     clip.polygons.forEach((poly, j) => poly.forEach((v, k) => assert.ok(near(v, b[i].polygons[j][k], 1e-6), "the lines did not turn with the lockup")));
   });
+});
+
+/** Every ripple op in a frame, in the order drawn. */
+function ripplesIn(scene) {
+  const out = [];
+  const walk = (ops) => {
+    for (const op of ops) {
+      if (op.kind === "ripple") out.push(op);
+      if ("ops" in op) walk(op.ops);
+    }
+  };
+  walk(scene.ops);
+  return out;
+}
+
+check("water: a drop moves nothing before it falls or past its rings, weakens as it runs and stills, and its light goes with its strength", () => {
+  const drop = (age, over = {}) => ({ x: 500, y: 800, age, strength: 20, speed: 600, wavelength: 80, width: 1.3, spread: 30, life: 0.9, phase: 0.68, wobble: 4, seed: 5, fade: 1, ...over });
+  const at = (d, x, y, extra = {}) => RIP.surfaceAt({ drops: [d], glint: 0.4, caustic: 0.14, ...extra }, x, y);
+  // Not yet fallen: still, and nothing anywhere is moved.
+  assert.ok(RIP.isStill({ drops: [drop(-0.1)] }));
+  assert.ok(RIP.isStill({ drops: [drop(0)] }));
+  for (let x = 0; x < 1000; x += 37) assert.deepEqual(at(drop(-0.1), x, 700), { dx: 0, dy: 0, light: 0 });
+  // A quarter second on, its rings are 150 pixels out: they move what is round them, and nothing far past them.
+  const d = drop(0.25);
+  assert.ok(!RIP.isStill({ drops: [d] }));
+  let most = 0;
+  for (let r = 100; r < 200; r += 2) most = Math.max(most, Math.hypot(at(d, 500 + r, 800).dx, at(d, 500 + r, 800).dy));
+  assert.ok(most > 3 && most <= 20, `its rings move things ${most.toFixed(2)} px`);
+  for (let r = 420; r < 900; r += 20) assert.equal(at(d, 500 + r, 800).dx, 0, `moved ${r} px out, past its rings`);
+  // What is moved is moved straight out from it or back toward it.
+  const p = at(d, 500 + 90, 800 + 120);
+  assert.ok(Math.abs(p.dx * 120 - p.dy * 90) < 1e-6 * Math.hypot(p.dx, p.dy) * 150 + 1e-9, "moved across its ring");
+  // It weakens as it runs, and in a few lives it is still.
+  const strongest = (age) => {
+    let m = 0;
+    for (let r = 0; r < 1200; r += 3) m = Math.max(m, Math.hypot(at(drop(age), 500 + r, 800).dx, at(drop(age), 500 + r, 800).dy));
+    return m;
+  };
+  assert.ok(strongest(0.9) < strongest(0.3), "it does not weaken");
+  assert.ok(RIP.isStill({ drops: [drop(9)] }), "it never stills");
+  // Faded to nothing, it moves and lights nothing; light is only ever added.
+  assert.ok(RIP.isStill({ drops: [drop(0.25, { fade: 0 })] }));
+  for (let r = 0; r < 400; r += 7) {
+    const s = at(drop(0.25, { fade: 0 }), 500 + r, 800 - r / 2);
+    assert.ok(s.dx === 0 && s.dy === 0 && s.light === 0);
+    assert.ok(at(d, 500 + r, 800 - r / 2).light >= 0);
+  }
+  const half = at(drop(0.25, { fade: 0.5 }), 500 + 140, 800);
+  const whole = at(d, 500 + 140, 800);
+  assert.ok(near(half.dx, whole.dx / 2, 1e-9), "a half faded drop moves things more than half as far");
+  assert.ok(half.light <= whole.light, "a faded drop is lit as brightly");
+  // A bend lifts across its own line however that line is turned, by no more than its height.
+  const turn = 0.6;
+  const world = [Math.cos(turn), Math.sin(turn), -Math.sin(turn), Math.cos(turn), 300, 400];
+  const bend = { toFrame: PL.invert(world), down: { x: world[2], y: world[3] }, front: 200, wavelength: 160, reach: 110, height: 12, start: 0, length: 500 };
+  let lifted = 0;
+  for (let x = 0; x <= 500; x += 5) {
+    const q = PL.apply(world, { x, y: -30 });
+    const s = RIP.surfaceAt({ drops: [], bends: [bend] }, q.x, q.y);
+    const lift = Math.hypot(s.dx, s.dy);
+    assert.ok(lift <= 12 + 1e-9, `lifted ${lift}`);
+    assert.ok(Math.abs(s.dx * world[3] - s.dy * world[2]) < 1e-9, "moved along its line rather than across it");
+    lifted = Math.max(lifted, lift);
+  }
+  assert.ok(lifted > 6, "the bend lifts nothing");
+  assert.ok(RIP.isStill({ drops: [], bends: [{ ...bend, height: 0 }] }));
+});
+
+check("Drop: a drop on the script and the lockup comes up as its ring runs out, each capital whole and nearer ones first, through water stilled before the cover stands", () => {
+  for (const extra of [{}, { renaissanceLook: "niche", scriptColour: "#141414" }, { renaissanceLook: "travel" }]) {
+    for (const title of ["Travel *the* world", "The art *of* summertime", "find *your*\nniche"]) {
+      const scene = cover(title, "renaissance", "reel", extra);
+      const texts = lettersIn(scene);
+      const p = AN.plan(scene, "renaissance", "drop", measurer);
+      const name = `${title} ${JSON.stringify(extra)}`;
+      assert.ok(p.duration > 1.3 && p.duration < 3, `${name}: runs ${p.duration}s`);
+      assert.ok(!p.loops);
+      assert.equal(p.frame(p.duration), scene);
+      assert.equal(lettersIn(p.frame(0)).length, 0, `${name}: something shows before the drop falls`);
+      const scripts = texts.filter((op) => !op.face.startsWith("caps-"));
+      const capsOps = texts.filter((op) => op.face.startsWith("caps-"));
+      const firstSeen = new Map();
+      for (let t = 0; t < p.duration; t += 1 / 30) {
+        const frame = p.frame(t);
+        // Everything shown is the cover's own lettering, seen through the water, and still in the knockout, so the script cuts its gap.
+        const inKnockout = frame.ops.filter((op) => op.kind === "knockout").flatMap((op) => ripplesIn({ ops: op.ops }));
+        assert.equal(inKnockout.length, ripplesIn(frame).length, `${name}: something out of its knockout at ${t.toFixed(2)}`);
+        for (const r of ripplesIn(frame)) {
+          const shown = lettersIn({ ops: r.ops });
+          assert.ok(shown.length >= 1);
+          for (const letter of shown) {
+            const own = texts.find((op) => op.face === letter.face && op.size === letter.size && op.color === letter.color && op.y === letter.y && op.text.includes(letter.text));
+            assert.ok(own, `${name}: "${letter.text}" is not the cover's at ${t.toFixed(2)}`);
+            if ((own.knock || own.knockShape) && own.text === letter.text) assert.ok(r.cut?.length, `${name}: the script cuts no gap at ${t.toFixed(2)}`);
+            for (const ch of letter.text) if (!firstSeen.has(`${own.text}|${ch}|${own.y}`)) firstSeen.set(`${own.text}|${ch}|${own.y}`, t);
+          }
+        }
+      }
+      // The script comes first, at the drop.
+      for (const s of scripts) assert.ok(firstSeen.get(`${s.text}|${[...s.text][0]}|${s.y}`) <= 0.1, `${name}: the script is late`);
+      // By its last frame the water is still and every line is drawn whole again, so the cover follows with no step.
+      const end = p.frame(p.duration - 1e-3);
+      for (const r of ripplesIn(end)) {
+        assert.ok(RIP.isStill(r.surface), `${name}: the water still moves at its end`);
+        for (const letter of lettersIn({ ops: r.ops })) assert.ok(texts.some((op) => op.text === letter.text && op.y === letter.y && op.x === letter.x), `${name}: a line still in letters at its end`);
+      }
+      assert.equal(lettersIn(end).length, texts.length, `${name}: something missing at its end`);
+      assert.ok(capsOps.length > 0);
+    }
+  }
+  // A letter set alone falls exactly where the line draws it, its kerning taken in.
+  const kerned = { ...measurer, width: (face, text) => measurer.width(face, text) - (text.includes("AV") ? 0.05 : 0) };
+  const scene = cover("Travel *the* world", "renaissance", "reel", {}, kerned);
+  const p = AN.plan(scene, "renaissance", "drop", kerned);
+  const line = lettersIn(scene).find((op) => op.text.includes("AV"));
+  for (let t = 0.05; t < p.duration; t += 1 / 30) {
+    for (const r of ripplesIn(p.frame(t))) {
+      for (const op of lettersIn({ ops: r.ops })) {
+        if (op.text !== "V" || op.y !== line.y) continue;
+        const before = line.text.slice(0, line.text.indexOf("V"));
+        const x = line.x + (kerned.width(line.face, before + "V") - kerned.width(line.face, "V")) * line.size * (line.sx ?? 1);
+        assert.ok(near(op.x, x, 1e-9), "the V is not where its line puts it");
+      }
+    }
+  }
+});
+
+check("Ribbon: a loop of a wave run along the script alone, its gap moving with it, the capitals untouched, the cover itself at its start and end", () => {
+  for (const extra of [{}, { renaissanceLook: "niche", scriptColour: "#141414" }]) {
+    const scene = cover("Travel *the* world", "renaissance", "reel", extra);
+    const texts = lettersIn(scene);
+    const script = texts.find((op) => !op.face.startsWith("caps-"));
+    for (const speed of [1, 2, 0.5]) {
+      const p = AN.plan(scene, "renaissance", "ribbon", measurer, speed);
+      assert.ok(p.loops, "Ribbon does not loop");
+      assert.ok(near(p.duration, AN.RIBBON_LOOP / speed, 1e-9));
+      assert.equal(p.frame(0), scene);
+      assert.equal(p.frame(p.duration - 1e-4), scene, "it does not end still, where it starts again");
+      let bent = 0;
+      for (let t = 0; t < p.duration; t += 1 / 30) {
+        const frame = p.frame(t);
+        if (frame === scene) continue;
+        const rs = ripplesIn(frame);
+        assert.equal(rs.length, 1, "more than the script is bent");
+        const [r] = rs;
+        assert.equal(lettersIn({ ops: r.ops })[0].text, script.text);
+        assert.ok(r.cut?.length, "its gap does not move with it");
+        assert.equal(r.surface.drops.length, 0);
+        const [b] = r.surface.bends;
+        // At most six hundredths of the script's own height, its added ink taken in.
+        const tall = (measurer.bounds(script.face, script.text).ascent + measurer.bounds(script.face, script.text).descent) * script.size + (script.bold ?? 0);
+        assert.ok(Math.abs(b.height) <= 0.06 * tall + 1e-6, "it lifts too far");
+        bent = Math.max(bent, Math.abs(b.height));
+        // The capitals are the cover's own ops, untouched.
+        for (const op of lettersIn(frame)) if (op.face.startsWith("caps-")) assert.ok(texts.includes(op));
+      }
+      assert.ok(bent > 0, "nothing bends");
+    }
+  }
+  // Turned and scaled with the text box, it lifts across the script's own line.
+  const base = cover("Travel *the* world", "renaissance", "reel");
+  const placed = S.placeScene(base, { x: 40, y: -60, angle: 0.5, sx: 1.2, sy: 1.2 });
+  const bendAt = (s) => ripplesIn(AN.plan(s, "renaissance", "ribbon", measurer).frame(0.8))[0].surface.bends[0];
+  const a = bendAt(base);
+  const b = bendAt(placed);
+  assert.ok(near(Math.atan2(b.down.y, b.down.x) - Math.atan2(a.down.y, a.down.x), 0.5, 1e-6), "it lifts the script across the cover, not across its own line");
+  assert.ok(near(Math.hypot(b.down.x, b.down.y), 1.2 * Math.hypot(a.down.x, a.down.y), 1e-6), "it lifts the script by its own scale, not the box's");
+  assert.ok(near(a.front, b.front, 1e-6) && near(a.height, b.height, 1e-6), "the wave is not the same along the placed script");
+});
+
+check("a frame seen through water is painted as its own letters where there is no page to ripple it in", () => {
+  const scene = cover("Travel *the* world", "renaissance", "reel");
+  const draw = (s) => {
+    const ctx = recorder();
+    paint(ctx, s, { scale: 0.5, font: () => "10px x", grain: null });
+    return ctx.calls.filter((c) => c.kind === "fillText").map((c) => `${c.text}@${c.at.map((v) => v.toFixed(3)).join(",")}`);
+  };
+  const p = AN.plan(scene, "renaissance", "ribbon", measurer);
+  assert.ok(ripplesIn(p.frame(0.8)).length > 0);
+  assert.deepEqual(draw(p.frame(0.8)), draw(scene));
 });
 
 check("Wick drops ink on each printed word in reading order, which runs along the word as one piece and only ever further, its wet edge showing and drying behind it, and ends on the cover's own print", () => {

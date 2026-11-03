@@ -19,6 +19,7 @@ import { strokeMetrics } from "@/components/reel-cover-maker/strokes";
 import { liquidLayout, shrink, type LiquidSpec } from "@/components/reel-cover-maker/liquid-layout";
 import type { Finish } from "@/components/reel-cover-maker/liquid-render";
 import { mixSeed, random, between, hashString } from "@/components/reel-cover-maker/noise";
+import type { Surface } from "@/components/reel-cover-maker/ripple";
 import { paletteFor, readableOn, type Ground, type Palette } from "@/components/reel-cover-maker/palettes";
 import { polygonBounds, steppedOutline, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { apply, isUnmoved, mappedBounds, multiply, placeMatrix, strokeScale, type Matrix, type Place, type WrapSize } from "@/components/reel-cover-maker/place";
@@ -200,7 +201,17 @@ export type Op =
    * It clips where it is drawn, so it is never put inside a `blur`, whose
    * ops are drawn off the canvas and cast back.
    */
-  | { kind: "clip"; polygons: Polygon[]; ops: Op[] };
+  | { kind: "clip"; polygons: Polygon[]; ops: Op[] }
+  /**
+   * Ops seen through water (ripple.ts): drawn as a layer of their own, and
+   * each pixel of `area` (in pixels of the picture) shown from where the
+   * surface sends the eye, lit a little by it: an animation's frame
+   * (Renaissance's Drop and Ribbon). Inside a knockout layer, `cut` is the
+   * gap the ops cut there, rippled the same and taken out first, so a
+   * script's gap in its capitals moves with it. A still surface draws its
+   * ops as they are.
+   */
+  | { kind: "ripple"; surface: Surface; ops: Op[]; cut?: Op[]; area: Rect };
 
 export interface Scene {
   width: number;
@@ -2253,7 +2264,7 @@ export function liquidOps(scene: Scene): LiquidOp[] {
   const walk = (ops: Op[]) => {
     for (const op of ops) {
       if (op.kind === "liquid") out.push(op);
-      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write" || op.kind === "blur" || op.kind === "knockout" || op.kind === "clip") walk(op.ops);
+      else if (op.kind === "turn" || op.kind === "matrix" || op.kind === "fade" || op.kind === "write" || op.kind === "blur" || op.kind === "knockout" || op.kind === "clip" || op.kind === "ripple") walk(op.ops);
     }
   };
   walk(scene.ops);

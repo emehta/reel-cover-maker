@@ -21,9 +21,15 @@
  * - Renaissance: Written (the capitals rise in line by line, then the
  *   script is written across them as a pen writes it, its gap in them
  *   following the pen), Word by word and Line by line (each rises in, in
- *   the order the lockup is read, the script where it falls), and Engraved
+ *   the order the lockup is read, the script where it falls), Engraved
  *   (each letter's contour cut, then two passes of fine lines across the
- *   lockup that deepen until the letters are solid).
+ *   lockup that deepen until the letters are solid), Ribbon (a loop: a
+ *   wave runs along the script as along a ribbon flicked at one end, its
+ *   gap in the capitals moving with it, the capitals still) and Drop (a
+ *   drop falls on the script and the lockup comes up as its rings run
+ *   out, each capital rising whole through the water as the ring reaches
+ *   it). Ribbon and Drop are the owner's picks of 3 Nov from a lab of
+ *   ripples (ripple.ts).
  * - Inkblot: Written (each printed word traced as a pen writes it, word
  *   after word in reading order), Word by word and Line by line (each comes
  *   into focus out of nothing, as ink soaks into the cloth), and Wick (a
@@ -57,9 +63,10 @@ import { luminance, rgb } from "@/components/reel-cover-maker/palettes";
 import { apply, invert, multiply, type Matrix, type Point } from "@/components/reel-cover-maker/place";
 import { isBackdrop, pasteKey, type LiquidOp, type Op, type Scene, type StyleId } from "@/components/reel-cover-maker/scene";
 import { fillHoles, insidePolygon, polygonBounds, traceCells, type Polygon } from "@/components/reel-cover-maker/stepped";
+import { isStill, STILL_BELOW, type Drop as WaterDrop, type Surface } from "@/components/reel-cover-maker/ripple";
 import { graphemes } from "@/components/reel-cover-maker/title";
 
-export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade" | "engraved" | "wick" | "jelly";
+export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade" | "engraved" | "wick" | "jelly" | "ribbon" | "drop";
 
 export interface Animation {
   id: AnimationId;
@@ -92,6 +99,9 @@ export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
     { id: "words", name: "Word by word" },
     { id: "lines", name: "Line by line" },
     { id: "engraved", name: "Engraved" },
+    // Ribbon and Drop: the owner's picks of 3 Nov.
+    { id: "ribbon", name: "Ribbon" },
+    { id: "drop", name: "Drop" },
   ],
   inkblot: [
     { id: "written", name: "Written" },
@@ -1790,6 +1800,7 @@ function engraved(scene: Scene, measurer: Measurer): Built {
  */
 function renaissanceIn(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   if (id === "engraved") return engraved(scene, measurer);
+  if (id === "drop") return drop(scene, measurer);
   const texts = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "text" }> } => l.op.kind === "text");
   const isCaps = (l: { op: Extract<Op, { kind: "text" }> }) => l.op.face.startsWith("caps-");
   const read = <T extends Leaf>(leaves: T[]) => [...leaves].sort((a, b) => {
@@ -1863,6 +1874,253 @@ function renaissanceIn(scene: Scene, id: AnimationId, measurer: Measurer): Built
   };
 }
 
+// Ripples: Renaissance's Ribbon and Drop (ripple.ts).
+
+type TextLeaf = Leaf & { op: Extract<Op, { kind: "text" }> };
+
+/** Smooth from 0 to 1 as `u` runs from 0 to 1, starting and stopping at no speed. */
+const smooth = (u: number) => {
+  const x = clamp01(u);
+  return x * x * (3 - 2 * x);
+};
+
+/** 1, falling to nought over the last `tail` seconds of `length`: water stilled by the end, so the cover follows with no step. */
+const stilledBy = (t: number, length: number, tail: number) => 1 - smooth((t - (length - tail)) / tail);
+
+/** A rect in a leaf's frame, as the box round it on the cover. */
+function coverBox(world: Matrix, r: { x: number; y: number; w: number; h: number }) {
+  const corners = [apply(world, { x: r.x, y: r.y }), apply(world, { x: r.x + r.w, y: r.y }), apply(world, { x: r.x, y: r.y + r.h }), apply(world, { x: r.x + r.w, y: r.y + r.h })];
+  const xs = corners.map((p) => p.x);
+  const ys = corners.map((p) => p.y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+}
+
+const grownBy = (r: { x: number; y: number; w: number; h: number }, by: number) => ({ x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by });
+
+/** How many of the picture's pixels a leaf's frame draws for one of its own: the owner's scaling of the text box. */
+const frameScale = (world: Matrix) => Math.sqrt(Math.abs(world[0] * world[3] - world[1] * world[2])) || 1;
+
+/**
+ * A text's letters, each where the face puts it in the line, its kerning
+ * with the letter before taken in (the text up to it, less the letter):
+ * drawn one by one, they fall exactly where the line draws them.
+ */
+function kernedLetters(op: Extract<Op, { kind: "text" }>, measurer: Measurer): Extract<Op, { kind: "text" }>[] {
+  const out: Extract<Op, { kind: "text" }>[] = [];
+  const sx = op.sx ?? 1;
+  let before = "";
+  for (const g of graphemes(op.text)) {
+    if (g.trim()) out.push({ ...op, text: g, x: op.x + (measurer.width(op.face, before + g) - measurer.width(op.face, g)) * op.size * sx });
+    before += g;
+  }
+  return out;
+}
+
+/** The gap a script cuts in its capitals, as an op to cut with: its own shape, or its letters that gap wider all round. */
+function gapOf(op: Extract<Op, { kind: "text" }>): Op | null {
+  if (op.knockShape) return { kind: "ink", text: op.text, polygons: op.knockShape, color: "#000", size: op.size, line: op.line ?? 0, key: `gap|${op.text}` };
+  if (!op.knock) return null;
+  return { ...op, color: "#000", alpha: 1, knock: undefined, knockShape: undefined, bold: op.knock * 2 + (op.bold ?? 0) };
+}
+
+/** A text seen through `surface` in `area` (moved by `m` in its frame first, if given), any gap it cuts in its capitals rippled with it. */
+function throughWater(op: Extract<Op, { kind: "text" }>, surface: Surface, area: { x: number; y: number; w: number; h: number }, m?: Matrix): Op {
+  const moved = (o: Op): Op => (m ? { kind: "matrix", m, ops: [o] } : o);
+  const gap = gapOf(op);
+  return { kind: "ripple", surface, ops: [moved({ ...op, knock: undefined, knockShape: undefined })], cut: gap ? [moved(gap)] : undefined, area };
+}
+
+/**
+ * A drop for letters whose capitals are `unit` pixels of the picture tall:
+ * its strength, pace and spacing as shares of the unit, its crests running
+ * at seven tenths of its rings' pace, and its rings wavering a little.
+ */
+function water(unit: number, x: number, y: number, age: number, strength: number, seed: number, fade: number, over: Partial<WaterDrop>): WaterDrop {
+  return { x, y, age, strength: unit * strength, speed: unit * 1.5, wavelength: unit * 0.24, width: 2.6, spread: unit * 0.27, life: 0.9, phase: 0.68, wobble: unit * 0.015, seed, fade, ...over };
+}
+
+/** Renaissance's lockup: its capitals and its scripts, and how tall a capital is on the cover. */
+function lockupOf(scene: Scene, measurer: Measurer) {
+  const texts = leavesOf(scene.ops).filter((l): l is TextLeaf => l.op.kind === "text");
+  const isCaps = (l: TextLeaf) => l.op.face.startsWith("caps-");
+  const caps = texts.filter(isCaps);
+  const scripts = texts.filter((l) => !isCaps(l));
+  const first = caps[0] ?? texts[0];
+  const capH = first ? measurer.metrics(first.op.face).cap * first.op.size * frameScale(first.world) : 100;
+  return { texts, caps, scripts, capH };
+}
+
+/** How long Ribbon's loop is at its own speed: the wave runs the word in under two seconds, and the script rests a moment. */
+export const RIBBON_LOOP = 2.2;
+
+/** When the wave comes onto the word, and how long it takes to reach its full height. */
+const RIBBON_START = 0.05;
+const RIBBON_RISE = 0.45;
+/** How long before the loop's end the script is still again. */
+const RIBBON_STILL = 0.35;
+
+/**
+ * Ribbon, at `pace`: a loop. A wave runs along each script from its first
+ * letter to its last, as along a ribbon flicked at one end, lifting and
+ * lowering its strokes across its own line in turn and dying as it runs;
+ * its gap in the capitals moves with it, and the capitals stand. The
+ * script is the cover's own, seen through the wave, so where the wave is
+ * not it is the cover exactly.
+ */
+function ribbon(scene: Scene, measurer: Measurer, pace: number): Plan {
+  const { scripts } = lockupOf(scene, measurer);
+  const made = new Map(
+    scripts.map((l) => {
+      const box = textBox(l.op, measurer);
+      const area = coverBox(l.world, grownBy(box, (l.op.knock ?? 0) + box.h * 0.15));
+      const lambda = Math.max(box.h * 1.4, box.w * 0.6);
+      return [l.op, { leaf: l, box, area, lambda, speed: (box.w + lambda * 1.5) / 1.7, toFrame: invert(l.world), down: { x: l.world[2], y: l.world[3] } }] as const;
+    }),
+  );
+  return {
+    duration: RIBBON_LOOP / pace,
+    loops: true,
+    frame(t: number): Scene {
+      const at = (((Math.max(0, t) * pace) % RIBBON_LOOP) + RIBBON_LOOP) % RIBBON_LOOP;
+      const strength = smooth((at - RIBBON_START) / RIBBON_RISE) * stilledBy(at, RIBBON_LOOP, RIBBON_STILL);
+      if (at < RIBBON_START || strength <= 0 || !made.size) return scene;
+      let moved = false;
+      const ops = mapLeaves(scene.ops, (op) => {
+        const p = op.kind === "text" ? made.get(op) : undefined;
+        if (!p || op.kind !== "text") return op;
+        const surface: Surface = {
+          drops: [],
+          bends: [{ toFrame: p.toFrame, down: p.down, front: p.box.x - p.lambda * 0.6 + p.speed * (at - RIBBON_START), wavelength: p.lambda, reach: p.lambda * 0.7, height: p.box.h * 0.06 * strength, start: p.box.x, length: p.box.w }],
+          crisp: true,
+        };
+        // Lifting by less than the water can show, or only past the word's ends, it is the cover's own script.
+        const front = surface.bends?.[0].front ?? 0;
+        const off = Math.max(0, p.box.x - front, front - (p.box.x + p.box.w)) / (p.lambda * 0.7);
+        if (isStill(surface) || p.box.h * 0.06 * strength * Math.exp(-off * off) * frameScale(p.leaf.world) < STILL_BELOW) return op;
+        moved = true;
+        return throughWater(op, surface, p.area);
+      });
+      return moved ? { ...scene, ops } : scene;
+    },
+  };
+}
+
+/** How fast Drop's ring runs, in capitals a second, and so when each capital comes up. */
+const DROP_SPEED = 2.1;
+/** How long a capital takes to come up, and from how far below its place, as a share of a capital. */
+const DROP_OPENING = 0.2;
+const DROP_RISE = 0.06;
+/** How long the water takes to still after the last capital starts up. */
+const DROP_SETTLE = 1.15;
+
+/**
+ * Drop: a drop falls on the script and the lockup comes up as its rings
+ * run out: the script first, then each capital, whole, rising a little
+ * through the water as the ring reaches its middle (never cut by an edge
+ * sweeping the cover), bent by the crests as they pass and settling
+ * behind them; a smaller drop follows half a second on. Once all of a
+ * line's letters are up it is drawn as the line again, so nothing shifts
+ * at the end, and the water is stilled, light and all, before the cover
+ * stands.
+ */
+function drop(scene: Scene, measurer: Measurer): Built {
+  const { texts, scripts, capH } = lockupOf(scene, measurer);
+  if (!texts.length) return { duration: 0, look: () => null };
+  const boxOn = (l: TextLeaf, op: Extract<Op, { kind: "text" }> = l.op) => coverBox(l.world, textBox(op, measurer));
+  const boxes = texts.map((l) => boxOn(l));
+  const all = {
+    x: Math.min(...boxes.map((b) => b.x)),
+    y: Math.min(...boxes.map((b) => b.y)),
+    w: Math.max(...boxes.map((b) => b.x + b.w)) - Math.min(...boxes.map((b) => b.x)),
+    h: Math.max(...boxes.map((b) => b.y + b.h)) - Math.min(...boxes.map((b) => b.y)),
+  };
+  const at = centreOf(scripts.length ? boxOn(scripts[0]) : all);
+  const speed = capH * DROP_SPEED;
+  type Piece = { op: Extract<Op, { kind: "text" }>; box: { x: number; y: number; w: number; h: number }; start: number };
+  const pieces = new Map<Op, { leaf: TextLeaf; parts: Piece[]; area: { x: number; y: number; w: number; h: number } }>();
+  for (const l of texts) {
+    const caps = l.op.face.startsWith("caps-");
+    const parts = (caps ? kernedLetters(l.op, measurer) : [l.op]).map((op): Piece => {
+      const box = boxOn(l, op);
+      const c = centreOf(box);
+      return { op, box, start: 0.05 + (caps ? Math.max(0, Math.hypot(c.x - at.x, c.y - at.y) - capH * 0.35) / speed : 0) };
+    });
+    if (parts.length) pieces.set(l.op, { leaf: l, parts, area: grownBy(boxOn(l), capH * 0.3) });
+  }
+  const last = Math.max(0, ...[...pieces.values()].flatMap((p) => p.parts.map((q) => q.start)));
+  const duration = last + DROP_SETTLE;
+  let memo: { t: number; surface: Surface } | null = null;
+  const waterAt = (t: number): Surface => {
+    if (memo?.t === t) return memo.surface;
+    const fade = stilledBy(t, duration, 0.5);
+    const surface: Surface = {
+      drops: [
+        water(capH, at.x, at.y, t - 0.02, 0.065, 5, fade, { speed, wavelength: capH * 0.28, width: 1.3, spread: capH * 0.1, life: 0.95 }),
+        water(capH, at.x + capH * 0.15, at.y - capH * 0.08, t - 0.5, 0.02, 9, fade, { speed: speed * 0.85, wavelength: capH * 0.22, width: 1.2, spread: speed * 0.85 * 0.18, life: 0.6 }),
+      ],
+      glint: 0.4,
+      caustic: 0.14,
+      crisp: true,
+    };
+    memo = { t, surface };
+    return surface;
+  };
+  const rise = capH * DROP_RISE;
+  // Every line of capitals is seen through the water as one layer, drawn where the first of them is (each other line carried into its frame), so the water is read once for them all; each script is a layer of its own, after them, so its gap is cut in them.
+  const capsLeaves = [...pieces.values()].filter((p) => p.leaf.op.face.startsWith("caps-"));
+  const firstCaps = capsLeaves[0]?.leaf;
+  const capsArea = capsLeaves.length
+    ? grownBy(
+        {
+          x: Math.min(...capsLeaves.map((p) => p.area.x)),
+          y: Math.min(...capsLeaves.map((p) => p.area.y)),
+          w: Math.max(...capsLeaves.map((p) => p.area.x + p.area.w)) - Math.min(...capsLeaves.map((p) => p.area.x)),
+          h: Math.max(...capsLeaves.map((p) => p.area.y + p.area.h)) - Math.min(...capsLeaves.map((p) => p.area.y)),
+        },
+        rise,
+      )
+    : null;
+  /** A leaf's letters up at `t`, each rising and coming clear, in the frame of `into`; its gaps, if it cuts any, the same. */
+  const lettersUp = (mine: { leaf: TextLeaf; parts: Piece[] }, t: number, into: TextLeaf) => {
+    const ops: Op[] = [];
+    const gaps: Op[] = [];
+    const carry = mine.leaf === into ? null : multiply(invert(into.world), mine.leaf.world);
+    const whole = mine.parts.every((p) => t >= p.start + DROP_OPENING);
+    for (const p of whole ? [{ op: mine.leaf.op, start: -Infinity }] : mine.parts) {
+      if (t <= p.start) continue;
+      const u = whole ? 1 : smooth((t - p.start) / DROP_OPENING);
+      const lift = rise * (1 - u) ** 2;
+      // A move down the cover, carried into the leaf's frame.
+      const down = lift > 0.01 ? multiply(invert(mine.leaf.world), multiply([1, 0, 0, 1, 0, lift], mine.leaf.world)) : null;
+      const m = carry && down ? multiply(carry, down) : (carry ?? down);
+      const as = (o: Op): Op => {
+        const moved: Op = m ? { kind: "matrix", m, ops: [o] } : o;
+        return u >= 1 ? moved : { kind: "fade", alpha: u, ops: [moved] };
+      };
+      ops.push(as({ ...p.op, knock: undefined, knockShape: undefined }));
+      const gap = gapOf(p.op);
+      if (gap) gaps.push(as(gap));
+    }
+    return { ops, gaps };
+  };
+  return {
+    duration,
+    look: () => null,
+    replace: (leaf, t) => {
+      const mine = pieces.get(leaf.op);
+      if (!mine || leaf.op.kind !== "text") return null;
+      const surface = waterAt(t);
+      if (mine.leaf.op.face.startsWith("caps-")) {
+        if (mine.leaf !== firstCaps || !capsArea) return [];
+        const ops = capsLeaves.flatMap((c) => lettersUp(c, t, mine.leaf).ops);
+        return ops.length ? [{ kind: "ripple", surface, ops, area: capsArea }] : [];
+      }
+      const { ops, gaps } = lettersUp(mine, t, mine.leaf);
+      return ops.length ? [{ kind: "ripple", surface, ops, cut: gaps.length ? gaps : undefined, area: grownBy(mine.area, rise) }] : [];
+    },
+  };
+}
+
 /** Echo: the words and their echoes, rings out from the middle. */
 function echo(scene: Scene, id: AnimationId, measurer: Measurer): Built {
   const leaves = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "text" }> } => l.op.kind === "text");
@@ -1919,6 +2177,7 @@ export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Me
   // Without a way to make the cover shuffled (a test of another animation), Jitter stands still on the cover.
   if (id === "jitter") return jitter(scene, shuffle ? jitterSeeds(shuffle.seed) : [0], shuffle ? shuffle.cover : () => scene, pace);
   if (id === "jelly") return jelly(scene, pace);
+  if (id === "ribbon") return ribbon(scene, measurer, pace);
   const built: Built =
     style === "stickery"
       ? stickery(scene, id, measurer)

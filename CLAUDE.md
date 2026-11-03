@@ -29,7 +29,7 @@ npm run build   # the static site, in out/
   hard-code `/reel-cover-maker` in a URL. It is no longer served by
   eshaanm.net, which only redirects to it.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
-  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `renaissance`, `noise`,
+  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `renaissance`, `ripple`, `noise`,
   `strokes`, `scene`, `colour`, `palettes`, `grain`, `save`, `design`,
   `photo`, `place` and `font-gate` never touch the DOM and are tested in
   `scripts/reel-cover.test.mjs`. `paint` takes a context, so it is tested
@@ -217,7 +217,7 @@ npm run build   # the static site, in out/
   scale (`speedPlace`, `speedAtPlace`), caught at 1 near the middle.
   Renaissance has Written (capitals rise in line by line, then the script
   is penned across them, its gap cut round what the pen has written:
-  `cutAround`), Word by word, Line by line and Engraved; Stickery has Spell
+  `cutAround`), Word by word, Line by line, Engraved, Ribbon and Drop; Stickery has Spell
   (Type and draw until the owner renamed it, 24 Oct; its id is still
   `type-draw`, so saved covers open on it), Slap, Pop, Reveal and Jitter;
   Pasty and Pasty Flat Written live, Jelly and Jitter; Inkblot Written
@@ -255,6 +255,32 @@ npm run build   # the static site, in out/
   object itself, so its paste is made once. (A first version guessed the
   lines' turn from the letters' middles: "Ty" read as turned 51 degrees
   and squashed sideways, and past 90 degrees a letter squashed onto its top.)
+  **Ribbon and Drop** are the owner's picks (3 Nov) of a lab of ripples
+  for every style. Both are the cover's own letters seen through water
+  (`ripple.ts`, pure: a drop's packet of rings that disperses, weakens and
+  wavers; a bend run along a word's baseline), drawn by a `ripple` op:
+  its ops drawn as a layer of its area alone, every pixel read from where
+  the surface sends the eye (by alpha, so edges never darken), light only
+  ever added (a fine glint where a crest faces the light), a flat colour's
+  edge drawn back to a pixel's width as far as it is moved, and in a
+  knockout layer its `cut` rippled the same and taken out first, so the
+  script's gap in its capitals moves with it. The surface is worked out
+  on a grid every 2 canvas pixels, shared by every layer under the same
+  water in a frame. The layer is a fresh canvas each time, never one kept
+  and marked as read often: a canvas read every frame is moved off the
+  graphics card, its text's edges come out a little different, and the
+  cover stepped at the moment the water stilled. A still surface draws its
+  ops as they are, so the end is the cover exactly; paste is never drawn
+  through it (its layers are placed in the canvas's own pixels). **Ribbon**
+  is a loop (`RIBBON_LOOP`): the script alone, the capitals the cover's
+  own ops. **Drop** brings each capital up whole (never cut by an edge
+  sweeping the cover: a circle wipe was what the critics killed), each
+  letter set by its kerned place (`kernedLetters`: the text up to it, less
+  the letter, or it snapped at the end), every line of capitals in one
+  layer, each script in its own after them, and each line drawn whole
+  again once its letters are up; the water, light and all, is stilled
+  before the cover stands. Six animations sit three over three in the
+  card (`data-count`).
   **Jitter** (the owner's ask, 24 Oct: Shuffle pressed again and again)
   goes round the cover as Shuffle makes it, a new shuffle each beat, four
   a second (`JITTER_RATE`) round a loop of twelve (`JITTER_COUNT`), the

@@ -2413,6 +2413,15 @@
   padding: 4px;
 }
 
+/* Six (Renaissance's) three over three, each as tall as half the room the window gives, so both rows show. */
+.animateTiles[data-count="6"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.animateTiles[data-count="6"] .animPreview {
+  width: min(100%, calc(30dvh * var(--rcm-ratio-n, 0.5625)));
+}
+
 .animTile {
   position: relative;
   display: flex;
@@ -2533,7 +2542,7 @@
     gap: 10px;
   }
 
-  /* Five (Stickery's) would each be a thumb's width on a phone: three over two, the two centred under them. */
+  /* Five (Stickery's) would each be a thumb's width on a phone: three over two, the two centred under them; six, three over three. */
   .animateTiles[data-many] {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
@@ -2542,7 +2551,7 @@
     grid-column: span 2;
   }
 
-  .animateTiles[data-many] > :nth-child(4) {
+  .animateTiles[data-count="5"] > :nth-child(4) {
     grid-column: 2 / span 2;
   }
 }

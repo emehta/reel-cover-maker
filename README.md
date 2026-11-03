@@ -172,14 +172,18 @@ on a label's row.
   left, twice at the right), and **Save**, and the
   cover plays it, in the preview and on the phone, sharp at the screen's
   own pixels, until the sparkle is pressed again to stop. Each lays the
-  cover down over a few seconds and ends on it exactly, but for Jitter
-  and Jelly, which never stop:
+  cover down over a few seconds and ends on it exactly, but for Jitter,
+  Jelly and Ribbon, which never stop:
   - Renaissance: **Written** (the capitals rise in line by line, then the
     script is written across them as a pen writes it, its gap in them
-    following the pen), **Word by word**, **Line by line** and **Engraved**
+    following the pen), **Word by word**, **Line by line**, **Engraved**
     (each letter's contour cut as an engraver cuts a plate, then fine lines
     across the lockup, a second pass crossing them, deepening until the
-    letters are solid).
+    letters are solid), **Ribbon** (a loop: a wave runs along the script
+    alone, as along a ribbon flicked at one end, its gap in the capitals
+    moving with it) and **Drop** (a drop falls on the script and the
+    lockup comes up as its rings run out, each capital rising whole
+    through the water as the ring reaches it).
   - Stickery: **Spell** (its plain words typed, its funky words
     written as a pen writes them, stroke by stroke, traced from the letters
     themselves, or piped bead by bead in Goo, and the sticker's paper laid
