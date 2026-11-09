@@ -1,11 +1,11 @@
 # Ripple studies
 
-Open `index.html` in a browser and press **Play once** (Shift-click plays at quarter speed). It needs WebGL 2 and the network for the Inter Tight face, and falls back to Arial Black offline. Two studies of the word seen through fluted glass:
+Open `index.html` in a browser. It is the owner's pick: **B Contour**, with its horizontal trail ended sooner (**I Tight**, from `trail.html`). **Open** holds it open, and **Play** (or the space bar) runs the motion once and rests on the word. It needs WebGL 2 and the network for the Inter Tight face, and falls back to Arial Black offline. Two studies of the word seen through fluted glass:
 
-- **Horizontal:** vertical flutes. The middle letters keep still. The R and the e step out through the glass, and past each end six echoes slide off the letter's edge, warmest and thinnest furthest out.
-- **Vertical:** horizontal slats, after the 2024 Vitrium Opus poster. Each slat shows the word moved and leaning by its own step, so the word stacks above and below, with a dark line and a warm glint where slats meet.
+- **Horizontal:** vertical flutes over the whole word. Past the R and the e, a trail of crescent echoes runs out, each one dimmer than the last, and is gone 8 flutes out.
+- **Vertical:** horizontal slats. Every letter throws its own arcs both up and down, each column from its own top and bottom.
 
-Both open on a spring (about 130 ms to full, a 14% overshoot that settles), hold to 800 ms, then draw back in on a stiffer spring, the outer echoes going first.
+The motion is copied frame by frame from the reference video (see "Contour, after B"). The rest of this file is how the studies got here.
 
 ## How the light is made
 
@@ -14,6 +14,15 @@ Everything is one fragment shader, 60 fps in Chromium and WebKit on an M1.
 - **Letters** are an exact signed distance field (Felzenszwalb and Huttenlocher, from a mask drawn at twice the canvas size), so they stay sharp however the glass magnifies them. Seams between flutes are anti-aliased by blending the two flutes a pixel straddles.
 - **Colour** is real dispersion, not a colour ramp. Each pixel samples the letters at 32 wavelengths, each bent by its own amount (mostly linear in wavelength, a tenth Cauchy). The samples are weighted by the CIE 1931 observer in linear sRGB, signed, so the whole spectrum sums to white. The light is then overexposed 1.8x and soft-clipped (linear to 0.6, an exponential shoulder above). Fitted against the poster's measured fringes (`reference-edge-profiles.json` plus fresh samples), this lands within about 0.03 OKLab RMS. It gives white, yellow, orange, red, dark on one side; white, cyan, blue, violet, dark on the other; and the full sweep through magenta where a thin dark gap sits between them.
 - **Softness** grows with the fringe's width in the poster's proportion, but only across edges that face along the bend, so the other edges stay crisp.
+
+## The first rebuild
+
+`rebuild-2026-11-09.html` was `index.html` until the owner's pick replaced it. Press **Play once** (Shift-click plays at quarter speed). Two studies of the word seen through fluted glass:
+
+- **Horizontal:** vertical flutes. The middle letters keep still. The R and the e step out through the glass, and past each end six echoes slide off the letter's edge, warmest and thinnest furthest out.
+- **Vertical:** horizontal slats, after the 2024 Vitrium Opus poster. Each slat shows the word moved and leaning by its own step, so the word stacks above and below, with a dark line and a warm glint where slats meet.
+
+Both open on a spring (about 130 ms to full, a 14% overshoot that settles), hold to 800 ms, then draw back in on a stiffer spring, the outer echoes going first.
 
 ## Open-state options
 
@@ -60,5 +69,11 @@ The motion is copied from the reference video, measured on all 241 frames at 60 
 - **I Tight:** 8 flutes.
 
 Only the brightness of the horizontal echoes changes (`fadeTo`, the flutes over which they fade to nothing). Every echo keeps B's width, crescent shape, place and colour, so the ones nearest the letters look as they did and the trail simply ends sooner. The vertical study is B's in all four. The page shows the horizontal study across its full width, each study cropped to the band of the stage it uses.
+
+The owner picked **I Tight**. `index.html` is that version alone, with two fixes to what B did in the vertical study:
+- The columns beside and between the letters now show the glass as it is instead of going black, so the letters' sides keep a soft edge and their fringe.
+- While the glass is barely there, it eases in over the resting letters, so the motion no longer jumps where the glass comes on (frames 3 and 130) and where it lets go (frames 127 and 239).
+
+The open state is otherwise unchanged to the pixel. The page carries only that version's code.
 
 `codex-2026-11-08.html` is the previous version, kept for comparison.
