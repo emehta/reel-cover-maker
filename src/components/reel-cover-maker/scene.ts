@@ -24,8 +24,10 @@ import { paletteFor, readableOn, type Ground, type Palette } from "@/components/
 import { polygonBounds, steppedOutline, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { apply, isUnmoved, mappedBounds, multiply, placeMatrix, strokeScale, type Matrix, type Place, type WrapSize } from "@/components/reel-cover-maker/place";
 import { graphemes, parseTitle, type Paragraph } from "@/components/reel-cover-maker/title";
+import { DEFAULT_WAVE_VARIANT, wave, type WaveOp, type WaveVariantId } from "@/components/reel-cover-maker/wave";
+import { DEFAULT_WAVE_FACE, type WaveFaceId } from "@/components/reel-cover-maker/wave-faces";
 
-export type StyleId = "stickery" | "renaissance" | "inkblot" | "pasty" | "pasty-flat" | "echo" | "mono";
+export type StyleId = "stickery" | "renaissance" | "inkblot" | "pasty" | "pasty-flat" | "echo" | "mono" | "wave";
 
 export interface Style {
   id: StyleId;
@@ -37,7 +39,8 @@ export interface Style {
  * Stickery, Renaissance, Inkblot, Pasty, Pasty Flat, Echo, Mono. Spread
  * was taken out on 7 Oct; Inkblot took Editorial's place on 19 Oct (after
  * Onehart's inkblot script); Renaissance came on 20 Oct (capitals with a
- * script laid across them, after three posters).
+ * script laid across them, after three posters); Wave on 9 Nov, last (the
+ * owner's lockup of lines all one width, waving, wave.ts).
  */
 export const STYLES: readonly Style[] = [
   { id: "stickery", name: "Stickery" },
@@ -47,13 +50,25 @@ export const STYLES: readonly Style[] = [
   { id: "pasty-flat", name: "Pasty Flat" },
   { id: "echo", name: "Echo" },
   { id: "mono", name: "Mono" },
+  { id: "wave", name: "Wave" },
 ];
 
 export const DEFAULT_STYLE: StyleId = "stickery";
 
-/** Whether a shuffle changes anything in a style: Echo and Mono are set the same every time, with nothing drawn by chance. */
+/** Whether a shuffle changes anything in a style: Echo, Mono and Wave are set the same every time, with nothing drawn by chance. */
 export function shuffles(style: StyleId): boolean {
-  return style !== "echo" && style !== "mono";
+  return style !== "echo" && style !== "mono" && style !== "wave";
+}
+
+/**
+ * Whether a style's text box re-wraps to a height from its top or bottom
+ * handle (the owner's ask of 21 Oct). Wave's does not: its lines are each
+ * as wide as the box, so within one set of lines a narrower box is shorter
+ * as well, and a height asked for has no wrap that comes to it; its top
+ * and bottom scale it, keeping its shape, and its sides re-wrap it.
+ */
+export function wrapsByHeight(style: StyleId): boolean {
+  return style !== "wave";
 }
 
 export function isStyleId(value: unknown): value is StyleId {
@@ -211,7 +226,13 @@ export type Op =
    * script's gap in its capitals moves with it. A still surface draws its
    * ops as they are.
    */
-  | { kind: "ripple"; surface: Surface; ops: Op[]; cut?: Op[]; area: Rect };
+  | { kind: "ripple"; surface: Surface; ops: Op[]; cut?: Op[]; area: Rect }
+  /**
+   * Wave's lines (wave.ts): each line's letters as outlines at rest, and
+   * where the wave is (`at`), which paint draws them as: the block warped
+   * up and down inside its own rectangle, or with no wave, as they are.
+   */
+  | WaveOp;
 
 export interface Scene {
   width: number;
@@ -279,7 +300,9 @@ export function wrapTypeOf(input: CoverInput): string {
         ? [input.pastyLettering ?? DEFAULT_PASTY_LETTERING]
         : input.style === "renaissance"
           ? [input.renaissanceLook ?? DEFAULT_RENAISSANCE_LOOK]
-          : [];
+          : input.style === "wave"
+            ? [input.waveFace ?? DEFAULT_WAVE_FACE]
+            : [];
   return JSON.stringify([input.style, ...type]);
 }
 
@@ -382,6 +405,9 @@ export interface CoverInput {
   /** Renaissance's look (its capitals and script), and the script's colour: absent or null, the colour's own. */
   renaissanceLook?: RenaissanceLookId;
   scriptColour?: string | null;
+  /** Wave's face, and the animation its still cover is stopped in (the one picked for it). */
+  waveFace?: WaveFaceId;
+  waveAnimation?: WaveVariantId;
   /** A photo behind the letters, in place of the plain ground. */
   photo?: boolean;
   /** Set as a text box: the words wrapped to a width, at the size the style chose for them (from that layout's `wrapRef`). */
@@ -2300,6 +2326,8 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
         return echo(paragraphs, safe, palette, measurer, height, wrap);
       case "mono":
         return mono(paragraphs, safe, palette, measurer, wrap);
+      case "wave":
+        return wave(paragraphs, safe, measurer, { face: input.waveFace ?? DEFAULT_WAVE_FACE, ink: palette.ink, animation: input.waveAnimation ?? DEFAULT_WAVE_VARIANT, wrap });
       case "renaissance": {
         // A script picked in the capitals' own colour is no colour of its own: it cuts a thin gap, as the same colour does.
         const script = input.scriptColour && input.scriptColour !== palette.ink ? input.scriptColour : null;

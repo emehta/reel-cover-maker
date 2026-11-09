@@ -43,6 +43,10 @@ const INKM = await import("@/components/reel-cover-maker/ink");
 const RUN = await import("@/components/reel-cover-maker/ink-run");
 const REN = await import("@/components/reel-cover-maker/renaissance");
 const RIP = await import("@/components/reel-cover-maker/ripple");
+const W = await import("@/components/reel-cover-maker/wave");
+const WF = await import("@/components/reel-cover-maker/wave-faces");
+// Wave's letters, fetched as the page fetches them.
+for (const face of WF.WAVE_FACES) assert.ok(await WF.loadWaveFace(face.id), `Wave's ${face.name} did not load`);
 
 let passed = 0;
 const check = (name, fn) => {
@@ -304,6 +308,17 @@ function readableInk(scene) {
       } else if (op.kind === "ink") {
         const b = INKM.loopBounds(op.polygons);
         out.push({ op, rect: { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 } });
+      } else if (op.kind === "wave") {
+        // Wave's letters at rest and as its wave holds them, and anything in it set as text.
+        for (const polygons of [op.rows.flatMap((r) => r.polygons), W.wavePolygons(op)]) {
+          // A title of emoji alone has no outlines, only text.
+          const b = polygons.length ? INKM.loopBounds(polygons) : null;
+          if (b) out.push({ op, rect: { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 } });
+        }
+        for (const t of op.rows.flatMap((r) => r.texts ?? [])) {
+          const ink = measurer.bounds(t.face, t.text);
+          out.push({ op, rect: { x: t.x - ink.left * t.size, y: t.y - ink.ascent * t.size, w: (ink.left + ink.right) * t.size, h: (ink.ascent + ink.descent) * t.size } });
+        }
       } else if (op.kind === "liquid") {
         // The letters' paste, bead by bead; the droplets after them are ornament.
         for (const chain of op.chains.slice(0, op.letters)) {
@@ -333,8 +348,9 @@ function mainText(scene) {
   const out = [];
   const walk = (ops) => {
     for (const op of ops) {
-      if (op.kind === "turn" || op.kind === "knockout") walk(op.ops);
+      if (op.kind === "turn" || op.kind === "knockout" || op.kind === "matrix") walk(op.ops);
       else if ((op.kind === "text" && !op.outline) || op.kind === "ink") out.push(op.text);
+      else if (op.kind === "wave") out.push(...op.rows.map((r) => r.text));
     }
   };
   walk(scene.ops);
@@ -620,7 +636,7 @@ check("no word is dropped or doubled: the drawn text is the typed text", () => {
           assert.equal(letters(stripSpaces(mainText(scene))), letters(typed), `${style.id} ${format.id} "${title}"`);
           continue;
         }
-        const expected = style.id === "echo" ? typed.toLocaleUpperCase() : typed;
+        const expected = style.id === "echo" || style.id === "wave" ? typed.toLocaleUpperCase() : typed;
         assert.equal(stripSpaces(mainText(scene)), expected, `${style.id} ${format.id} "${title}"`);
       }
     }
@@ -871,7 +887,7 @@ check("whatever storage holds, the maker opens with something it understands", (
   assert.deepEqual(D.readDesign(JSON.stringify({ style: "editorial", animations: { editorial: "lines", mono: "words" } })).animations, { inkblot: "lines", mono: "words" });
   assert.deepEqual(D.readDesign(JSON.stringify({ animations: { editorial: "lines", inkblot: "words" } })).animations, { inkblot: "words" });
   // The owner's order of 20 Oct, Renaissance new in it.
-  assert.deepEqual(S.STYLES.map((st) => st.name), ["Stickery", "Renaissance", "Inkblot", "Pasty", "Pasty Flat", "Echo", "Mono"]);
+  assert.deepEqual(S.STYLES.map((st) => st.name), ["Stickery", "Renaissance", "Inkblot", "Pasty", "Pasty Flat", "Echo", "Mono", "Wave"]);
   assert.equal(D.readDesign(JSON.stringify({ text: "x".repeat(500) })).text.length, T.MAX_TITLE_LENGTH);
 });
 
@@ -3085,6 +3101,8 @@ console.log("placing");
             sizes.push(op.size);
           } else if (op.kind === "liquid") {
             op.chains.slice(0, op.letters).forEach((_, i) => rows.set(`p${op.lineOf[i]}`, (rows.get(`p${op.lineOf[i]}`) ?? 0) + 1));
+          } else if (op.kind === "wave") {
+            op.rows.forEach((r, i) => rows.set(`w${i}`, 1));
           }
         }
       };
@@ -3110,8 +3128,8 @@ console.log("placing");
         if (!style.startsWith("pasty")) {
           assert.equal(letters(wide), letters(own), `${style} "${title}": a word lost, wide`);
           assert.equal(letters(narrow), letters(own), `${style} "${title}": a word lost, narrow`);
-          // Every letter a size the style set it at: Stickery's plain lines each keep the size of the line in their place.
-          for (const [sc, how] of [[wide, "wide"], [narrow, "narrow"]]) {
+          // Every letter a size the style set it at: Stickery's plain lines each keep the size of the line in their place. Wave's lines are each as wide as the box, so their sizes go with it (held by their own test).
+          for (const [sc, how] of style === "wave" ? [] : [[wide, "wide"], [narrow, "narrow"]]) {
             const sizes = new Set(shape(own).sizes);
             assert.ok(shape(sc).sizes.every((v) => sizes.has(v)), `${style} "${title}": letters resized, ${how}: ${shape(sc).sizes} not of ${[...sizes]}`);
           }
@@ -3143,6 +3161,7 @@ console.log("placing");
           if (op.ops) walk(op.ops);
           else if (op.kind === "text" && !op.outline) out.push([op.text, op.x, op.y, op.size]);
           else if (op.kind === "ink") out.push([op.text, op.polygons[0][0], op.polygons[0][1], op.size]);
+          else if (op.kind === "wave") out.push(...op.rows.map((r) => [r.text, r.polygons[0][0], r.polygons[0][1], r.base - r.top]));
           else if (op.kind === "liquid") out.push(...op.chains.map((c) => ["bead", c[0].x, c[0].y, c[0].r]));
         }
       };
@@ -3380,6 +3399,7 @@ function shown(scene) {
       else if (op.kind === "write") walk(op.ops, alpha * op.at);
       else if (op.kind === "text") out.chars += T.graphemes(op.text).length * alpha * (op.alpha ?? 1);
       else if (op.kind === "ink") out.chars += T.graphemes(op.text).length * alpha;
+      else if (op.kind === "wave") for (const r of op.rows) out.chars += T.graphemes(r.text).length * alpha;
       else if (op.kind === "shape") out.shapes += alpha;
       else if (op.kind === "box") out.boxes += alpha;
       else if (op.kind === "liquid") for (const c of op.chains) for (let i = 1; i < c.length; i += 1) out.paste += Math.hypot(c[i].x - c[i - 1].x, c[i].y - c[i - 1].y) + 0.001;
@@ -3401,15 +3421,20 @@ const ANIMATED = [
   ["inkblot", {}],
   ["echo", {}],
   ["mono", {}],
+  ["wave", { waveFace: "mona" }],
+  ["wave", { waveFace: "anton" }],
+  ["wave", { waveFace: "archivo" }],
 ];
 
 check("every animation of every style starts with less than the cover (Jitter, a loop of whole covers, with the cover itself) and ends on it exactly, within the longest a motion runs, its frames valid all the way", () => {
   for (const title of ["How I *plan* my week", "things *aren't*\n*what* they seem\nand *more*"]) {
     for (const [style, extra] of ANIMATED) {
-      const scene = cover(title, style, "reel", extra);
-      const whole = shown(scene);
+      const own = cover(title, style, "reel", extra);
+      const whole = shown(own);
       assert.ok(AN.animationsFor(style).length >= 1, `${style} offers no animation`);
       for (const { id } of AN.animationsFor(style)) {
+        // Wave's cover is its animation stopped mid-wave: the cover each starts and ends on is the one it stops.
+        const scene = style === "wave" ? cover(title, style, "reel", { ...extra, waveAnimation: id }) : own;
         const shuffle = { seed: 99, cover: (seed) => cover(title, style, "reel", { ...extra, seed }) };
         const p = AN.plan(scene, style, id, measurer, 1, shuffle);
         const name = `${style} ${JSON.stringify(extra)} ${id}`;
@@ -4531,6 +4556,313 @@ check("the phone view is an iPhone to scale: its post the grid's at 393 points, 
   for (const format of F.FORMATS) {
     const window = format.grid ?? { x: 0, y: 0, w: format.width, h: format.height };
     assert.ok(near(window.h / window.w, 4 / 3, 0.002), `${format.id}: the grid shows ${window.w} by ${window.h}`);
+  }
+});
+
+console.log("wave");
+
+/** The wave op of a scene, wherever it is drawn. */
+function waveOf(scene) {
+  let found = null;
+  const walk = (ops) => {
+    for (const op of ops) {
+      if (op.kind === "wave") found = op;
+      else if (op.ops) walk(op.ops);
+    }
+  };
+  walk(scene.ops);
+  return found;
+}
+const waveCover = (title, waveFace = "mona", extra = {}, format = "reel") => cover(title, "wave", format, { waveFace, ...extra });
+const xsOf = (polygons) => polygons.flatMap((p) => p.filter((_, i) => i % 2 === 0));
+const ysOf = (polygons) => polygons.flatMap((p) => p.filter((_, i) => i % 2 === 1));
+const WAVE_FACE_IDS = ["mona", "anton", "archivo"];
+const WAVE_TITLES = [
+  "THE RIPPLE EFFECT",
+  "rate my setup",
+  "5 things I wish I knew before moving to Lisbon",
+  "Hi",
+  "productivity",
+  "golden hour",
+  "day in my life",
+  "THE ART OF SUMMERTIME",
+  "it is what it is",
+  "Week 12 👍",
+  "*Łódź* Zürich",
+  "ONE\nTWO WORDS\nthree",
+  "the quick brown fox jumps over the lazy dog",
+  "https://example.com/very/long/url/path/that/goes",
+  "a",
+];
+
+check("Wave sets THE RIPPLE EFFECT as the owner's three lockups of 9 Nov: a word a line, each line's cap line, baseline and hanging T where they were", () => {
+  // The lockups as built and approved (cap line, baseline, the T hanging left, right), in thousandths of the block's width.
+  const LOCKUPS = {
+    mona: [[0, 605.884, 25.598, 0], [636.787, 945.816, 0, 0], [976.719, 1285.75, 0, 14.427]],
+    anton: [[0, 691.865, 28.756, 0], [727.566, 1084.574, 0, 0], [1120.275, 1477.284, 0, 14.838]],
+    archivo: [[0, 264.915, 39.352, 0], [291.387, 556.114, 0, 0], [582.587, 847.323, 0, 17.532]],
+  };
+  for (const [face, rows] of Object.entries(LOCKUPS)) {
+    for (const format of F.FORMATS) {
+      const op = waveOf(waveCover("the ripple effect", face, {}, format.id));
+      assert.deepEqual(op.rows.map((r) => r.text), ["THE", "RIPPLE", "EFFECT"], `${face} ${format.id}`);
+      const k = 1000 / op.w;
+      // Archivo's were read by HarfBuzz at each line's own width and rounded there, a line's cap height a fraction of a unit off the next's: within half a thousandth.
+      const e = face === "archivo" ? 0.5 : 0.05;
+      op.rows.forEach((r, i) => {
+        const xs = xsOf(r.polygons);
+        const got = [(r.top - op.rows[0].top) * k, (r.base - op.rows[0].top) * k, (op.x - Math.min(...xs)) * k, (Math.max(...xs) - op.x) * k - 1000];
+        got.forEach((v, j) => assert.ok(near(v, rows[i][j], e), `${face} ${format.id} ${r.text}: ${["cap line", "baseline", "left hang", "right hang"][j]} ${v.toFixed(3)}, not ${rows[i][j]}`));
+      });
+    }
+  }
+});
+
+check("Wave sets every line exactly as wide as the block by its ink, a T at either end hanging past it, in every face and over many titles", () => {
+  const T_START = /^[TŢŤŦȚ]/u;
+  const T_END = /[TŢŤŦȚ]$/u;
+  for (const face of WAVE_FACE_IDS) {
+    for (const title of WAVE_TITLES) {
+      const op = waveOf(waveCover(title, face));
+      assert.ok(op && op.rows.length > 0, `${face} "${title}": nothing set`);
+      for (const r of op.rows) {
+        // A line with an emoji in it is measured by the page's own measurer, here a stand-in.
+        if (r.texts?.length) continue;
+        const xs = xsOf(r.polygons);
+        const left = op.x - Math.min(...xs);
+        const right = Math.max(...xs) - (op.x + op.w);
+        if (T_START.test(r.text)) assert.ok(left > op.w * 0.005, `${face} "${r.text}": its first T does not hang (${left})`);
+        else assert.ok(Math.abs(left) < 0.35, `${face} "${r.text}": its ink starts ${left} from the block's edge`);
+        if (T_END.test(r.text)) assert.ok(right > op.w * 0.005, `${face} "${r.text}": its last T does not hang (${right})`);
+        else assert.ok(Math.abs(right) < 0.35, `${face} "${r.text}": its ink ends ${right} from the block's edge`);
+      }
+    }
+  }
+});
+
+check("Wave: Mona Sans and Anton set lines near the widest at its cap height and a short one scaled up; Archivo every line one cap height; lines a tenth of the smallest cap height apart, more where an accent or a tail needs the room", () => {
+  const heights = (op) => op.rows.map((r) => r.base - r.top);
+  for (const face of ["mona", "anton"]) {
+    const [the, ripple, effect] = heights(waveOf(waveCover("the ripple effect", face)));
+    assert.ok(near(ripple, effect, 1e-6), `${face}: RIPPLE ${ripple} and EFFECT ${effect} differ`);
+    assert.ok(the > ripple * 1.8, `${face}: THE not scaled up`);
+  }
+  for (const title of ["the ripple effect", "golden hour", "day in my life", "5 things I wish I knew before moving to Lisbon"]) {
+    const hs = heights(waveOf(waveCover(title, "archivo")));
+    assert.ok(hs.every((h) => near(h, hs[0], 1e-6)), `Archivo "${title}": ${hs.map((h) => h.toFixed(3))}`);
+  }
+  // A line too short to reach the others, its spacing opened as far as it goes (MY, two letters), is scaled up on its own; the rest stay one height.
+  const my = waveOf(waveCover("rate my setup", "archivo")).rows;
+  assert.deepEqual(my.map((r) => r.text), ["RATE", "MY", "SETUP"]);
+  assert.ok(near(my[0].base - my[0].top, my[2].base - my[2].top, 1e-6) && my[1].base - my[1].top > my[0].base - my[0].top);
+  for (const face of WAVE_FACE_IDS) {
+    for (const title of ["the ripple effect", "rate my setup", "day in my life"]) {
+      const op = waveOf(waveCover(title, face));
+      const small = Math.min(...heights(op));
+      for (let i = 1; i < op.rows.length; i += 1) assert.ok(near(op.rows[i].top - op.rows[i - 1].base, 0.1 * small, 1e-6), `${face} "${title}": gap ${i}`);
+    }
+    // An accent over the line below takes room of its own: never nearer the line above than a round letter of its own line, which overshoots its cap line a little, would come.
+    const op = waveOf(waveCover("CAFE\nÉTÉ", face));
+    const [h0, h1] = heights(op);
+    const small = Math.min(h0, h1);
+    assert.ok(op.rows[1].top - op.rows[0].base > 0.1 * small + 1, `${face}: no room made for the accents`);
+    const above = Math.max(...ysOf(op.rows[0].polygons));
+    const accent = Math.min(...ysOf(op.rows[1].polygons));
+    assert.ok(accent - above >= 0.1 * small - 0.03 * (h0 + h1) - 1e-6, `${face}: the accents crowd the line above, ${(accent - above).toFixed(2)} apart`);
+  }
+});
+
+check("Wave breaks a title into lines as even as its words allow, never a real word broken, a web address broken between its letters", () => {
+  const lines = (title, face = "mona") => waveOf(waveCover(title, face)).rows.map((r) => r.text);
+  for (const face of WAVE_FACE_IDS) {
+    assert.deepEqual(lines("productivity", face), ["PRODUCTIVITY"]);
+    assert.deepEqual(lines("Hi", face), ["HI"]);
+    // Every word in its place, in order: the lines read as the title.
+    for (const title of WAVE_TITLES) {
+      const typed = T.parseTitle(title).flatMap((p) => p.map((w) => w.map((sg) => sg.text).join("").toLocaleUpperCase()));
+      assert.equal(lines(title, face).join(" ").replace(/\s+/g, ""), typed.join("").replace(/\s+/g, ""), `${face} "${title}"`);
+    }
+    // A typed line break is kept.
+    const set = lines("ONE\nTWO WORDS\nthree", face);
+    assert.ok(set[0] === "ONE" && set.at(-1) === "THREE", `${face}: ${set}`);
+    assert.ok(lines("https://example.com/very/long/url/path/that/goes", face).length > 1, `${face}: the web address left whole`);
+    // A typed line too narrow to stand alone (a full stop, a lone I) joins the one before it, marks with no space; it is never one letter several widths tall.
+    assert.ok(lines("the end\n.", face).at(-1).endsWith("END."), `${face}: ${lines("the end\n.", face)}`);
+    assert.ok(lines("wow\n!", face).includes("WOW!"), `${face}: ${lines("wow\n!", face)}`);
+    assert.ok(!lines("I\nlove\nyou", face).includes("I"), `${face}: I alone`);
+    // A broken word's pieces join with no space, however a text box sets them.
+    for (const title of ["https://example.com/very/long/url/path/that/goes", "go to eshaanm.net/projects/reel-cover-maker-and-more now"]) {
+      const own = waveCover(title, face);
+      const typedWords = title.toLocaleUpperCase().split(" ");
+      for (const k of [0.5, 1, 1.6, 2.5, 4]) {
+        const sc = waveCover(title, face, { wrap: { width: own.wrapRef.width * k, ref: own.wrapRef } });
+        for (const r of waveOf(sc).rows) for (const token of r.text.split(" ")) assert.ok(typedWords.some((w) => w.includes(token)), `${face} at ${k}: "${token}" is no part of a word typed (${r.text})`);
+      }
+    }
+  }
+  // Short words go with their neighbours rather than stand alone, huge, where the lines can be evened.
+  assert.deepEqual(lines("THE ART OF SUMMERTIME", "archivo"), ["THE ART OF", "SUMMERTIME"]);
+});
+
+/** The rows the wave moves for an op: its lines', or a single line's two halves. */
+function waveField(op) {
+  if (op.rows.length > 1) return op.rows.map((r) => [r.top, r.base]);
+  const r = op.rows[0];
+  const mid = (r.top + r.base) / 2;
+  return [[r.top, mid], [mid, r.base]];
+}
+
+check("Wave's wave holds the rectangle: its top and bottom never move, nothing moves sideways, every gap keeps its thickness across its slope, no line under 40% of itself, and every pass starts and ends on the plain lockup", () => {
+  // Short lines whose T hangs further than most (a T alone, IT) start and end their passes clear of the T's bar too.
+  const titles = ["Hi", "golden hour", "the ripple effect", "5 things I wish I knew before moving to Lisbon", "the quick brown fox jumps over the lazy dog", "Week 12 👍", "T\nT", "get it", "IT"];
+  let moments = 0;
+  for (const face of WAVE_FACE_IDS) {
+    for (const title of titles) {
+      const base = waveOf(waveCover(title, face));
+      const rest = base.rows.flatMap((r) => r.polygons);
+      const restY = ysOf(rest);
+      const top = Math.min(...restY);
+      const bottom = Math.max(...restY);
+      const field = waveField(base);
+      for (const v of W.WAVE_VARIANTS) {
+        for (const edge of [0, 1 - 1e-9]) {
+          const at = W.wavePolygons({ ...base, at: { variant: v.id, s: edge } });
+          let moved = 0;
+          at.forEach((p, i) => p.forEach((c, j) => (moved = Math.max(moved, Math.abs(c - rest[i][j])))));
+          assert.ok(moved < 1e-6, `${face} "${title}" ${v.id}: moved ${moved} at the pass's edge ${edge}`);
+        }
+        for (let s = 0.03; s < 1; s += 0.05) {
+          const op = { ...base, at: { variant: v.id, s } };
+          const at = W.wavePolygons(op);
+          moments += 1;
+          // Nothing sideways; the top and bottom where they were.
+          at.forEach((p, i) => p.forEach((c, j) => j % 2 === 0 && assert.equal(c, rest[i][j])));
+          const ys = ysOf(at);
+          assert.ok(near(Math.min(...ys), top, 1e-6) && near(Math.max(...ys), bottom, 1e-6), `${face} "${title}" ${v.id} at ${s.toFixed(2)}: the block's top or bottom moved`);
+          for (let x = base.x; x <= base.x + base.w; x += base.w / 40) {
+            const b = W.waveBands(op, x);
+            if (!b) continue;
+            field.forEach(([a, c], i) => assert.ok((b[2 * i + 1] - b[2 * i]) / (c - a) >= 0.4 - 1e-6, `${face} "${title}" ${v.id} at ${s.toFixed(2)}: a line at ${((b[2 * i + 1] - b[2 * i]) / (c - a)).toFixed(2)} of itself`));
+            const e = 1e-3;
+            const bp = W.waveBands(op, x + e);
+            const bm = W.waveBands(op, x - e);
+            for (let k = 0; k + 1 < field.length; k += 1) {
+              const slope = ((bp[2 * k + 1] + bp[2 * k + 2]) / 2 - (bm[2 * k + 1] + bm[2 * k + 2]) / 2) / (2 * e);
+              const across = (b[2 * k + 2] - b[2 * k + 1]) / Math.sqrt(1 + slope * slope);
+              const gap = field[k + 1][0] - field[k][1];
+              assert.ok(near(across, gap, 1e-3 * Math.max(1, gap)), `${face} "${title}" ${v.id}: gap ${k} ${across.toFixed(4)} across its slope, not ${gap.toFixed(4)}`);
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(moments > 1500);
+});
+
+check("Wave's animations loop from the still cover, stopped mid-wave in the one picked, on through its pass, a rest on the plain lockup, and round to the still again, quicker at a higher speed", () => {
+  assert.deepEqual(AN.animationsFor("wave").map((a) => a.id), ["crossing", "wave-cascade", "loose", "wave-ripple", "one-wave"]);
+  assert.deepEqual(AN.animationsFor("wave").map((a) => a.name), ["Crossing", "Cascade", "Loose", "Ripple", "One wave"]);
+  // Not picked, the still is Crossing's, the first.
+  assert.deepEqual(waveOf(waveCover("the ripple effect")).at, W.stillOf("crossing"));
+  for (const v of W.WAVE_VARIANTS) {
+    const scene = waveCover("the ripple effect", "mona", { waveAnimation: v.id });
+    const op = waveOf(scene);
+    assert.deepEqual(op.at, W.stillOf(v.id));
+    // The still has its wave: some letter is not where it rests.
+    assert.notDeepEqual(W.wavePolygons(op), op.rows.flatMap((r) => r.polygons), `${v.id}: the still has no wave`);
+    const p = AN.plan(scene, "wave", v.id, measurer);
+    assert.equal(p.loops, true);
+    assert.ok(near(p.duration, v.pass + v.hold, 1e-9));
+    assert.equal(p.frame(0), scene);
+    assert.equal(p.frame(p.duration), scene);
+    // On from the still, then the plain lockup for the rest, then the next pass.
+    const on = waveOf(p.frame(0.1)).at;
+    assert.ok(on.variant === v.id && on.s > v.still, `${v.id}: not on from the still`);
+    const resting = waveOf(p.frame((1 - v.still) * v.pass + v.hold / 2));
+    assert.equal(resting.at, null, `${v.id}: no rest`);
+    assert.deepEqual(W.wavePolygons(resting), resting.rows.flatMap((r) => r.polygons));
+    const next = waveOf(p.frame((1 - v.still) * v.pass + v.hold + 0.2)).at;
+    assert.ok(next && next.s < v.still, `${v.id}: the next pass does not come round`);
+    // Twice as fast: half as long, the same moment at half the time.
+    const fast = AN.plan(scene, "wave", v.id, measurer, 2);
+    assert.ok(near(fast.duration, p.duration / 2, 1e-9));
+    assert.ok(near(waveOf(fast.frame(0.05)).at.s, on.s, 1e-9));
+    // A cover stopped in another animation starts from this one's still.
+    const other = waveCover("the ripple effect", "mona", { waveAnimation: v.id === "crossing" ? "loose" : "crossing" });
+    assert.deepEqual(waveOf(AN.plan(other, "wave", v.id, measurer).frame(0)).at, W.stillOf(v.id));
+  }
+  // Placed letters wave where they are: the wave is drawn inside the placement's map.
+  const placed = S.placeScene(waveCover("the ripple effect"), { x: 40, y: -60, angle: 0.2, sx: 0.8, sy: 0.8 });
+  const frame = AN.plan(placed, "wave", "crossing", measurer).frame(0.4);
+  assert.equal(frame.ops[0].kind, "matrix");
+  assert.equal(frame.ops[0].ops[0].kind, "wave");
+  assert.ok(frame.ops[0].ops[0].at.s > W.stillOf("crossing").s);
+});
+
+check("Wave draws what a phone types: curly quotes and Latin Extended-A in its faces' own letters, a letter it lacks as its base letter, an emoji as text in its line", () => {
+  for (const face of WAVE_FACE_IDS) {
+    const quoted = waveOf(waveCover("it’s “Łódź” café", face));
+    assert.ok(quoted.rows.every((r) => !r.texts), `${face}: a character set as text`);
+    // Vietnamese beyond Latin Extended-A: drawn as its base letter.
+    assert.ok(waveOf(waveCover("Ấn", face)).rows.every((r) => !r.texts), `${face}: Ấ set as text`);
+    // An emoji asked for as one (a keycap, a coloured sign) is an emoji, never the face's own figure or sign.
+    for (const [title, mark] of [["3️⃣ tips", "3️⃣"], ["top 1️⃣0️⃣ tips", "1️⃣0️⃣"], ["#️⃣ goals", "#️⃣"], ["©️ me", "©️"]]) {
+      const set = waveOf(waveCover(title, face)).rows.flatMap((r) => r.texts ?? []).map((t) => t.text);
+      assert.ok(set.includes(mark), `${face} "${title}": ${JSON.stringify(set)}`);
+    }
+    assert.ok(waveOf(waveCover("© me", face)).rows.every((r) => !r.texts), `${face}: a plain © set as text`);
+    const emoji = waveOf(waveCover("week 12 👍", face));
+    const texts = emoji.rows.flatMap((r) => r.texts ?? []);
+    assert.deepEqual(texts.map((t) => [t.text, t.face]), [["👍", "sans"]], `${face}: the emoji`);
+    // Drawn where its line is, moved with it.
+    const ctx = recorder();
+    paint(ctx, waveCover("week 12 👍", face), { scale: 1, font, grain: null });
+    const drawn = ctx.calls.filter((c) => c.kind === "fillText");
+    assert.equal(drawn.length, 1);
+    assert.equal(drawn[0].text, "👍");
+  }
+});
+
+check("Wave is painted as one fill of its letters in its colour, its wave and all, at any scale", () => {
+  const scene = waveCover("the ripple effect", "mona", COLOURS.blue);
+  const op = waveOf(scene);
+  for (const scale of [1, 0.25]) {
+    const ctx = recorder();
+    paint(ctx, scene, { scale, font, grain: null });
+    assert.equal(ctx.depth, 0);
+    const fills = ctx.calls.filter((c) => c.kind === "fill");
+    assert.equal(fills.length, 1);
+    assert.equal(fills[0].style, op.color);
+    const points = W.wavePolygons(op).reduce((n, p) => n + p.length / 2, 0);
+    assert.equal(fills[0].points.length, points);
+  }
+});
+
+check("Wave's face is kept with the design (anything else read as Mona Sans), and its letters are whole: every face draws the capitals, figures and a space, its outlines as long as their commands", () => {
+  assert.equal(D.DEFAULT_DESIGN.waveFace, "mona");
+  assert.equal(D.readDesign(JSON.stringify({ waveFace: "archivo" })).waveFace, "archivo");
+  assert.equal(D.readDesign(JSON.stringify({ waveFace: "comic-sans" })).waveFace, "mona");
+  assert.equal(D.readDesign(JSON.stringify({ animations: { wave: "loose" } })).animations.wave, "loose");
+  assert.equal(D.readDesign(JSON.stringify({ animations: { wave: "jelly" } })).animations.wave, undefined);
+  assert.equal(D.animationOf({ style: "wave", animations: {} }), "crossing");
+  assert.notEqual(S.wrapTypeOf({ style: "wave", waveFace: "mona" }), S.wrapTypeOf({ style: "wave", waveFace: "anton" }));
+  assert.equal(S.shuffles("wave"), false);
+  // Its lines are each as wide as its text box, so a height has no wrap: its top and bottom scale it; every other style's re-wrap.
+  for (const style of S.STYLES) assert.equal(S.wrapsByHeight(style.id), style.id !== "wave", style.id);
+  const arity = { M: 2, L: 2, Q: 4, C: 6, Z: 0 };
+  for (const face of WF.WAVE_FACES) {
+    const data = WF.waveFaceData(face.id);
+    assert.ok(data, `${face.name} not loaded`);
+    for (const c of " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&!?.,'") assert.ok(data.glyphs[c], `${face.name} has no "${c}"`);
+    const samples = data.widths ? data.widths.length : 1;
+    for (const [c, [advs, cmds, p0, ...deltas]] of Object.entries(data.glyphs)) {
+      assert.equal(advs.length, samples, `${face.name} "${c}": advances`);
+      assert.equal([...cmds].reduce((n, k) => n + arity[k], 0), p0.length, `${face.name} "${c}": its points and its commands`);
+      assert.equal(deltas.length, samples - 1);
+      for (const d of deltas) assert.equal(d.length, p0.length);
+    }
+    for (const cell of Object.values(data.kern.cells)) assert.equal(cell.length, samples);
   }
 });
 

@@ -1588,14 +1588,14 @@
 
 /*
  * The styles, under the cover: each the whole cover in that style, in the
- * cover's own shape, all seven in one row as wide as they fit and never
+ * cover's own shape, all eight in one row as wide as they fit and never
  * wider, so there is never anything to scroll.
  */
 /* As tall for every size, a tile and its name, the names on one line at the foot: a wider size's tiles come out shorter where the row is full, and the cover above must not move for it. */
 .styles {
   flex: none;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, calc(var(--rcm-tile-h) * var(--rcm-ratio-n))));
+  grid-template-columns: repeat(8, minmax(0, calc(var(--rcm-tile-h) * var(--rcm-ratio-n))));
   justify-content: center;
   align-content: end;
   align-items: end;
@@ -2756,9 +2756,8 @@
   }
 
   /*
-   * Four across and three under them, centred: seven in a row would be too
-   * small to tell apart on a phone. Each takes two of eight columns, the
-   * fifth starting at the second, so the three sit between the four.
+   * Four across and four under them: eight in a row would be too small to
+   * tell apart on a phone. Each takes two of eight columns.
    */
   .styles {
     grid-template-columns: repeat(8, minmax(0, calc(var(--rcm-tile-h) * var(--rcm-ratio-n) / 2)));
@@ -2768,10 +2767,6 @@
 
   .style {
     grid-column: span 2;
-  }
-
-  .style:nth-child(5) {
-    grid-column: 2 / span 2;
   }
 }
 

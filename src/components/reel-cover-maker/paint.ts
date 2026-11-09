@@ -11,6 +11,7 @@
 import type { FaceId } from "@/components/reel-cover-maker/faces";
 import { isStill, reachOf, surfaceAt, type Surface } from "@/components/reel-cover-maker/ripple";
 import type { LiquidOp, Op, Scene } from "@/components/reel-cover-maker/scene";
+import { wavePolygons, waveTextMap } from "@/components/reel-cover-maker/wave";
 
 /** The part of a 2D context painting uses, so a test can stand in for one. */
 export type PaintTarget = Pick<
@@ -288,6 +289,29 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
         ctx.lineJoin = "miter";
         ctx.stroke();
       }
+      return;
+    }
+    case "wave": {
+      // Wave's lines, warped where the wave is: one fill, counters and all, by the nonzero rule.
+      const fill = () => {
+        outline(ctx, wavePolygons(op));
+        ctx.fillStyle = haze?.tint ? "#000" : op.color;
+        ctx.fill();
+        // A character none of its faces draws (an emoji), set as text, moved and stretched up and down with its line.
+        op.rows.forEach((row, i) => {
+          for (const t of row.texts ?? []) {
+            const { ty, sy } = waveTextMap(op, i, t.x + t.w / 2);
+            ctx.save();
+            ctx.transform(1, 0, 0, sy, 0, ty);
+            ctx.font = options.font(t.face, t.size);
+            ctx.fillStyle = haze?.tint ? "#000" : op.color;
+            ctx.fillText(t.text, t.x, t.y);
+            ctx.restore();
+          }
+        });
+      };
+      if (haze) hazed(ctx, haze, op.color, fill);
+      else fill();
       return;
     }
     case "ink": {

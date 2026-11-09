@@ -50,9 +50,11 @@ interface Props {
   /**
    * The text box the words make wrapped to a width, in the scene's own
    * pixels, and the narrowest they can be wrapped to: null where the style
-   * sets nothing to wrap.
+   * sets nothing to wrap. `byHeight` false where a height has no wrap of
+   * its own (Wave, whose lines are each as wide as the box): its top and
+   * bottom then scale it, keeping its shape.
    */
-  wrapBox: (wrap: number) => { box: Rect; min: number; content: number } | null;
+  wrapBox: (wrap: number) => { box: Rect; min: number; content: number; byHeight?: boolean } | null;
 }
 
 /** Sizes on screen, in CSS pixels, whatever the preview's size. */
@@ -261,8 +263,8 @@ export function CoverSurface({ surfaceRef, width, height, box, place, onPlace, o
     if (keys.metaKey || keys.ctrlKey) return show(dragHandle(g.rect, g.from, g, p, { fromMiddle: keys.altKey }));
     if (keys.shiftKey) return show(dragHandle(g.rect, g.from, g, p, { keep: true, fromMiddle: keys.altKey }));
     const wrapped = latest.current.wrapBox(g.from.wrap ?? g.rect.w);
-    // Nothing to wrap (no words): the side scales, keeping the shape.
-    if (!wrapped) return show(dragHandle(g.rect, g.from, g, p, { keep: true, fromMiddle: keys.altKey }));
+    // Nothing to wrap (no words), or a top or bottom with no height to wrap to: the side scales, keeping the shape.
+    if (!wrapped || (g.u === 0 && wrapped.byHeight === false)) return show(dragHandle(g.rect, g.from, g, p, { keep: true, fromMiddle: keys.altKey }));
     // Never narrower than its widest word; as wide as it is pulled, past the cover's edge too (the owner, 21 Oct: as in Illustrator).
     const at = (w: number) => latest.current.wrapBox(w)?.box ?? g.rect;
     const hug = (w: number) => latest.current.wrapBox(w)?.content ?? w;

@@ -56,10 +56,10 @@ on a label's row.
   it sets the rest. Every shortcut is listed behind the **?** at the top
   right.
 - **Pick a style** from the row of thumbnails under the cover: Stickery,
-  Renaissance, Inkblot, Pasty, Pasty Flat, Echo and Mono. Each thumbnail is
+  Renaissance, Inkblot, Pasty, Pasty Flat, Echo, Mono and Wave. Each thumbnail is
   your whole cover in that style, in the cover's own shape, so nothing of
-  it is cut off; all seven fit in one row however narrow the window (four
-  over three on a phone), never scrolled. Once the cover is drawn, it is drawn in every
+  it is cut off; all eight fit in one row however narrow the window (four
+  over four on a phone), never scrolled. Once the cover is drawn, it is drawn in every
   other style too, ahead of time, so a style you pick shows at once.
   - **Stickery**: each line you type is a sticker with stepped, cut paper
     edges, in turn the colour and one a hundred degrees round the colour
@@ -99,9 +99,9 @@ on a label's row.
   - Pasty and Pasty Flat letter in Goo Teardrop (the default) or Goo Even,
     Stickery's drawn hands, or in Drip, picked from their Lettering list.
   - A style's own choices sit under the text: Stickery's Lettering and
-    Plain words, Renaissance's Look, Pasty's Lettering, and for the other
-    three the typeface they are set in, in one row of the same height for
-    every style.
+    Plain words, Renaissance's Look, Pasty's and Wave's Lettering, and for
+    the other three the typeface they are set in, in one row of the same
+    height for every style.
   - **Renaissance**: the plain words in tall capitals, stacked tight and
     centred, and a bold word set in a script laid across the join between
     two lines of them, overlapping both, so the whole reads as one lockup,
@@ -129,6 +129,19 @@ on a label's row.
     down only as far as keeps a descender clear of the line under it.
   - **Echo** and **Mono**: wide capitals echoed in outline, and a typewriter
     with its cursor.
+  - **Wave**: the title in capitals, stacked, every line exactly as wide as
+    the others, so the whole reads as one rectangle, after the owner's THE
+    / RIPPLE / EFFECT; and the block waving inside its own rectangle, as
+    the rows of a "waves" poster wave and fit into one another. Lines near
+    the widest share its cap height, the narrower widened to meet it, and a
+    much shorter one (THE) is scaled up to the width; a T at either end of
+    a line hangs a little past the edge, so its stem lines up with the
+    letters under it rather than the tip of its bar. A title is broken into
+    lines as even as its words allow, as many as fill the cover best. Its
+    **Lettering** is Mona Sans (the default), Anton or Archivo; Archivo is
+    set as a brick, every line one cap height, each at the width that
+    makes it meet the others. Not animated, the cover is its animation
+    stopped mid-wave.
 - **Shuffle**, over the cover, draws the letters another way: every random choice a style
   makes (each letter's hand, the drips, where the stickers sit) is seeded by
   the title and the shuffle together, so what you see is exactly what
@@ -213,6 +226,15 @@ on a label's row.
     (every line drops in, top to bottom).
   - Mono: **Typewriter**, its cursor following the letters, and **Word by
     word**.
+  - Wave: **Crossing** (every other line's crest runs the other way),
+    **Cascade** (each line's crest in turn), **Loose** (each line its own
+    width and speed), **Ripple** (a ring out from the middle) and **One
+    wave** (a crest down the block on a slant). Each is a loop: from the
+    still cover the wave runs on, passes, the plain lockup rests a moment,
+    and the next comes round to the still again. The block's top and
+    bottom never move and nothing moves sideways: each line swells as its
+    crest crosses it and the others give up the height, the gaps between
+    them as thick as ever across their slope.
 
   Animated, **Download** saves a video at 1080 wide and 30 frames a second,
   the motion and then the cover held for a second and a half (a loop, once
@@ -264,7 +286,9 @@ on a label's row.
     however narrow or wide the box or however much is typed into it. Every
     style does this in its own way: Stickery's funky words wrap as well as
     its plain ones, Pasty's lines still fill the block, Renaissance's
-    script stays on its join.
+    script stays on its join, and Wave's lines are each as wide as the
+    box, so a wider box takes more words a line (its top and bottom scale
+    it, keeping its shape, as a height has no wrap of its own there).
   - **Shift and a side** scales the letters keeping their shape; **Cmd
     (Ctrl on Windows) and a side** stretches them one way. A key pressed or
     let go mid-drag changes what the drag does at once.
@@ -527,6 +551,8 @@ Only the plain face chosen is loaded.
 | `stepped.ts` | Stickery's stepped sticker outline, and the outline of any cells of its grid |
 | `ink.ts` | Inkblot's print: contours of a field, and a word's outline bled, its weight varied and its edge roughened; and the closed shape a script takes out of Renaissance's capitals |
 | `renaissance.ts` | Renaissance's looks and lockup: which words are script, the capitals' lines, each script across its join, the gap or shape it cuts |
+| `wave.ts` | Wave's lockup (every line one width, by its letters' outlines) and its wave: the warp that holds the rectangle, the five animations, the still |
+| `wave-faces/` | Wave's letters: Mona Sans, Anton and Archivo as outlines at the widths they change course, from `scripts/wave-faces.mjs`, fetched once a cover asks for one, with their licences |
 | `scene.ts` | Each style, as a list of fills, the photo, grain, shapes, text and liquid layers; and the letters placed (`placeScene`) |
 | `place.ts` | Where the text is placed: the matrix, the handles, and what each drag does |
 | `CoverSurface.tsx` | The cover as an illustration program's canvas: selecting, moving, scaling and turning the text, and framing the photo |
@@ -547,14 +573,24 @@ because a canvas draws in whatever face is there at that moment, and the file
 would be set in a fallback. The maker keeps its own record of what has
 loaded rather than asking `document.fonts.check`, which Chrome answers yes to
 for any family installed on the computer. A character no stroke font can
-draw (an emoji) is set as plain text in the liquid styles, so nothing typed
-is lost.
+draw (an emoji) is set as plain text in the liquid styles and Wave, so
+nothing typed is lost.
+
+Wave's letters are not drawn as text: a canvas cannot set a variable font's
+width axis (WebKit ignores it altogether), and each of Wave's lines is set
+at its own width. So `scripts/wave-faces.mjs` reads Mona Sans, Anton and
+Archivo with HarfBuzz from Google Fonts' own files (at a pinned commit,
+checked by their hashes) and writes each face's capitals, figures and marks
+as outlines, with their advances and kerning, at every width where they
+change course; in between, every point moves in a straight line, so any
+width is read exactly. The page draws them as filled outlines.
 
 The web typefaces are Pinyon Script, Inter Tight, Archivo Black and Space
 Mono, and Stickery's and Renaissance's own (Playfair Display SC, Anton, Big
 Shoulders, Luxurious Script and the rest), from Google Fonts under the SIL
 Open Font License, served from the page's own origin. The stroke fonts' licences are in
-`src/components/reel-cover-maker/strokes/LICENSE.md`.
+`src/components/reel-cover-maker/strokes/LICENSE.md`, and Wave's faces' in
+`src/components/reel-cover-maker/wave-faces/LICENSE.md`.
 
 ## Development
 
@@ -565,6 +601,7 @@ npm test           # scripts/reel-cover.test.mjs
 npm run build      # the static site, in out/
 node scripts/drip-font.mjs         # Drip again, from its drawing
 node scripts/goo-font.mjs          # Goo again (after Drip: it borrows its capitals)
+node scripts/wave-faces.mjs        # Wave's letters again, from the font files
 ```
 
 No test framework: the tests are a plain `node` script that asserts and

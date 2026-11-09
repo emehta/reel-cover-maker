@@ -42,6 +42,10 @@
  *   (the echoes slide out from the words to their places), Cascade (every
  *   line drops in, top to bottom).
  * - Mono: Typewriter (its cursor typing), Word by word.
+ * - Wave: Crossing, Cascade, Loose, Ripple and One wave (the owner's five
+ *   of 9 Nov), each a loop of the block waving inside its own rectangle
+ *   (wave.ts): from the still cover, stopped mid-wave, on through its pass,
+ *   a rest on the plain lockup, and round to the still again.
  *
  * An effect is worked out where it is seen (a sticker lands about its own
  * middle on the cover) and carried into each op's own frame, through the
@@ -65,8 +69,9 @@ import { isBackdrop, pasteKey, type LiquidOp, type Op, type Scene, type StyleId 
 import { fillHoles, insidePolygon, polygonBounds, traceCells, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { isStill, STILL_BELOW, type Drop as WaterDrop, type Surface } from "@/components/reel-cover-maker/ripple";
 import { graphemes } from "@/components/reel-cover-maker/title";
+import { WAVE_VARIANTS, wavePlay, type WaveVariantId } from "@/components/reel-cover-maker/wave";
 
-export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade" | "engraved" | "wick" | "jelly" | "ribbon" | "drop";
+export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade" | "engraved" | "wick" | "jelly" | "ribbon" | "drop" | WaveVariantId;
 
 export interface Animation {
   id: AnimationId;
@@ -119,6 +124,8 @@ export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
     { id: "typewriter", name: "Typewriter" },
     { id: "words", name: "Word by word" },
   ],
+  // The owner's five of 9 Nov, Crossing first (the preview opened on it).
+  wave: WAVE_VARIANTS.map((v) => ({ id: v.id, name: v.name })),
 };
 
 export function animationsFor(style: StyleId): readonly Animation[] {
@@ -2178,6 +2185,7 @@ export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Me
   if (id === "jitter") return jitter(scene, shuffle ? jitterSeeds(shuffle.seed) : [0], shuffle ? shuffle.cover : () => scene, pace);
   if (id === "jelly") return jelly(scene, pace);
   if (id === "ribbon") return ribbon(scene, measurer, pace);
+  if (style === "wave") return wavePlay(scene, offers("wave", id) ? (id as WaveVariantId) : WAVE_VARIANTS[0].id, pace);
   const built: Built =
     style === "stickery"
       ? stickery(scene, id, measurer)

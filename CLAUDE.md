@@ -29,7 +29,7 @@ npm run build   # the static site, in out/
   hard-code `/reel-cover-maker` in a URL. It is no longer served by
   eshaanm.net, which only redirects to it.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
-  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `renaissance`, `ripple`, `noise`,
+  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `renaissance`, `ripple`, `wave`, `noise`,
   `strokes`, `scene`, `colour`, `palettes`, `grain`, `save`, `design`,
   `photo`, `place` and `font-gate` never touch the DOM and are tested in
   `scripts/reel-cover.test.mjs`. `paint` takes a context, so it is tested
@@ -134,6 +134,38 @@ npm run build   # the static site, in out/
   photo. With no word bold the linking word nearest the middle is the
   script (`scriptWords`); at either end of the title a script tucks
   lightly (the owner's pick).
+- **Wave is a lockup of lines all one width, waving** (the owner's ask, 9
+  Nov, after their THE / RIPPLE / EFFECT and a "waves" poster; `wave.ts`,
+  pure). The letters are outlines, not text (`wave-faces/`, written by
+  `scripts/wave-faces.mjs` from Google Fonts' files at a pinned commit;
+  never edit them by hand, and run it again after changing a face or the
+  characters): a canvas cannot set a variable font's width, and WebKit
+  ignores it. A face's file is fetched once a cover asks for it, and
+  nothing of a Wave cover is drawn until it is here, as with a font. What
+  the owner settled on, in previews: widths by ink, less a T hanging past
+  either end by 0.35 of its bar's reach (`HANG`, their "Medium");
+  classic for Mona Sans and Anton (lines near the widest share its cap
+  height, the narrower widened by Mona's width axis or Anton's spacing,
+  a much shorter line scaled up, as THE is), a brick for Archivo (every
+  line one cap height, each at the width that meets the shortest at its
+  widest, short lines' spacing opened a step at a time where a long line
+  is too long even at its narrowest); lines a tenth of the smallest cap
+  height apart. THE RIPPLE EFFECT must come out as the approved lockups
+  (tested to the thousandth). The wave is a vertical warp and nothing
+  else: the block's top and bottom never move, nothing moves sideways,
+  each line swells as a crest crosses it while the others give up the
+  height, a gap keeps its thickness across its slope, overlapping
+  crests are eased (`soften`), and no line goes under 40% of itself. The
+  still cover is its picked animation stopped mid-wave (the owner: "it
+  should just have a wave"), so each animation is a loop from the still,
+  through its pass and a rest on the plain lockup, back to the still. A
+  title of one line waves within itself, its middle moving, at two thirds
+  strength (at full, an H's crossbar tilted into an N). As a text box its
+  lines are each as wide as the box (as Pasty's fill their block), so a
+  wider box takes more words a line rather than keeping each line's size,
+  and its top and bottom handles scale it, keeping its shape
+  (`wrapsByHeight`): within one set of lines a narrower box is shorter
+  too, so a height has no wrap that comes to it.
 - **The Text field draws its own letters.** `TextField.tsx` is a textarea
   whose letters are clear, under a mirror of the same text in plain and
   bold runs; bold is a text stroke, never a bolder weight, which would be
@@ -178,7 +210,7 @@ npm run build   # the static site, in out/
   (`.tipEnd` runs inward at a row's end, `.tipLeft` opens to the left
   where there is no room above, the header's ?); every button's name is
   one of these, never a native `title`. A tool that cannot act is
-  disabled, never removed (Shuffle in Echo and Mono, `shuffles`). Hover
+  disabled, never removed (Shuffle in Echo, Mono and Wave, `shuffles`). Hover
   fills are only for a pointer that hovers (`@media (hover: hover)`), so a
   tap never leaves one lit.
   There is no contrast warning any more (the owner's ask, 7 Oct: "I
@@ -217,7 +249,9 @@ npm run build   # the static site, in out/
   scale (`speedPlace`, `speedAtPlace`), caught at 1 near the middle.
   Renaissance has Written (capitals rise in line by line, then the script
   is penned across them, its gap cut round what the pen has written:
-  `cutAround`), Word by word, Line by line, Engraved, Ribbon and Drop; Stickery has Spell
+  `cutAround`), Word by word, Line by line, Engraved, Ribbon and Drop; Wave
+  has Crossing, Cascade, Loose, Ripple and One wave (the owner's five of 9
+  Nov, all loops, above); Stickery has Spell
   (Type and draw until the owner renamed it, 24 Oct; its id is still
   `type-draw`, so saved covers open on it), Slap, Pop, Reveal and Jitter;
   Pasty and Pasty Flat Written live, Jelly and Jitter; Inkblot Written
@@ -403,13 +437,13 @@ npm run build   # the static site, in out/
   `uHasUnder` in the shader), not a multiply: laid on the ground picked it
   is the old drawn shadow to within 3 levels in 255 (tested, and measured
   against the previous build's PNGs).
-- **The style thumbnails are the whole cover**, in its own shape, seven to
-  a row as wide as fits (four over three, centred, under 900; the owner's
+- **The style thumbnails are the whole cover**, in its own shape, eight to
+  a row as wide as fits (four over four under 900; the owner's
   order of 20 Oct: Stickery, Renaissance, Inkblot, Pasty, Pasty Flat,
-  Echo, Mono): never the profile grid's
+  Echo, Mono, and Wave last since 9 Nov): never the profile grid's
   crop, which cut a reel cover's sides off (the owner's ask, 7 Oct), and
   never a row that scrolls, the row as tall for every size so the cover
-  never moves for it. The six other styles are made from the design once
+  never moves for it. The seven other styles are made from the design once
   it has paused for `SETTLE_MS` (`settled`): made at every keystroke, they
   cost each key about a tenth of a second. Grid crop shows the grid's
   window on the cover itself.

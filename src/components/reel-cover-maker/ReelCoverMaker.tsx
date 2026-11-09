@@ -47,6 +47,7 @@ import {
   placeScene,
   shuffles,
   STYLES,
+  wrapsByHeight,
   type CoverInput,
   type Scene,
 } from "@/components/reel-cover-maker/scene";
@@ -54,6 +55,8 @@ import { lookOf, RENAISSANCE_LOOKS, renaissanceFaces } from "@/components/reel-c
 import { Shortcuts } from "@/components/reel-cover-maker/Shortcuts";
 import { TextField } from "@/components/reel-cover-maker/TextField";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
+import type { WaveVariantId } from "@/components/reel-cover-maker/wave";
+import { loadWaveFace, subscribeWaveFaces, WAVE_FACES, waveFaceData, waveFaceFailed, waveFacesVersion } from "@/components/reel-cover-maker/wave-faces";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
 
 /**
@@ -175,12 +178,14 @@ function grain(): HTMLCanvasElement | null {
 const scenes = new Map<string, Scene>();
 
 function sceneFor(input: CoverInput, loads: number): Scene {
-  // The text colour is Stickery's alone, the script's faces and colour Renaissance's: picking one builds no other style again.
+  // The text colour is Stickery's alone, the script's faces and colour Renaissance's, the face and the still's animation Wave's: picking one builds no other style again.
   const text = input.style === "stickery" ? input.textColour ?? null : null;
   const renaissance = input.style === "renaissance" ? [input.renaissanceLook, input.scriptColour ?? null] : null;
+  // Wave's letters arrive after the page (wave-faces): a cover set before its face had come is set again once it has.
+  const wave = input.style === "wave" ? [input.waveFace, input.waveAnimation, input.waveFace ? waveFaceData(input.waveFace) !== null : false] : null;
   // A text box's width and the layout it is set again from.
   const wrap = input.wrap ? [input.wrap.width, input.wrap.ref] : null;
-  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, renaissance, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, wrap, loads]);
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, renaissance, wave, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, wrap, loads]);
   // A text box's scenes, a new one at every move of a drag, are kept apart: they would push every other style's out.
   const cache = input.wrap ? wrappedScenes : scenes;
   let scene = cache.get(key);
@@ -516,7 +521,12 @@ export default function ReelCoverMaker() {
   const method = useSyncExternalStore<SaveMethod>(subscribeTouch, currentSaveMethod, () => "download");
   const apple = useSyncExternalStore(subscribeNothing, isApple, () => true);
 
-  const measurer = loads >= 0 ? measurerFor(loads) : null;
+  // Wave's face, fetched as a font is: nothing of a Wave cover is drawn until it is here.
+  useSyncExternalStore(subscribeWaveFaces, waveFacesVersion, () => 0);
+  const waveFace = design.waveFace;
+  const waveReady = design.style !== "wave" || waveFaceData(waveFace) !== null;
+  const waveFailed = design.style === "wave" && waveFaceFailed(waveFace);
+  const measurer = loads >= 0 && waveReady ? measurerFor(loads) : null;
   /**
    * What a design's cover is made from: its title (or the placeholder's),
    * Stickery's letters' colour as picked (null for auto, each sticker's own
@@ -532,6 +542,9 @@ export default function ReelCoverMaker() {
     pastyLettering: d.pastyLettering,
     renaissanceLook: d.renaissanceLook,
     scriptColour: textColour(d.scriptMode, d.scriptHue, d.scriptShade, d.scriptHex),
+    waveFace: d.waveFace,
+    // Wave's still is its animation stopped mid-wave: the one picked for it, whether or not it is animated.
+    waveAnimation: animationOf({ style: "wave", animations: d.animations }) as WaveVariantId,
     hue: d.hue,
     shade: d.shade,
     hex: d.hex,
@@ -553,7 +566,7 @@ export default function ReelCoverMaker() {
   /**
    * The cover in every style: the thumbnails, and what is made ahead of
    * time for each. Of the design as it was a moment ago, once it has
-   * settled: made new at every keystroke, the six other styles cost each
+   * settled: made new at every keystroke, the other styles cost each
    * key about a tenth of a second.
    */
   const thumbInput = inputOf(settled);
@@ -588,6 +601,7 @@ export default function ReelCoverMaker() {
     design.ground,
     design.style === "stickery" ? input.textColour : null,
     design.style === "renaissance" ? [design.renaissanceLook, input.scriptColour] : null,
+    design.style === "wave" ? [design.waveFace, input.waveAnimation] : null,
     design.format,
     design.seed,
     loads,
@@ -740,6 +754,10 @@ export default function ReelCoverMaker() {
   const funkyFace = letteringFace(design.lettering);
   const { renaissanceLook } = design;
   useEffect(() => requestFonts(title, facesFor(plainFace, funkyFace, ...renaissanceFaces(renaissanceLook))), [title, plainFace, funkyFace, renaissanceLook]);
+  // Wave's face fetched once the page is up, for its thumbnail as well as its cover; asked again if the last try failed and it is picked again.
+  useEffect(() => {
+    void loadWaveFace(waveFace);
+  }, [waveFace, design.style]);
 
   // The page and the browser's bars in the maker's light or dark, handed back on the way out.
   useEffect(() => {
@@ -1162,7 +1180,7 @@ export default function ReelCoverMaker() {
             maxLength={MAX_TITLE_LENGTH}
           >
             {scene?.truncated && <p className={styles.note}>Too long for the cover: the end is cut.</p>}
-            {layers.failed && <p className={styles.note}>This style could not be drawn here. Try another.</p>}
+            {(layers.failed || waveFailed) && <p className={styles.note}>This style could not be drawn here. Try another.</p>}
           </TextField>
 
           {/* The style's own type: one row, the same height for every style, so nothing under it moves when another is picked. */}
@@ -1197,6 +1215,13 @@ export default function ReelCoverMaker() {
                 value={design.renaissanceLook}
                 options={RENAISSANCE_LOOKS.map((l) => ({ value: l.id, label: l.name, font: fontCss(l.caps, 17) }))}
                 onChange={(renaissanceLook) => update({ renaissanceLook, scriptMode: lookOf(renaissanceLook).scriptMode }, "alone")}
+              />
+            ) : design.style === "wave" ? (
+              <Dropdown
+                label="Lettering"
+                value={design.waveFace}
+                options={WAVE_FACES.map((f) => ({ value: f.id, label: f.name }))}
+                onChange={(waveFace) => update({ waveFace }, "alone")}
               />
             ) : design.style === "pasty" || design.style === "pasty-flat" ? (
               <Dropdown
@@ -1421,7 +1446,7 @@ export default function ReelCoverMaker() {
                   wrapBox={(wrap) => {
                     if (!measurer) return null;
                     const set = wrappedScene(input, loads, withWrapSize(input, loads, { ...design.place, wrap }, design.place));
-                    return set.wrapped ? { box: set.readable, min: set.wrapped.min, content: set.wrapped.content } : null;
+                    return set.wrapped ? { box: set.readable, min: set.wrapped.min, content: set.wrapped.content, byHeight: wrapsByHeight(design.style) } : null;
                   }}
                   selected={selected}
                   onSelect={setSelected}
@@ -1534,7 +1559,8 @@ export default function ReelCoverMaker() {
           target={wholeCover(format, CARD_WIDTH)}
           requestFor={(id) => ({
             key: `card|${key}|${id}`,
-            plan: planFor(scene, design.style, id, measurer, shuffled),
+            // Wave's still is its animation stopped mid-wave: each tile plays from the cover as that one would stop it.
+            plan: planFor(design.style === "wave" ? coverFor({ ...input, waveAnimation: id as WaveVariantId }, loads, design.place).scene : scene, design.style, id, measurer, shuffled),
             look: () => ({ font: fontCss, grain: grain(), photo: photoForRef.current(scene) }),
             slot: `motion-card-${id}`,
           })}

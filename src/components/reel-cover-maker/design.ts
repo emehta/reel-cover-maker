@@ -1,7 +1,8 @@
 /**
  * What the maker remembers between visits: the title being worked on, the
  * style, Stickery's lettering and plain face and the colour of its letters,
- * Pasty's lettering, Renaissance's look and the colour of its script, the colour (hue, shade, a hex code typed, and ground), the size, the
+ * Pasty's lettering, Renaissance's look and the colour of its script,
+ * Wave's face, the colour (hue, shade, a hex code typed, and ground), the size, the
  * shuffle, how the photo behind the cover is framed and adjusted (the
  * photo itself is kept in photo-store.ts, being too big for here), where
  * the letters have been moved to, and whether the cover is animated and
@@ -34,6 +35,7 @@ import {
 } from "@/components/reel-cover-maker/scene";
 import { DEFAULT_RENAISSANCE_LOOK, isRenaissanceLookId, type RenaissanceLookId } from "@/components/reel-cover-maker/renaissance";
 import { clipMarked, MAX_TITLE_LENGTH } from "@/components/reel-cover-maker/title";
+import { DEFAULT_WAVE_FACE, isWaveFaceId, type WaveFaceId } from "@/components/reel-cover-maker/wave-faces";
 
 export interface Design {
   text: string;
@@ -43,6 +45,8 @@ export interface Design {
   pastyLettering: PastyLetteringId;
   /** Renaissance's look: one poster's capitals and script, matched. */
   renaissanceLook: RenaissanceLookId;
+  /** Wave's face: Mona Sans, Anton or Archivo. */
+  waveFace: WaveFaceId;
   hue: number;
   shade: number;
   /** A colour typed as a hex code, used exactly; null while the sliders' own colour is the colour. Moving a slider lets it go. */
@@ -90,6 +94,7 @@ export const DEFAULT_DESIGN: Design = {
   plainFace: DEFAULT_PLAIN_FACE,
   pastyLettering: DEFAULT_PASTY_LETTERING,
   renaissanceLook: DEFAULT_RENAISSANCE_LOOK,
+  waveFace: DEFAULT_WAVE_FACE,
   hue: DEFAULT_COLOUR.hue,
   shade: DEFAULT_COLOUR.shade,
   hex: null,
@@ -159,6 +164,7 @@ export function readDesign(raw: string | null): Design {
         ? stored.pastyLettering
         : DEFAULT_DESIGN.pastyLettering,
     renaissanceLook: isRenaissanceLookId(stored.renaissanceLook) ? stored.renaissanceLook : DEFAULT_DESIGN.renaissanceLook,
+    waveFace: isWaveFaceId(stored.waveFace) ? stored.waveFace : DEFAULT_DESIGN.waveFace,
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
     hex: hexCode(stored.hex),
