@@ -1,9 +1,18 @@
 # Ripple studies
 
-Open `index.html` in a browser and press **Play once**. The file is self-contained and runs offline. It shows the horizontal and vertical refraction studies side by side.
+Open `index.html` in a browser and press **Play once** (Shift-click plays at quarter speed). It needs WebGL 2 and the network for the Inter Tight face, and falls back to Arial Black offline. Two studies of the word seen through fluted glass:
 
-Both directions open in 210 ms, hold for 560 ms, then return in 180 ms. During the return, the reflections farther from the original letters fade first.
+- **Horizontal:** vertical flutes. The middle letters keep still. The R and the e step out through the glass, and past each end six echoes slide off the letter's edge, warmest and thinnest furthest out.
+- **Vertical:** horizontal slats, after the 2024 Vitrium Opus poster. Each slat shows the word moved and leaning by its own step, so the word stacks above and below, with a dark line and a warm glint where slats meet.
 
-`reference-edge-profiles.json` records the measured RGB gradients from the 600 × 840 Vitrium Opus 2024 reference. Each value is the per-channel median of 19 vertical samples at x = 422–440, aligned at the green channel's midpoint crossing. Negative offsets point inward toward the white face. The preview uses those profiles along the warped letter edges and joins their endpoints to white and black.
+Both open on a spring (about 130 ms to full, a 14% overshoot that settles), hold to 800 ms, then draw back in on a stiffer spring, the outer echoes going first.
 
-The preview is a standalone experiment outside Reelic's application routes and build output. The animation, color lookup, and drawing code live in `index.html`.
+## How the light is made
+
+Everything is one fragment shader, 60 fps in Chromium and WebKit on an M1.
+
+- **Letters** are an exact signed distance field (Felzenszwalb and Huttenlocher, from a mask drawn at twice the canvas size), so they stay sharp however the glass magnifies them. Seams between flutes are anti-aliased by blending the two flutes a pixel straddles.
+- **Colour** is real dispersion, not a colour ramp. Each pixel samples the letters at 32 wavelengths, each bent by its own amount (mostly linear in wavelength, a tenth Cauchy). The samples are weighted by the CIE 1931 observer in linear sRGB, signed, so the whole spectrum sums to white. The light is then overexposed 1.8x and soft-clipped (linear to 0.6, an exponential shoulder above). Fitted against the poster's measured fringes (`reference-edge-profiles.json` plus fresh samples), this lands within about 0.03 OKLab RMS. It gives white, yellow, orange, red, dark on one side; white, cyan, blue, violet, dark on the other; and the full sweep through magenta where a thin dark gap sits between them.
+- **Softness** grows with the fringe's width in the poster's proportion, but only across edges that face along the bend, so the other edges stay crisp.
+
+`codex-2026-11-08.html` is the previous version, kept for comparison.

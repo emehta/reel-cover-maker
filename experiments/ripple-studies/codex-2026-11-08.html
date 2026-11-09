@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Reelic · Refraction</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #101010; color: #eae9e5; font: 500 14px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { width: min(100%, 1600px); min-height: 100svh; margin: 0 auto; display: grid; align-content: center; padding: clamp(16px, 4vw, 56px); }
+  .controls { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+  #play { width: 100px; height: 38px; border: 1px solid #373737; border-radius: 4px; background: #202020; color: inherit; font: inherit; cursor: pointer; }
+  #play:hover { background: #2c2c2c; }
+  #play:focus-visible { outline: 2px solid #eae9e5; outline-offset: 3px; }
+  #play[aria-disabled="true"] { cursor: default; }
+  .studies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  figure { margin: 0; min-width: 0; background: #000; }
+  canvas { display: block; width: 100%; height: auto; aspect-ratio: 640 / 400; }
+  figcaption { border-top: 1px solid #262626; background: #171717; padding: 12px 14px; }
+  @media (max-width: 800px) {
+    main { align-content: start; }
+    .studies { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="controls"><button id="play" type="button">Play once</button></div>
+  <div class="studies" id="studies"></div>
+</main>
+<script>
+"use strict";
+
+const density = 2.5;
+const width = Math.round(640 * density);
+const height = Math.round(400 * density);
+const outwardMs = 210;
+const heldMs = 560;
+const inwardMs = 180;
+const holdEnd = outwardMs + heldMs;
+const period = holdEnd + inwardMs;
+const specimenText = "Ripple";
+const directionNames = ["Horizontal", "Vertical"];
+const root = document.querySelector("#studies");
+const play = document.querySelector("#play");
+
+const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, n));
+const mix = (a, b, t) => a + (b - a) * t;
+function ease(value) {
+  const t = clamp(value);
+  return t * t * (3 - 2 * t);
+}
+
+function surface() {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  return canvas.getContext("2d", { willReadFrequently: true });
+}
+
+function coverageOf(ctx) {
+  const rgba = ctx.getImageData(0, 0, width, height).data;
+  const result = new Uint8Array(width * height);
+  for (let i = 0; i < result.length; i++) result[i] = rgba[4 * i + 3];
+  return result;
+}
+
+// Positive distances are outside the letter, negative distances inside.
+function distanceOf(alpha) {
+  const distance = new Float32Array(alpha.length);
+  const limit = 16 * density;
+  distance.fill(limit);
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      const coverage = alpha[i];
+      const filled = coverage >= 128;
+      if (coverage > 0 && coverage < 255) {
+        distance[i] = Math.abs(.5 - coverage / 255);
+      } else if ((alpha[i - 1] >= 128) !== filled || (alpha[i + 1] >= 128) !== filled ||
+          (alpha[i - width] >= 128) !== filled || (alpha[i + width] >= 128) !== filled) {
+        distance[i] = .5;
+      }
+    }
+  }
+  const diagonal = Math.SQRT2;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      distance[i] = Math.min(distance[i], distance[i - 1] + 1, distance[i - width] + 1,
+        distance[i - width - 1] + diagonal, distance[i - width + 1] + diagonal);
+    }
+  }
+  for (let y = height - 2; y > 0; y--) {
+    for (let x = width - 2; x > 0; x--) {
+      const i = y * width + x;
+      distance[i] = Math.min(distance[i], distance[i + 1] + 1, distance[i + width] + 1,
+        distance[i + width + 1] + diagonal, distance[i + width - 1] + diagonal);
+    }
+  }
+  for (let i = 0; i < distance.length; i++) {
+    if (alpha[i] >= 128) distance[i] *= -1;
+  }
+  return distance;
+}
+
+function smoothDistance(distance) {
+  const radius = Math.ceil(density * 2);
+  const span = radius * 2 + 1;
+  const horizontal = new Float32Array(distance.length);
+  const smooth = new Float32Array(distance.length);
+  for (let y = 0; y < height; y++) {
+    const start = y * width;
+    let sum = 0;
+    for (let x = 0; x < span - 1; x++) sum += distance[start + x];
+    for (let x = radius; x < width - radius; x++) {
+      sum += distance[start + x + radius];
+      horizontal[start + x] = sum / span;
+      sum -= distance[start + x - radius];
+    }
+  }
+  for (let x = radius; x < width - radius; x++) {
+    let sum = 0;
+    for (let y = 0; y < span - 1; y++) sum += horizontal[y * width + x];
+    for (let y = radius; y < height - radius; y++) {
+      sum += horizontal[(y + radius) * width + x];
+      smooth[y * width + x] = sum / span;
+      sum -= horizontal[(y - radius) * width + x];
+    }
+  }
+  return smooth;
+}
+
+function makeSpecimen(text, vertical, figure) {
+  const ctx = surface();
+  const type = surface();
+  figure.append(ctx.canvas);
+  ctx.canvas.setAttribute("role", "img");
+  ctx.canvas.setAttribute("aria-label", (vertical ? "Vertical" : "Horizontal") + " refraction on " + text);
+  const mx = (width - 1) / 2;
+  const my = (height - 1) / 2;
+  type.font = '900 200px "Arial Black", Arial, sans-serif';
+  const bounds = type.measureText(text);
+  const extraWeight = 4;
+  const inkWidth = bounds.actualBoundingBoxLeft + bounds.actualBoundingBoxRight + extraWeight;
+  const inkHeight = bounds.actualBoundingBoxAscent + bounds.actualBoundingBoxDescent + extraWeight;
+  const scale = Math.min(428 * density / inkWidth, 146 * density / inkHeight);
+  const halfX = inkWidth * scale / 2;
+  const halfY = inkHeight * scale / 2;
+  type.fillStyle = "#fff";
+  type.strokeStyle = "#fff";
+  type.lineWidth = extraWeight;
+  type.lineJoin = "round";
+  type.setTransform(scale, 0, 0, scale, mx + scale * (bounds.actualBoundingBoxLeft + extraWeight / 2) - halfX,
+    my + scale * (bounds.actualBoundingBoxAscent + extraWeight / 2) - halfY);
+  type.strokeText(text, 0, 0);
+  type.fillText(text, 0, 0);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(type.canvas, 0, 0);
+  const rest = ctx.getImageData(0, 0, width, height);
+  const frame = ctx.createImageData(width, height);
+  const rowStride = vertical ? 1 : width;
+  const columnStride = vertical ? width : 1;
+  const axisLength = vertical ? height : width;
+  const crossLength = vertical ? width : height;
+  const crossCenter = vertical ? mx : my;
+  const crossHalf = vertical ? halfX : halfY;
+  const bendCos = new Float32Array(crossLength);
+  const bendSin = new Float32Array(crossLength);
+  for (let c = 0; c < crossLength; c++) {
+    const normal = clamp((c - crossCenter) / crossHalf, -1.2, 1.2);
+    const bend = normal * normal * 1.82 + .18 * (1 - Math.cos(normal * 17));
+    bendCos[c] = Math.cos(bend);
+    bendSin[c] = Math.sin(bend);
+  }
+  const alpha = coverageOf(type);
+  const distance = distanceOf(alpha);
+  const texture = refractedInk(alpha, distance, {
+    vertical, axisCenter: vertical ? my : mx, crossCenter,
+    axisHalf: vertical ? halfY : halfX, crossHalf,
+    axisLength, crossLength, rowStride, columnStride,
+  });
+  return {
+    text, vertical, ctx, rest, frame, alpha, distance, texture,
+    pixels: new Uint32Array(frame.data.buffer), bendCos, bendSin,
+    rowStride, columnStride, axisLength, crossLength,
+    axisCenter: vertical ? my : mx, crossCenter,
+    axisHalf: vertical ? halfY : halfX, crossHalf,
+    columns: new Float32Array(axisLength * 10),
+  };
+}
+
+// Median RGB cross-sections from the cool upper crest and warm inner
+// counter of the 2024 reference. Join the sampled profiles to white and black.
+const spectrum = [
+  [
+    0xffffff, 0xffffff, 0xfcfefd, 0xfcfefd, 0xfcfefd, 0xfcfefd, 0xfcfefd, 0xfcfefd,
+    0xfcfefd, 0xfafdfd, 0xf9fefd, 0xf7feff, 0xf4fdff, 0xf2fcff, 0xebfeff, 0xdcfcfe,
+    0xc4fefd, 0xa1fffd, 0x77fcf7, 0x4bf7f4, 0x2cf0f7, 0x19e2fc, 0x11d5ff, 0x0bbeff,
+    0x0aa0fd, 0x127ffc, 0x1558f7, 0x1732ef, 0x221fe2, 0x2914c4, 0x2910a2, 0x1d0f76,
+    0x180f59, 0x150e47, 0x130c3b, 0x110c2e, 0x110d26, 0x0f111f, 0x08070e, 0x020204,
+    0x000000,
+  ],
+  [
+    0xffffff, 0xffffff, 0xfdfefe, 0xfdfdff, 0xfefeff, 0xfdfdfd, 0xfdfdfb, 0xfefdf9,
+    0xfefdf9, 0xfefdf9, 0xfefdf8, 0xfdfcf1, 0xfefbe6, 0xfffbd2, 0xfffabb, 0xfffa9f,
+    0xfff684, 0xfcf36b, 0xfdf055, 0xfbe93c, 0xfee02d, 0xfed228, 0xffbf23, 0xffa820,
+    0xff8f1b, 0xf8761a, 0xf3611c, 0xe44d21, 0xcb361e, 0xb32d26, 0x982628, 0x7b242c,
+    0x61242f, 0x401724, 0x321724, 0x231420, 0x201627, 0x08070e, 0x020204, 0x000000,
+  ],
+];
+
+const specimens = directionNames.map((direction, index) => {
+  const figure = document.createElement("figure");
+  const board = makeSpecimen(specimenText, index === 1, figure);
+  const label = document.createElement("figcaption");
+  label.textContent = direction;
+  figure.append(label);
+  root.append(figure);
+  return board;
+});
+
+// One quick opening, a stationary crest, and one quick return.
+function phaseAt(ms) {
+  if (ms < outwardMs) return ease(ms / outwardMs);
+  if (ms <= holdEnd) return 1;
+  return 1 - ease((ms - holdEnd) / inwardMs);
+}
+
+function sample(data, board, axis, cross) {
+  if (axis < 0 || cross < 0 || axis >= board.axisLength - 1 || cross >= board.crossLength - 1) return 0;
+  const a = axis | 0;
+  const c = cross | 0;
+  const column = board.columnStride;
+  const i = a * column + c * board.rowStride;
+  const j = i + board.rowStride;
+  const u = axis - a;
+  const upper = data[i] + (data[i + column] - data[i]) * u;
+  const lower = data[j] + (data[j + column] - data[j]) * u;
+  return upper + (lower - upper) * (cross - c);
+}
+
+// Each flute has a convex optical face and a fine crease where it meets
+// the next. Both halves use identical depth with opposite displacement.
+function mapColumns(board, amount) {
+  const { axisLength, axisHalf, crossHalf, axisCenter, columns, vertical } = board;
+  const extension = Math.max(0, amount);
+  const pitch = (vertical ? axisHalf * .29 : Math.min(29 * density, crossHalf * .51)) * (1 + extension * .23);
+  const dispersion = extension ** .83;
+  for (let i = 0; i < axisLength; i++) {
+    const delta = i - axisCenter;
+    const side = Math.sign(delta);
+    const distance = Math.abs(delta);
+    const band = Math.round(distance / pitch);
+    const along = distance / pitch - band;
+    const shoulder = ease((distance / axisHalf - .08) / .91);
+    const lens = along * (1.12 - .37 * along * along);
+    const reach = distance / (1 + extension * (vertical ? .262 : .218));
+    const fold = lens * pitch * extension * (.12 + .78 * shoulder);
+    const o = i * 10;
+    columns[o] = axisCenter + side * (reach + (vertical ? 0 : fold));
+    columns[o + 1] = vertical
+      ? extension * pitch * .68 * ease((distance / axisHalf - .34) / .76)
+      : 1 + extension * (along * along * .25 - .022) * (.56 + .44 * shoulder);
+    columns[o + 2] = vertical
+      ? 2 * Math.PI * distance / pitch + 1.42
+      : extension * pitch * .135 * lens * (.42 + .58 * shoulder);
+    columns[o + 3] = 1 - .30 * ease((distance / axisHalf - 1.04) / (vertical ? .50 : .39));
+    columns[o + 4] = vertical ? 1 : 1 - dispersion * .055 * ease((Math.abs(along) - .440) / .059);
+    columns[o + 5] = side;
+    // At the boundary, blend the coverage of the two lens faces over
+    // a pixel footprint, rather than jumping between two hard masks.
+    const seam = (.5 - Math.abs(along)) * pitch;
+    const seamWidth = .29 * density;
+    const blend = vertical || extension === 0 ? 0 : .5 * (1 - ease(seam / seamWidth));
+    columns[o + 6] = blend;
+    if (blend > 0) {
+      const neighbor = along - Math.sign(along);
+      const otherLens = neighbor * (1.12 - .37 * neighbor * neighbor);
+      columns[o + 7] = axisCenter + side * (reach + otherLens * pitch * extension * (.12 + .78 * shoulder));
+      columns[o + 8] = 1 + extension * (neighbor * neighbor * .25 - .022) * (.56 + .44 * shoulder);
+      columns[o + 9] = extension * pitch * .135 * otherLens * (.42 + .58 * shoulder);
+    }
+  }
+}
+
+function refractedInk(alpha, distance, board) {
+  const { vertical, axisCenter, crossCenter, axisHalf, crossHalf,
+    axisLength, crossLength, rowStride, columnStride } = board;
+  const smooth = smoothDistance(distance);
+  const result = new Uint32Array(alpha.length);
+  const reach = vertical ? 1.262 : 1.218;
+  const pitch = 1.23 * (vertical ? axisHalf * .29 : Math.min(29 * density, crossHalf * .51));
+  for (let a = 2; a < axisLength - 2; a++) {
+    const delta = a - axisCenter;
+    const side = Math.sign(delta);
+    const position = Math.abs(delta) / axisHalf;
+    const shoulder = ease((position - .08) / .91);
+    // The lens brings some flanks into focus while spreading light further
+    // across adjacent curved faces, as in the reference's alternating bands.
+    const focus = Math.cos(Math.PI * (Math.abs(delta) * reach / pitch - .14)) ** 2;
+    const spread = density * (.25 + .10 * shoulder + .08 * focus);
+    for (let c = 2; c < crossLength - 2; c++) {
+      const i = a * columnStride + c * rowStride;
+      const edge = distance[i];
+      if (edge > 9 * density) continue;
+      const white = alpha[i];
+      result[i] = (white << 16) | (white << 8) | white;
+      if (edge < -10 * density) continue;
+      const axialSlope = (smooth[i + columnStride] - smooth[i - columnStride]) / 2;
+      const crossSlope = (smooth[i + rowStride] - smooth[i - rowStride]) / 2;
+      const normal = clamp((c - crossCenter) / crossHalf * 2.8, -1, 1);
+      const orientation = (vertical ? .91 : .60) * side * axialSlope +
+        (vertical ? .39 : .80) * normal * crossSlope;
+      const incidence = ease(Math.abs(orientation) / .43);
+      if (incidence === 0) continue;
+      const ramp = spectrum[orientation < 0 ? 1 : 0];
+      const index = clamp(22 + edge / (spread * (.23 + .77 * incidence)), 0, ramp.length - 1);
+      const low = index | 0;
+      const high = Math.min(low + 1, ramp.length - 1);
+      const part = index - low;
+      const first = ramp[low], second = ramp[high];
+      const red = Math.round(mix(white, mix(first >> 16, second >> 16, part), incidence));
+      const green = Math.round(mix(white, mix((first >> 8) & 255, (second >> 8) & 255, part), incidence));
+      const blue = Math.round(mix(white, mix(first & 255, second & 255, part), incidence));
+      result[i] = (red << 16) | (green << 8) | blue;
+    }
+  }
+  return result;
+}
+
+function shadeFace(data, i, board, axis, cross, color, opacity) {
+  const { alpha, distance, texture, columnStride, rowStride, axisLength, crossLength } = board;
+  if (axis < 1 || cross < 1 || axis >= axisLength - 2 || cross >= crossLength - 2) return;
+  const a = axis | 0;
+  const c = cross | 0;
+  const j = a * columnStride + c * rowStride;
+  const edge = distance[j];
+  if (edge > 10 * density) return;
+  if (edge < -11 * density) {
+    data[i] += 255 * opacity;
+    data[i + 1] += 255 * opacity;
+    data[i + 2] += 255 * opacity;
+    return;
+  }
+
+  const plain = (1 - color) * opacity;
+  const white = plain ? (edge < -2 ? 255 : edge > 2 ? 0 : sample(alpha, board, axis, cross)) * plain : 0;
+  if (color === 0) {
+    data[i] += white;
+    data[i + 1] += white;
+    data[i + 2] += white;
+    return;
+  }
+  const u = axis - a, v = cross - c;
+  const lit = color * opacity;
+  const p = texture[j], q = texture[j + columnStride];
+  const r = texture[j + rowStride], t = texture[j + rowStride + columnStride];
+  const topLeft = (1 - u) * (1 - v) * lit, topRight = u * (1 - v) * lit;
+  const bottomLeft = (1 - u) * v * lit, bottomRight = u * v * lit;
+  data[i] += white + (p >> 16) * topLeft + (q >> 16) * topRight +
+    (r >> 16) * bottomLeft + (t >> 16) * bottomRight;
+  data[i + 1] += white + ((p >> 8) & 255) * topLeft + ((q >> 8) & 255) * topRight +
+    ((r >> 8) & 255) * bottomLeft + ((t >> 8) & 255) * bottomRight;
+  data[i + 2] += white + (p & 255) * topLeft + (q & 255) * topRight +
+    (r & 255) * bottomLeft + (t & 255) * bottomRight;
+}
+
+function renderSpecimen(board, amount, retracting) {
+  const { frame, rest, ctx, distance, pixels, bendCos, bendSin, columns,
+    axisCenter, crossCenter, axisHalf, crossHalf, columnStride, rowStride, vertical } = board;
+  if (Math.abs(amount) < .0005) {
+    ctx.putImageData(rest, 0, 0);
+    return;
+  }
+  mapColumns(board, amount);
+  const data = frame.data;
+  pixels.fill(0xff000000);
+  const extent = Math.max(0, amount);
+  const color = ease((extent - .10) / .85);
+  const retractFade = retracting ? .92 * (1 - ease(extent)) : 0;
+  const a0 = Math.max(0, Math.floor(axisCenter - axisHalf * (1 + extent * .56) - 9 * density));
+  const a1 = Math.min(board.axisLength, Math.ceil(axisCenter + axisHalf * (1 + extent * .56) + 9 * density));
+  const c0 = Math.max(0, Math.floor(crossCenter - crossHalf * (1 + extent * .10) - 9 * density));
+  const c1 = Math.min(board.crossLength, Math.ceil(crossCenter + crossHalf * (1 + extent * .10) + 9 * density));
+  for (let a = a0; a < a1; a++) {
+    const o = a * 10;
+    const axisBase = columns[o];
+    const crossScale = columns[o + 1];
+    const shear = columns[o + 2];
+    const exposure = columns[o + 3] * columns[o + 4];
+    const side = columns[o + 5];
+    const blend = columns[o + 6];
+    const otherAxis = columns[o + 7];
+    const sinShear = vertical ? Math.sin(shear) : 0;
+    const cosShear = vertical ? Math.cos(shear) : 0;
+    for (let c = c0; c < c1; c++) {
+      let axis = axisBase;
+      let cross;
+      if (vertical) {
+        // The vertical version uses a continuous curved lens.
+        const faceAngle = cosShear * bendCos[c] - sinShear * bendSin[c];
+        const curve = crossScale * faceAngle;
+        axis += side * curve;
+        cross = crossCenter + (c - crossCenter) * (1 + .0050 / density * curve);
+      } else {
+        cross = crossCenter + (c - crossCenter) * crossScale + shear;
+      }
+      const pixel = a * columnStride + c * rowStride;
+      // Reflections further from the original ink lose light sooner on return.
+      const fade = retractFade ? retractFade * ease((distance[pixel] / density - 1.5) / 13) : 0;
+      const gain = exposure * (1 - fade);
+      shadeFace(data, pixel * 4, board, axis, cross, color, gain * (1 - blend));
+      if (blend > 0) {
+        const otherCross = crossCenter + (c - crossCenter) * columns[o + 8] + columns[o + 9];
+        shadeFace(data, pixel * 4, board, otherAxis, otherCross, color, gain * blend);
+      }
+    }
+  }
+  ctx.putImageData(frame, 0, 0);
+}
+
+function render(ms) {
+  const phase = phaseAt(ms);
+  for (const board of specimens) renderSpecimen(board, phase, ms > holdEnd);
+}
+
+function startWorkers() {
+  if (!window.Worker || (navigator.hardwareConcurrency || 2) < 2) return null;
+  // Each canvas uses the same renderer as the still. Transfer its buffer
+  // back after each frame so a richer spectrum does not block page input.
+  const source = [
+    '"use strict";',
+    'let board;',
+    'const density = ' + density + ';',
+    'const clamp = ' + clamp.toString() + ';',
+    'const mix = ' + mix.toString() + ';',
+    ...[ease, sample, mapColumns, shadeFace, renderSpecimen].map(fn => fn.toString()),
+    `onmessage = ({ data }) => {
+      if (data.board) {
+        board = data.board;
+        board.ctx = { putImageData() {} };
+        return;
+      }
+      board.frame = { data: new Uint8ClampedArray(data.buffer) };
+      board.pixels = new Uint32Array(data.buffer);
+      renderSpecimen(board, data.phase, data.retracting);
+      postMessage(data.buffer, [data.buffer]);
+    };`,
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  const group = [];
+  try {
+    for (const board of specimens) {
+      const { ctx, rest, frame, pixels, ...geometry } = board;
+      const worker = new Worker(url);
+      const state = { worker, buffer: new ArrayBuffer(frame.data.byteLength), send: null, fail: null };
+      group.push(state);
+      worker.onmessage = ({ data }) => {
+        state.buffer = data;
+        state.send?.(data);
+      };
+      worker.onerror = event => {
+        event.preventDefault();
+        state.failed = true;
+        state.fail?.();
+      };
+      worker.postMessage({ board: geometry });
+    }
+    return group;
+  } catch {
+    for (const { worker } of group) worker.terminate();
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+let showingCrest = true;
+async function renderPlayback(ms) {
+  const phase = phaseAt(ms);
+  if (phase === 1) {
+    if (!showingCrest) {
+      for (const [i, board] of specimens.entries()) board.ctx.putImageData(crestFrames[i], 0, 0);
+    }
+    showingCrest = true;
+    return;
+  }
+  showingCrest = false;
+  if (!workers || phase < .0005) {
+    render(ms);
+    return;
+  }
+  try {
+    const frames = await Promise.all(workers.map(state => new Promise((resolve, reject) => {
+      if (state.failed) {
+        reject();
+        return;
+      }
+      state.send = resolve;
+      state.fail = reject;
+      state.worker.postMessage({ phase, retracting: ms > holdEnd, buffer: state.buffer }, [state.buffer]);
+    })));
+    for (const [i, buffer] of frames.entries()) {
+      specimens[i].ctx.putImageData(new ImageData(new Uint8ClampedArray(buffer), width, height), 0, 0);
+    }
+  } catch {
+    for (const { worker } of workers) worker.terminate();
+    workers = null;
+    render(ms);
+  }
+}
+
+let origin;
+let playing = false;
+let workers;
+async function tick(now) {
+  origin ??= now;
+  const elapsed = Math.min(now - origin, period);
+  await renderPlayback(elapsed);
+  if (elapsed < period) {
+    requestAnimationFrame(tick);
+    return;
+  }
+  playing = false;
+  play.removeAttribute("aria-disabled");
+  play.textContent = "Play once";
+}
+play.addEventListener("click", () => {
+  if (playing) return;
+  playing = true;
+  workers ??= startWorkers();
+  origin = undefined;
+  play.setAttribute("aria-disabled", "true");
+  play.textContent = "Playing…";
+  render(0);
+  showingCrest = false;
+  requestAnimationFrame(tick);
+});
+render(outwardMs);
+const crestFrames = specimens.map(({ frame }) =>
+  new ImageData(new Uint8ClampedArray(frame.data), width, height));
+</script>
+</body>
+</html>

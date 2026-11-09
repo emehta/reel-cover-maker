@@ -1,547 +1,625 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
-<title>Reelic · Refraction</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="dark"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>
+<title>Reelic Refraction</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;900&display=swap">
 <style>
+  /* A dark stage: two studies side by side, one control above them. */
+  :root {
+    --ground: #0b0b0d;
+    --stage: #000000;
+    --rule: #232326;
+    --label: #a9a8a3;
+    --ink: #ecebe6;
+    --control: #19191c;
+    --control-hover: #232327;
+    --control-edge: #34343a;
+    --ui: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color-scheme: dark;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #101010; color: #eae9e5; font: 500 14px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  main { width: min(100%, 1600px); min-height: 100svh; margin: 0 auto; display: grid; align-content: center; padding: clamp(16px, 4vw, 56px); }
-  .controls { display: flex; justify-content: flex-end; margin-bottom: 12px; }
-  #play { width: 100px; height: 38px; border: 1px solid #373737; border-radius: 4px; background: #202020; color: inherit; font: inherit; cursor: pointer; }
-  #play:hover { background: #2c2c2c; }
-  #play:focus-visible { outline: 2px solid #eae9e5; outline-offset: 3px; }
-  #play[aria-disabled="true"] { cursor: default; }
+  html body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 500 14px/1.3 var(--ui);
+  }
+  main {
+    width: min(100%, 1600px);
+    min-height: 100svh;
+    margin: 0 auto;
+    display: grid;
+    align-content: center;
+    gap: 12px;
+    padding-block: clamp(16px, 4vw, 56px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .bar { display: flex; justify-content: flex-end; }
+  #play {
+    min-width: 104px;
+    height: 38px;
+    padding: 0 16px;
+    border: 1px solid var(--control-edge);
+    border-radius: 4px;
+    background: var(--control);
+    color: var(--ink);
+    font: inherit;
+    cursor: pointer;
+  }
+  #play:hover { background: var(--control-hover); }
+  #play:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  #play[aria-disabled="true"] { cursor: default; color: var(--label); }
   .studies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  figure { margin: 0; min-width: 0; background: #000; }
-  canvas { display: block; width: 100%; height: auto; aspect-ratio: 640 / 400; }
-  figcaption { border-top: 1px solid #262626; background: #171717; padding: 12px 14px; }
+  figure { margin: 0; min-width: 0; background: var(--stage); }
+  canvas { display: block; width: 100%; max-width: 100%; height: auto; aspect-ratio: 640 / 400; }
+  figcaption {
+    border-top: 1px solid var(--rule);
+    background: var(--control);
+    color: var(--label);
+    padding: 12px 14px;
+    letter-spacing: 0.01em;
+  }
+  .fallback { padding: 24px; color: var(--label); }
   @media (max-width: 800px) {
     main { align-content: start; }
     .studies { grid-template-columns: minmax(0, 1fr); }
   }
 </style>
-</head>
-<body>
+
 <main>
-  <div class="controls"><button id="play" type="button">Play once</button></div>
-  <div class="studies" id="studies"></div>
+  <div class="bar"><button id="play" type="button">Play once</button></div>
+  <div class="studies">
+    <figure><canvas id="study-h" role="img" aria-label="Horizontal refraction on Ripple"></canvas><figcaption>Horizontal</figcaption></figure>
+    <figure><canvas id="study-v" role="img" aria-label="Vertical refraction on Ripple"></canvas><figcaption>Vertical</figcaption></figure>
+  </div>
 </main>
+
 <script>
-"use strict";
+(() => {
+  "use strict";
 
-const density = 2.5;
-const width = Math.round(640 * density);
-const height = Math.round(400 * density);
-const outwardMs = 210;
-const heldMs = 560;
-const inwardMs = 180;
-const holdEnd = outwardMs + heldMs;
-const period = holdEnd + inwardMs;
-const specimenText = "Ripple";
-const directionNames = ["Horizontal", "Vertical"];
-const root = document.querySelector("#studies");
-const play = document.querySelector("#play");
+  const WORD = "Ripple";
+  const FACE = '"Inter Tight", "Arial Black", "Helvetica Neue", Arial, sans-serif';
+  const WEIGHT = 900;
+  const FLUTES = 64;
+  const WAVES = 32;
 
-const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, n));
-const mix = (a, b, t) => a + (b - a) * t;
-function ease(value) {
-  const t = clamp(value);
-  return t * t * (3 - 2 * t);
-}
-
-function surface() {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  return canvas.getContext("2d", { willReadFrequently: true });
-}
-
-function coverageOf(ctx) {
-  const rgba = ctx.getImageData(0, 0, width, height).data;
-  const result = new Uint8Array(width * height);
-  for (let i = 0; i < result.length; i++) result[i] = rgba[4 * i + 3];
-  return result;
-}
-
-// Positive distances are outside the letter, negative distances inside.
-function distanceOf(alpha) {
-  const distance = new Float32Array(alpha.length);
-  const limit = 16 * density;
-  distance.fill(limit);
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const i = y * width + x;
-      const coverage = alpha[i];
-      const filled = coverage >= 128;
-      if (coverage > 0 && coverage < 255) {
-        distance[i] = Math.abs(.5 - coverage / 255);
-      } else if ((alpha[i - 1] >= 128) !== filled || (alpha[i + 1] >= 128) !== filled ||
-          (alpha[i - width] >= 128) !== filled || (alpha[i + width] >= 128) !== filled) {
-        distance[i] = .5;
-      }
-    }
-  }
-  const diagonal = Math.SQRT2;
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const i = y * width + x;
-      distance[i] = Math.min(distance[i], distance[i - 1] + 1, distance[i - width] + 1,
-        distance[i - width - 1] + diagonal, distance[i - width + 1] + diagonal);
-    }
-  }
-  for (let y = height - 2; y > 0; y--) {
-    for (let x = width - 2; x > 0; x--) {
-      const i = y * width + x;
-      distance[i] = Math.min(distance[i], distance[i + 1] + 1, distance[i + width] + 1,
-        distance[i + width + 1] + diagonal, distance[i + width - 1] + diagonal);
-    }
-  }
-  for (let i = 0; i < distance.length; i++) {
-    if (alpha[i] >= 128) distance[i] *= -1;
-  }
-  return distance;
-}
-
-function smoothDistance(distance) {
-  const radius = Math.ceil(density * 2);
-  const span = radius * 2 + 1;
-  const horizontal = new Float32Array(distance.length);
-  const smooth = new Float32Array(distance.length);
-  for (let y = 0; y < height; y++) {
-    const start = y * width;
-    let sum = 0;
-    for (let x = 0; x < span - 1; x++) sum += distance[start + x];
-    for (let x = radius; x < width - radius; x++) {
-      sum += distance[start + x + radius];
-      horizontal[start + x] = sum / span;
-      sum -= distance[start + x - radius];
-    }
-  }
-  for (let x = radius; x < width - radius; x++) {
-    let sum = 0;
-    for (let y = 0; y < span - 1; y++) sum += horizontal[y * width + x];
-    for (let y = radius; y < height - radius; y++) {
-      sum += horizontal[(y + radius) * width + x];
-      smooth[y * width + x] = sum / span;
-      sum -= horizontal[(y - radius) * width + x];
-    }
-  }
-  return smooth;
-}
-
-function makeSpecimen(text, vertical, figure) {
-  const ctx = surface();
-  const type = surface();
-  figure.append(ctx.canvas);
-  ctx.canvas.setAttribute("role", "img");
-  ctx.canvas.setAttribute("aria-label", (vertical ? "Vertical" : "Horizontal") + " refraction on " + text);
-  const mx = (width - 1) / 2;
-  const my = (height - 1) / 2;
-  type.font = '900 200px "Arial Black", Arial, sans-serif';
-  const bounds = type.measureText(text);
-  const extraWeight = 4;
-  const inkWidth = bounds.actualBoundingBoxLeft + bounds.actualBoundingBoxRight + extraWeight;
-  const inkHeight = bounds.actualBoundingBoxAscent + bounds.actualBoundingBoxDescent + extraWeight;
-  const scale = Math.min(428 * density / inkWidth, 146 * density / inkHeight);
-  const halfX = inkWidth * scale / 2;
-  const halfY = inkHeight * scale / 2;
-  type.fillStyle = "#fff";
-  type.strokeStyle = "#fff";
-  type.lineWidth = extraWeight;
-  type.lineJoin = "round";
-  type.setTransform(scale, 0, 0, scale, mx + scale * (bounds.actualBoundingBoxLeft + extraWeight / 2) - halfX,
-    my + scale * (bounds.actualBoundingBoxAscent + extraWeight / 2) - halfY);
-  type.strokeText(text, 0, 0);
-  type.fillText(text, 0, 0);
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, width, height);
-  ctx.drawImage(type.canvas, 0, 0);
-  const rest = ctx.getImageData(0, 0, width, height);
-  const frame = ctx.createImageData(width, height);
-  const rowStride = vertical ? 1 : width;
-  const columnStride = vertical ? width : 1;
-  const axisLength = vertical ? height : width;
-  const crossLength = vertical ? width : height;
-  const crossCenter = vertical ? mx : my;
-  const crossHalf = vertical ? halfX : halfY;
-  const bendCos = new Float32Array(crossLength);
-  const bendSin = new Float32Array(crossLength);
-  for (let c = 0; c < crossLength; c++) {
-    const normal = clamp((c - crossCenter) / crossHalf, -1.2, 1.2);
-    const bend = normal * normal * 1.82 + .18 * (1 - Math.cos(normal * 17));
-    bendCos[c] = Math.cos(bend);
-    bendSin[c] = Math.sin(bend);
-  }
-  const alpha = coverageOf(type);
-  const distance = distanceOf(alpha);
-  const texture = refractedInk(alpha, distance, {
-    vertical, axisCenter: vertical ? my : mx, crossCenter,
-    axisHalf: vertical ? halfY : halfX, crossHalf,
-    axisLength, crossLength, rowStride, columnStride,
-  });
-  return {
-    text, vertical, ctx, rest, frame, alpha, distance, texture,
-    pixels: new Uint32Array(frame.data.buffer), bendCos, bendSin,
-    rowStride, columnStride, axisLength, crossLength,
-    axisCenter: vertical ? my : mx, crossCenter,
-    axisHalf: vertical ? halfY : halfX, crossHalf,
-    columns: new Float32Array(axisLength * 10),
+  // The two studies. Lengths are in units of the word's ink: `pitch` and
+  // `core` against the half extent along the axis the glass bends.
+  const STUDIES = {
+    h: {
+      axis: 0,
+      pitch: 0.07,       // flute width, of the ink's half width
+      core: 0.6,         // flutes this close to the middle keep the letters exactly
+      edge: 1.0,         // where the word ends along the axis
+      fan: 0.12,         // the end letters drawn out this much of the half width
+      fanPow: 1,
+      fanTail: 0,
+      pullIn: 0,
+      echoes: 6,         // flutes past the word's end that carry an echo
+      echoAnchor: 0.99,  // the first echo looks right at the word's end
+      echoStep: 0.16,    // and each next one further out, so its copies thin away
+      squeeze: 0.04,     // a flute shows a strip this much narrower than itself
+      squeezeEcho: -0.35, // an echo sees a wider strip than itself, so it thins
+      curve: 0.14,       // the convex face of each flute
+      bendFloor: 0,      // the middle flutes do not bend at all
+      tilt: 0,
+      face: 0.4,         // light split across a flute's face, of its width
+      kappaIn: 0,
+      kappaOut: -0.32,   // light split per pixel an echo is carried
+      kappaFan: -0.25,   // and per pixel the end letters are drawn out
+      kappaTilt: 0,
+      fmax: 22,          // widest fringe, in css px
+      echoFade: 0.12,    // the furthest echo, this much dimmer
+      echoSoft: 0.3,     // and this much softer, in css px
+      seam: 0,
+      seamLight: 0,
+    },
+    v: {
+      axis: 1,
+      pitch: 0.6,
+      core: 0.0,
+      edge: 1.0,
+      fan: 0.8,
+      fanPow: 2,
+      fanTail: 0.3,
+      pullIn: 0,
+      echoes: 0,
+      echoAnchor: 0,
+      echoStep: 0,
+      squeeze: 0.22,
+      squeezeEcho: 0.2,
+      curve: 0.42,
+      bendFloor: 0.75,
+      tilt: 0.2,
+      face: 0.45,
+      kappaIn: 0,
+      kappaOut: 0,
+      kappaFan: -0.22,
+      kappaTilt: -0.6,
+      fmax: 22,
+      echoFade: 0.2,
+      echoSoft: 0.3,
+      seam: 0.97,
+      seamLight: 0.55,
+    },
   };
-}
 
-// Median RGB cross-sections from the cool upper crest and warm inner
-// counter of the 2024 reference. Join the sampled profiles to white and black.
-const spectrum = [
-  [
-    0xffffff, 0xffffff, 0xfcfefd, 0xfcfefd, 0xfcfefd, 0xfcfefd, 0xfcfefd, 0xfcfefd,
-    0xfcfefd, 0xfafdfd, 0xf9fefd, 0xf7feff, 0xf4fdff, 0xf2fcff, 0xebfeff, 0xdcfcfe,
-    0xc4fefd, 0xa1fffd, 0x77fcf7, 0x4bf7f4, 0x2cf0f7, 0x19e2fc, 0x11d5ff, 0x0bbeff,
-    0x0aa0fd, 0x127ffc, 0x1558f7, 0x1732ef, 0x221fe2, 0x2914c4, 0x2910a2, 0x1d0f76,
-    0x180f59, 0x150e47, 0x130c3b, 0x110c2e, 0x110d26, 0x0f111f, 0x08070e, 0x020204,
-    0x000000,
-  ],
-  [
-    0xffffff, 0xffffff, 0xfdfefe, 0xfdfdff, 0xfefeff, 0xfdfdfd, 0xfdfdfb, 0xfefdf9,
-    0xfefdf9, 0xfefdf9, 0xfefdf8, 0xfdfcf1, 0xfefbe6, 0xfffbd2, 0xfffabb, 0xfffa9f,
-    0xfff684, 0xfcf36b, 0xfdf055, 0xfbe93c, 0xfee02d, 0xfed228, 0xffbf23, 0xffa820,
-    0xff8f1b, 0xf8761a, 0xf3611c, 0xe44d21, 0xcb361e, 0xb32d26, 0x982628, 0x7b242c,
-    0x61242f, 0x401724, 0x321724, 0x231420, 0x201627, 0x08070e, 0x020204, 0x000000,
-  ],
-];
+  // A harness may try other settings before the page builds.
+  const tune = window.__reelicTune || {};
+  Object.assign(STUDIES.h, tune.h);
+  Object.assign(STUDIES.v, tune.v);
 
-const specimens = directionNames.map((direction, index) => {
-  const figure = document.createElement("figure");
-  const board = makeSpecimen(specimenText, index === 1, figure);
-  const label = document.createElement("figcaption");
-  label.textContent = direction;
-  figure.append(label);
-  root.append(figure);
-  return board;
-});
+  // Timing, in ms. Out on a spring with a little bounce, held, then pulled
+  // back in on a stiffer spring that barely overshoots.
+  const T = {
+    outW: 2 * Math.PI * 3.4, outZ: 0.52,
+    inW: 2 * Math.PI * 2.4, inZ: 0.78,
+    hold: 800,          // when the return starts
+    delayOut: 45,       // the outermost flutes lag on the way out
+    delayIn: 60,        // and lead on the way back
+    end: 1450,
+  };
+  Object.assign(T, tune.t);
 
-// One quick opening, a stationary crest, and one quick return.
-function phaseAt(ms) {
-  if (ms < outwardMs) return ease(ms / outwardMs);
-  if (ms <= holdEnd) return 1;
-  return 1 - ease((ms - holdEnd) / inwardMs);
-}
+  // ---------------------------------------------------------------- light
+  // CIE 1931 2-degree observer (Wyman, Sloan and Shirley's fit) taken into
+  // linear sRGB, signed, each channel normalised so the whole spectrum sums
+  // to white. Bend per wavelength is mostly linear with a little Cauchy, as
+  // fitted to the measured fringes of the 2024 poster.
+  function spectrum(n) {
+    const g = (x, mu, a, b) => Math.exp(-0.5 * ((x - mu) / (x < mu ? a : b)) ** 2);
+    const rows = [];
+    const sum = [0, 0, 0];
+    const cau = (l) => 1 / (l * l);
+    const span = cau(400) - cau(700);
+    for (let i = 0; i < n; i++) {
+      const l = 400 + 300 * (i + 0.5) / n;
+      const X = 1.056 * g(l, 599.8, 37.9, 31.0) + 0.362 * g(l, 442.0, 16.0, 26.7) - 0.065 * g(l, 501.1, 20.4, 26.2);
+      const Y = 0.821 * g(l, 568.8, 46.9, 40.5) + 0.286 * g(l, 530.9, 16.3, 31.1);
+      const Z = 1.217 * g(l, 437.0, 11.8, 36.0) + 0.681 * g(l, 459.0, 26.0, 13.8);
+      const rgb = [
+        3.2406 * X - 1.5372 * Y - 0.4986 * Z,
+        -0.9689 * X + 1.8758 * Y + 0.0415 * Z,
+        0.0557 * X - 0.2040 * Y + 1.0570 * Z,
+      ];
+      rgb.forEach((v, k) => { sum[k] += v; });
+      const bend = 0.9 * (550 - l) / 300 + 0.1 * (cau(l) - cau(550)) / span;
+      rows.push([...rgb, bend]);
+    }
+    const out = new Float32Array(n * 4);
+    rows.forEach((r, i) => {
+      out[i * 4] = r[0] / sum[0];
+      out[i * 4 + 1] = r[1] / sum[1];
+      out[i * 4 + 2] = r[2] / sum[2];
+      out[i * 4 + 3] = r[3];
+    });
+    return out;
+  }
 
-function sample(data, board, axis, cross) {
-  if (axis < 0 || cross < 0 || axis >= board.axisLength - 1 || cross >= board.crossLength - 1) return 0;
-  const a = axis | 0;
-  const c = cross | 0;
-  const column = board.columnStride;
-  const i = a * column + c * board.rowStride;
-  const j = i + board.rowStride;
-  const u = axis - a;
-  const upper = data[i] + (data[i + column] - data[i]) * u;
-  const lower = data[j] + (data[j + column] - data[j]) * u;
-  return upper + (lower - upper) * (cross - c);
-}
+  // ---------------------------------------------------------------- motion
+  function spring(t, w, z) {
+    if (t <= 0) return [0, 0];
+    const wd = w * Math.sqrt(1 - z * z);
+    const e = Math.exp(-z * w * t);
+    return [1 - e * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t)), e * (w * w / wd) * Math.sin(wd * t)];
+  }
+  const peakVelocity = (() => {
+    let top = 0;
+    for (let t = 0; t < 0.4; t += 0.001) top = Math.max(top, spring(t, T.outW, T.outZ)[1]);
+    return top;
+  })();
 
-// Each flute has a convex optical face and a fine crease where it meets
-// the next. Both halves use identical depth with opposite displacement.
-function mapColumns(board, amount) {
-  const { axisLength, axisHalf, crossHalf, axisCenter, columns, vertical } = board;
-  const extension = Math.max(0, amount);
-  const pitch = (vertical ? axisHalf * .29 : Math.min(29 * density, crossHalf * .51)) * (1 + extension * .23);
-  const dispersion = extension ** .83;
-  for (let i = 0; i < axisLength; i++) {
-    const delta = i - axisCenter;
-    const side = Math.sign(delta);
-    const distance = Math.abs(delta);
-    const band = Math.round(distance / pitch);
-    const along = distance / pitch - band;
-    const shoulder = ease((distance / axisHalf - .08) / .91);
-    const lens = along * (1.12 - .37 * along * along);
-    const reach = distance / (1 + extension * (vertical ? .262 : .218));
-    const fold = lens * pitch * extension * (.12 + .78 * shoulder);
-    const o = i * 10;
-    columns[o] = axisCenter + side * (reach + (vertical ? 0 : fold));
-    columns[o + 1] = vertical
-      ? extension * pitch * .68 * ease((distance / axisHalf - .34) / .76)
-      : 1 + extension * (along * along * .25 - .022) * (.56 + .44 * shoulder);
-    columns[o + 2] = vertical
-      ? 2 * Math.PI * distance / pitch + 1.42
-      : extension * pitch * .135 * lens * (.42 + .58 * shoulder);
-    columns[o + 3] = 1 - .30 * ease((distance / axisHalf - 1.04) / (vertical ? .50 : .39));
-    columns[o + 4] = vertical ? 1 : 1 - dispersion * .055 * ease((Math.abs(along) - .440) / .059);
-    columns[o + 5] = side;
-    // At the boundary, blend the coverage of the two lens faces over
-    // a pixel footprint, rather than jumping between two hard masks.
-    const seam = (.5 - Math.abs(along)) * pitch;
-    const seamWidth = .29 * density;
-    const blend = vertical || extension === 0 ? 0 : .5 * (1 - ease(seam / seamWidth));
-    columns[o + 6] = blend;
-    if (blend > 0) {
-      const neighbor = along - Math.sign(along);
-      const otherLens = neighbor * (1.12 - .37 * neighbor * neighbor);
-      columns[o + 7] = axisCenter + side * (reach + otherLens * pitch * extension * (.12 + .78 * shoulder));
-      columns[o + 8] = 1 + extension * (neighbor * neighbor * .25 - .022) * (.56 + .44 * shoulder);
-      columns[o + 9] = extension * pitch * .135 * otherLens * (.42 + .58 * shoulder);
+  // Strength and speed of each flute at time ms (null = held at the crest).
+  function flutesAt(ms, geo, out, speed) {
+    for (let i = 0; i < FLUTES; i++) {
+      const c = Math.abs(i - FLUTES / 2) * geo.pitch;
+      const r = Math.min(1, Math.max(0, (c / geo.half - geo.core) / (geo.reach - geo.core)));
+      if (ms === null) { out[i] = 1; speed[i] = 0; continue; }
+      if (ms <= 0 || ms >= T.end) { out[i] = 0; speed[i] = 0; continue; }
+      const [xo, vo] = spring((ms - T.delayOut * r) / 1000, T.outW, T.outZ);
+      const [xr, vr] = spring((ms - T.hold + T.delayIn * r) / 1000, T.inW, T.inZ);
+      out[i] = xo * (1 - xr);
+      speed[i] = (vo * (1 - xr) - xo * vr) / peakVelocity;
     }
   }
-}
 
-function refractedInk(alpha, distance, board) {
-  const { vertical, axisCenter, crossCenter, axisHalf, crossHalf,
-    axisLength, crossLength, rowStride, columnStride } = board;
-  const smooth = smoothDistance(distance);
-  const result = new Uint32Array(alpha.length);
-  const reach = vertical ? 1.262 : 1.218;
-  const pitch = 1.23 * (vertical ? axisHalf * .29 : Math.min(29 * density, crossHalf * .51));
-  for (let a = 2; a < axisLength - 2; a++) {
-    const delta = a - axisCenter;
-    const side = Math.sign(delta);
-    const position = Math.abs(delta) / axisHalf;
-    const shoulder = ease((position - .08) / .91);
-    // The lens brings some flanks into focus while spreading light further
-    // across adjacent curved faces, as in the reference's alternating bands.
-    const focus = Math.cos(Math.PI * (Math.abs(delta) * reach / pitch - .14)) ** 2;
-    const spread = density * (.25 + .10 * shoulder + .08 * focus);
-    for (let c = 2; c < crossLength - 2; c++) {
-      const i = a * columnStride + c * rowStride;
-      const edge = distance[i];
-      if (edge > 9 * density) continue;
-      const white = alpha[i];
-      result[i] = (white << 16) | (white << 8) | white;
-      if (edge < -10 * density) continue;
-      const axialSlope = (smooth[i + columnStride] - smooth[i - columnStride]) / 2;
-      const crossSlope = (smooth[i + rowStride] - smooth[i - rowStride]) / 2;
-      const normal = clamp((c - crossCenter) / crossHalf * 2.8, -1, 1);
-      const orientation = (vertical ? .91 : .60) * side * axialSlope +
-        (vertical ? .39 : .80) * normal * crossSlope;
-      const incidence = ease(Math.abs(orientation) / .43);
-      if (incidence === 0) continue;
-      const ramp = spectrum[orientation < 0 ? 1 : 0];
-      const index = clamp(22 + edge / (spread * (.23 + .77 * incidence)), 0, ramp.length - 1);
-      const low = index | 0;
-      const high = Math.min(low + 1, ramp.length - 1);
-      const part = index - low;
-      const first = ramp[low], second = ramp[high];
-      const red = Math.round(mix(white, mix(first >> 16, second >> 16, part), incidence));
-      const green = Math.round(mix(white, mix((first >> 8) & 255, (second >> 8) & 255, part), incidence));
-      const blue = Math.round(mix(white, mix(first & 255, second & 255, part), incidence));
-      result[i] = (red << 16) | (green << 8) | blue;
-    }
-  }
-  return result;
-}
-
-function shadeFace(data, i, board, axis, cross, color, opacity) {
-  const { alpha, distance, texture, columnStride, rowStride, axisLength, crossLength } = board;
-  if (axis < 1 || cross < 1 || axis >= axisLength - 2 || cross >= crossLength - 2) return;
-  const a = axis | 0;
-  const c = cross | 0;
-  const j = a * columnStride + c * rowStride;
-  const edge = distance[j];
-  if (edge > 10 * density) return;
-  if (edge < -11 * density) {
-    data[i] += 255 * opacity;
-    data[i + 1] += 255 * opacity;
-    data[i + 2] += 255 * opacity;
-    return;
-  }
-
-  const plain = (1 - color) * opacity;
-  const white = plain ? (edge < -2 ? 255 : edge > 2 ? 0 : sample(alpha, board, axis, cross)) * plain : 0;
-  if (color === 0) {
-    data[i] += white;
-    data[i + 1] += white;
-    data[i + 2] += white;
-    return;
-  }
-  const u = axis - a, v = cross - c;
-  const lit = color * opacity;
-  const p = texture[j], q = texture[j + columnStride];
-  const r = texture[j + rowStride], t = texture[j + rowStride + columnStride];
-  const topLeft = (1 - u) * (1 - v) * lit, topRight = u * (1 - v) * lit;
-  const bottomLeft = (1 - u) * v * lit, bottomRight = u * v * lit;
-  data[i] += white + (p >> 16) * topLeft + (q >> 16) * topRight +
-    (r >> 16) * bottomLeft + (t >> 16) * bottomRight;
-  data[i + 1] += white + ((p >> 8) & 255) * topLeft + ((q >> 8) & 255) * topRight +
-    ((r >> 8) & 255) * bottomLeft + ((t >> 8) & 255) * bottomRight;
-  data[i + 2] += white + (p & 255) * topLeft + (q & 255) * topRight +
-    (r & 255) * bottomLeft + (t & 255) * bottomRight;
-}
-
-function renderSpecimen(board, amount, retracting) {
-  const { frame, rest, ctx, distance, pixels, bendCos, bendSin, columns,
-    axisCenter, crossCenter, axisHalf, crossHalf, columnStride, rowStride, vertical } = board;
-  if (Math.abs(amount) < .0005) {
-    ctx.putImageData(rest, 0, 0);
-    return;
-  }
-  mapColumns(board, amount);
-  const data = frame.data;
-  pixels.fill(0xff000000);
-  const extent = Math.max(0, amount);
-  const color = ease((extent - .10) / .85);
-  const retractFade = retracting ? .92 * (1 - ease(extent)) : 0;
-  const a0 = Math.max(0, Math.floor(axisCenter - axisHalf * (1 + extent * .56) - 9 * density));
-  const a1 = Math.min(board.axisLength, Math.ceil(axisCenter + axisHalf * (1 + extent * .56) + 9 * density));
-  const c0 = Math.max(0, Math.floor(crossCenter - crossHalf * (1 + extent * .10) - 9 * density));
-  const c1 = Math.min(board.crossLength, Math.ceil(crossCenter + crossHalf * (1 + extent * .10) + 9 * density));
-  for (let a = a0; a < a1; a++) {
-    const o = a * 10;
-    const axisBase = columns[o];
-    const crossScale = columns[o + 1];
-    const shear = columns[o + 2];
-    const exposure = columns[o + 3] * columns[o + 4];
-    const side = columns[o + 5];
-    const blend = columns[o + 6];
-    const otherAxis = columns[o + 7];
-    const sinShear = vertical ? Math.sin(shear) : 0;
-    const cosShear = vertical ? Math.cos(shear) : 0;
-    for (let c = c0; c < c1; c++) {
-      let axis = axisBase;
-      let cross;
-      if (vertical) {
-        // The vertical version uses a continuous curved lens.
-        const faceAngle = cosShear * bendCos[c] - sinShear * bendSin[c];
-        const curve = crossScale * faceAngle;
-        axis += side * curve;
-        cross = crossCenter + (c - crossCenter) * (1 + .0050 / density * curve);
-      } else {
-        cross = crossCenter + (c - crossCenter) * crossScale + shear;
+  // ---------------------------------------------------------------- ink
+  // Exact Euclidean distance (Felzenszwalb and Huttenlocher) on a mask drawn
+  // at twice the canvas resolution, then averaged down, so the letters stay
+  // sharp however the glass magnifies them.
+  function edt(grid, w, h) {
+    const n = Math.max(w, h);
+    const f = new Float64Array(n), d = new Float64Array(n), z = new Float64Array(n + 1);
+    const v = new Int32Array(n);
+    const pass = (len, get, set) => {
+      for (let q = 0; q < len; q++) f[q] = get(q);
+      let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+      for (let q = 1; q < len; q++) {
+        let s;
+        for (;;) {
+          const p = v[k];
+          s = ((f[q] + q * q) - (f[p] + p * p)) / (2 * q - 2 * p);
+          if (s <= z[k]) { k--; if (k < 0) { k = 0; break; } } else break;
+        }
+        k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
       }
-      const pixel = a * columnStride + c * rowStride;
-      // Reflections further from the original ink lose light sooner on return.
-      const fade = retractFade ? retractFade * ease((distance[pixel] / density - 1.5) / 13) : 0;
-      const gain = exposure * (1 - fade);
-      shadeFace(data, pixel * 4, board, axis, cross, color, gain * (1 - blend));
-      if (blend > 0) {
-        const otherCross = crossCenter + (c - crossCenter) * columns[o + 8] + columns[o + 9];
-        shadeFace(data, pixel * 4, board, otherAxis, otherCross, color, gain * blend);
+      k = 0;
+      for (let q = 0; q < len; q++) {
+        while (z[k + 1] < q) k++;
+        const p = v[k];
+        d[q] = (q - p) * (q - p) + f[p];
+      }
+      for (let q = 0; q < len; q++) set(q, d[q]);
+    };
+    for (let x = 0; x < w; x++) pass(h, (y) => grid[y * w + x], (y, val) => { grid[y * w + x] = val; });
+    for (let y = 0; y < h; y++) pass(w, (x) => grid[y * w + x], (x, val) => { grid[y * w + x] = val; });
+  }
+
+  function inkField(width, height) {
+    const probe = document.createElement("canvas").getContext("2d");
+    probe.font = `${WEIGHT} 200px ${FACE}`;
+    const m = probe.measureText(WORD);
+    const inkW = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+    const inkH = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+    // Wide enough to read at once, with room left for the echoes either way.
+    const size = 200 * Math.min(0.5 * width / inkW, 0.3 * height / inkH);
+    const k = size / 200;
+    const half = { x: inkW * k / 2, y: inkH * k / 2 };
+    const centre = { x: width / 2, y: height / 2 };
+    const margin = Math.ceil(Math.max(40, 0.12 * inkH * k));
+    const x0 = Math.floor(centre.x - half.x - margin), y0 = Math.floor(centre.y - half.y - margin);
+    const w = Math.ceil(2 * half.x + 2 * margin), h = Math.ceil(2 * half.y + 2 * margin);
+    const S = 2;
+    const big = document.createElement("canvas");
+    big.width = w * S; big.height = h * S;
+    const ctx = big.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#fff";
+    ctx.font = `${WEIGHT} ${size * S}px ${FACE}`;
+    const ox = (centre.x - half.x - x0) * S + m.actualBoundingBoxLeft * k * S;
+    const oy = (centre.y - half.y - y0) * S + m.actualBoundingBoxAscent * k * S;
+    ctx.fillText(WORD, ox, oy);
+    const alpha = ctx.getImageData(0, 0, w * S, h * S).data;
+    const N = w * S * h * S;
+    const outside = new Float64Array(N), inside = new Float64Array(N);
+    const BIG = 1e12;
+    for (let i = 0; i < N; i++) {
+      const on = alpha[i * 4 + 3] >= 128;
+      outside[i] = on ? 0 : BIG;
+      inside[i] = on ? BIG : 0;
+    }
+    edt(outside, w * S, h * S);
+    edt(inside, w * S, h * S);
+    const sdf = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let sum = 0;
+        for (let dy = 0; dy < S; dy++) {
+          for (let dx = 0; dx < S; dx++) {
+            const i = (y * S + dy) * w * S + x * S + dx;
+            const o = outside[i], n = inside[i];
+            sum += o > 0 ? Math.sqrt(o) - 0.5 : 0.5 - Math.sqrt(n);
+          }
+        }
+        sdf[y * w + x] = sum / (S * S) / S;
       }
     }
+    return { sdf, x0, y0, w, h, centre, half };
   }
-  ctx.putImageData(frame, 0, 0);
-}
 
-function render(ms) {
-  const phase = phaseAt(ms);
-  for (const board of specimens) renderSpecimen(board, phase, ms > holdEnd);
-}
+  // ---------------------------------------------------------------- GPU
+  const VERT = `#version 300 es
+  in vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
 
-function startWorkers() {
-  if (!window.Worker || (navigator.hardwareConcurrency || 2) < 2) return null;
-  // Each canvas uses the same renderer as the still. Transfer its buffer
-  // back after each frame so a richer spectrum does not block page input.
-  const source = [
-    '"use strict";',
-    'let board;',
-    'const density = ' + density + ';',
-    'const clamp = ' + clamp.toString() + ';',
-    'const mix = ' + mix.toString() + ';',
-    ...[ease, sample, mapColumns, shadeFace, renderSpecimen].map(fn => fn.toString()),
-    `onmessage = ({ data }) => {
-      if (data.board) {
-        board = data.board;
-        board.ctx = { putImageData() {} };
-        return;
-      }
-      board.frame = { data: new Uint8ClampedArray(data.buffer) };
-      board.pixels = new Uint32Array(data.buffer);
-      renderSpecimen(board, data.phase, data.retracting);
-      postMessage(data.buffer, [data.buffer]);
-    };`,
-  ].join("\n");
-  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-  const group = [];
-  try {
-    for (const board of specimens) {
-      const { ctx, rest, frame, pixels, ...geometry } = board;
-      const worker = new Worker(url);
-      const state = { worker, buffer: new ArrayBuffer(frame.data.byteLength), send: null, fail: null };
-      group.push(state);
-      worker.onmessage = ({ data }) => {
-        state.buffer = data;
-        state.send?.(data);
-      };
-      worker.onerror = event => {
-        event.preventDefault();
-        state.failed = true;
-        state.fail?.();
-      };
-      worker.postMessage({ board: geometry });
+  const FRAG = `#version 300 es
+  precision highp float;
+  uniform vec2 uRes, uCentre;
+  uniform float uAxis, uHalf, uPitch, uCore, uEdge, uPullIn, uSqueeze, uSqueezeEcho, uCurve, uBendFloor, uFace, uEchoFade, uEchoSoft;
+  uniform float uTilt, uKappaIn, uKappaOut, uKappaTilt, uEchoAnchor, uEchoStep, uFan, uFanPow, uFanTail, uKappaFan;
+  uniform float uFmax, uSoftSplit, uSoftMax, uFlash, uSigma0, uSigma1, uExposure, uToneNorm;
+  uniform float uReach, uSeam, uSeamLight, uSeamWidth;
+  uniform float uS[${FLUTES}], uV[${FLUTES}];
+  uniform vec4 uW[${WAVES}];
+  uniform sampler2D uSdf;
+  uniform vec4 uSdfRect;
+  out vec4 outColor;
+
+  float field(float a, float b) {
+    vec2 xy = uCentre + (uAxis < 0.5 ? vec2(a, b) : vec2(b, a));
+    return texture(uSdf, (xy - uSdfRect.xy) * uSdfRect.zw).r;
+  }
+  float cover(float d, float s) { return 1.0 / (1.0 + exp(1.702 * d / s)); }
+  int slot(float k) { return clamp(int(k) + ${FLUTES / 2}, 0, ${FLUTES - 1}); }
+
+  // One flute: where it looks into the ink, wavelength by wavelength.
+  vec3 flute(float k, float u, float a, float b) {
+    int i = slot(k);
+    float s = uS[i];
+    float c = k * uPitch;
+    float ac = abs(c);
+    float r = ac / uHalf;
+    float sig = mix(uSigma0, uSigma1, clamp(abs(s), 0.0, 1.0));
+    if (abs(s) < 1e-4) return vec3(cover(field(a, b), uSigma0));
+    // Inside the word the end letters are drawn out a little. Past its end
+    // each flute looks back into the end letter, a step deeper each time,
+    // as if the letter were reflected through the glass.
+    float inner = min(max(0.0, ac - uCore * uHalf), (uEdge - uCore) * uHalf);
+    float outer = max(0.0, ac - uEdge * uHalf);
+    float echo = step(0.5 * uPitch, outer) * step(0.0001, uEchoAnchor);
+    float inPart = -s * sign(c) * uPullIn * inner;
+    // A fan of prisms: each flute shows the word moved out by its own step,
+    // more the further out it sits, as in the sliced 3.
+    float ft = max(0.0, (r - uCore) / (uEdge - uCore));
+    // Past the word's end the fan steadies, so each further flute slides off
+    // the end letter and its copy thins away by itself.
+    float fan = -s * sign(c) * uFan * uHalf * (ft <= 1.0 ? pow(ft, uFanPow) : 1.0 + uFanTail * (ft - 1.0)) * (1.0 - echo);
+    // The echoes run out as far as the glass is strong, so on the way back
+    // the furthest go first and the rest draw in toward the letter.
+    float run = outer / max(s, 0.001);
+    float view = uEchoAnchor * uHalf + uEchoStep * (run - 0.5 * uPitch);
+    float outPart = echo * sign(c) * (view - ac);
+    float zone = smoothstep(uCore, uEdge, r);
+    // The face of each flute: a convex strip, narrower than the flute.
+    float bend = s * mix(uBendFloor, 1.0, zone);
+    float sq = mix(uSqueeze, uSqueezeEcho, echo);
+    float h = u * (1.0 - bend * sq) + bend * uCurve * (4.0 * u * u * u - u);
+    float dh = (1.0 - bend * sq) + bend * uCurve * (12.0 * u * u - 1.0);
+    // Each slat leans a little differently, so its view steps up or down.
+    float tilt = bend * uTilt * sin(2.39996 * k + 0.6) * uPitch;
+    float D = inPart + outPart + fan + tilt + (h - u) * uPitch;
+    float split = uKappaIn * inPart + uKappaOut * outPart + uKappaFan * fan + uKappaTilt * tilt
+      + bend * uFace * 2.0 * u * uPitch;
+    split *= 1.0 + uFlash * abs(uV[i]);
+    split = split / (1.0 + abs(split) / uFmax);
+    float far = clamp((ac - uEdge * uHalf) / max(1.0, (uReach - uEdge) * uHalf), 0.0, 1.0);
+    float beyond = max(echo, step(uHalf + 0.5 * uPitch, ac) * step(0.0001, uFan));
+    sig += s * far * uEchoSoft;
+    // A wide fringe is a soft one, in the poster's proportion, but only
+    // across edges that face along the bend: the light is not split the
+    // other way, so those edges stay as sharp as the letters.
+    float soft = min(sqrt(uSoftSplit) * abs(split), uSoftMax);
+    // Echoes past the word's end come and go with the glass, and the
+    // furthest are dimmest, down to nothing at the last.
+    float fade = (1.0 - uEchoFade * far) * (1.0 - smoothstep(0.7, 1.0, far));
+    float bright = mix(1.0, fade * clamp(s, 0.0, 1.0), beyond);
+    float mid = field(a + D, b);
+    float along = clamp(0.5 * abs(field(a + D + 1.0, b) - field(a + D - 1.0, b)), 0.0, 1.0);
+    float se = sqrt(sig * sig + along * along * (0.16 * dh * dh + soft * soft));
+    if (abs(mid) > abs(split) * 0.6 + 4.5 * se + 2.0) return vec3(mid < 0.0 ? bright : 0.0);
+    vec3 acc = vec3(0.0);
+    for (int w = 0; w < ${WAVES}; w++) {
+      acc += cover(field(a + D + split * uW[w].w, b), se) * uW[w].rgb;
     }
-    return group;
-  } catch {
-    for (const { worker } of group) worker.terminate();
-    return null;
-  } finally {
-    URL.revokeObjectURL(url);
+    return acc * bright;
   }
-}
 
-let showingCrest = true;
-async function renderPlayback(ms) {
-  const phase = phaseAt(ms);
-  if (phase === 1) {
-    if (!showingCrest) {
-      for (const [i, board] of specimens.entries()) board.ctx.putImageData(crestFrames[i], 0, 0);
-    }
-    showingCrest = true;
-    return;
+  vec3 tone(vec3 x) {
+    vec3 hi = 0.6 + 0.4 * (1.0 - exp(-(x - 0.6) / 0.4));
+    return mix(x, hi, step(0.6, x));
   }
-  showingCrest = false;
-  if (!workers || phase < .0005) {
-    render(ms);
-    return;
+  vec3 encode(vec3 c) {
+    c = clamp(c, 0.0, 1.0);
+    return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
   }
-  try {
-    const frames = await Promise.all(workers.map(state => new Promise((resolve, reject) => {
-      if (state.failed) {
-        reject();
-        return;
-      }
-      state.send = resolve;
-      state.fail = reject;
-      state.worker.postMessage({ phase, retracting: ms > holdEnd, buffer: state.buffer }, [state.buffer]);
-    })));
-    for (const [i, buffer] of frames.entries()) {
-      specimens[i].ctx.putImageData(new ImageData(new Uint8ClampedArray(buffer), width, height), 0, 0);
-    }
-  } catch {
-    for (const { worker } of workers) worker.terminate();
-    workers = null;
-    render(ms);
-  }
-}
 
-let origin;
-let playing = false;
-let workers;
-async function tick(now) {
-  origin ??= now;
-  const elapsed = Math.min(now - origin, period);
-  await renderPlayback(elapsed);
-  if (elapsed < period) {
+  void main() {
+    vec2 q = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) - uCentre;
+    float a = uAxis < 0.5 ? q.x : q.y;
+    float b = uAxis < 0.5 ? q.y : q.x;
+    float f = a / uPitch;
+    float k = floor(f + 0.5);
+    float u = f - k;
+    vec3 col = flute(k, u, a, b);
+    float edge = (0.5 - abs(u)) * uPitch;
+    float side = u >= 0.0 ? 1.0 : -1.0;
+    if (edge < 0.5) col = mix(col, flute(k + side, f - k - side, a, b), 0.5 - edge);
+    vec3 lit = tone(max(col, 0.0) * uExposure) / uToneNorm;
+    if (uSeam > 0.0) {
+      // Where two slats meet: a fine dark line, and just past it the glass
+      // edge catches a warm glint of the letters it sits over.
+      float s = 0.5 * (clamp(uS[slot(k)], 0.0, 1.0) + clamp(uS[slot(k + side)], 0.0, 1.0));
+      float line = 1.0 - smoothstep(uSeamWidth * 0.5 - 0.6, uSeamWidth * 0.5 + 0.6, edge);
+      lit *= 1.0 - uSeam * s * line;
+      float after = (u + 0.5) * uPitch - uSeamWidth * 1.6;
+      float near = 1.0 - smoothstep(0.0, 0.12 * uHalf, max(field(a, b), 0.0));
+      lit += uSeamLight * s * near * exp(-after * after / (0.3 * uSeamWidth * uSeamWidth)) * vec3(1.0, 0.94, 0.78);
+    }
+    outColor = vec4(encode(lit), 1.0);
+  }`;
+
+  function compile(gl, type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+    return sh;
+  }
+
+  const EXPOSURE = 1.8;
+  const toneNorm = ((x) => (x < 0.6 ? x : 0.6 + 0.4 * (1 - Math.exp(-(x - 0.6) / 0.4))))(EXPOSURE);
+  const WAVE_TABLE = spectrum(WAVES);
+
+  function makeStudy(canvas, cfg) {
+    const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, preserveDrawingBuffer: true });
+    if (!gl) return null;
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, "p");
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const U = {};
+    const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const info = gl.getActiveUniform(prog, i);
+      const name = info.name.replace(/\[0\]$/, "");
+      U[name] = gl.getUniformLocation(prog, info.name);
+    }
+    const tex = gl.createTexture();
+    const s = new Float32Array(FLUTES), v = new Float32Array(FLUTES);
+    const study = { gl, U, tex, cfg, geo: null, s, v };
+    return study;
+  }
+
+  function loadInk(study, ink, width, height, dpr) {
+    const { gl, U, tex, cfg } = study;
+    gl.viewport(0, 0, width, height);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, ink.w, ink.h, 0, gl.RED, gl.FLOAT, ink.sdf);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const half = cfg.axis === 0 ? ink.half.x : ink.half.y;
+    const pitch = cfg.pitch * half;
+    // Echoes run `echoes` flutes past the word's end; a fan reaches as far
+    // as its outermost flute still looks back into the word.
+    const win = 0.5 * pitch * (1 + cfg.squeeze) / half;
+    const reach = cfg.fan > 0 && !(cfg.echoAnchor > 0)
+      ? cfg.edge + (cfg.fan + win) / (1 - cfg.fan * (cfg.fanTail || 0) / (cfg.edge - cfg.core))
+      : cfg.edge + (cfg.echoes + 0.5) * pitch / half;
+    study.geo = { half, pitch, reach, core: cfg.core };
+    gl.uniform2f(U.uRes, width, height);
+    gl.uniform2f(U.uCentre, ink.centre.x, ink.centre.y);
+    gl.uniform1f(U.uAxis, cfg.axis);
+    gl.uniform1f(U.uHalf, half);
+    gl.uniform1f(U.uPitch, pitch);
+    gl.uniform1f(U.uCore, cfg.core);
+    gl.uniform1f(U.uEdge, cfg.edge);
+    gl.uniform1f(U.uPullIn, cfg.pullIn);
+    gl.uniform1f(U.uFan, cfg.fan);
+    gl.uniform1f(U.uKappaFan, cfg.kappaFan);
+    gl.uniform1f(U.uFanPow, cfg.fanPow || 1);
+    gl.uniform1f(U.uFanTail, cfg.fanTail || 0);
+    gl.uniform1f(U.uEchoAnchor, cfg.echoAnchor);
+    gl.uniform1f(U.uEchoStep, cfg.echoStep);
+    gl.uniform1f(U.uSqueezeEcho, cfg.squeezeEcho);
+    gl.uniform1f(U.uEchoSoft, cfg.echoSoft * dpr);
+    gl.uniform1f(U.uTilt, cfg.tilt);
+    gl.uniform1f(U.uKappaIn, cfg.kappaIn);
+    gl.uniform1f(U.uKappaOut, cfg.kappaOut);
+    gl.uniform1f(U.uKappaTilt, cfg.kappaTilt);
+    gl.uniform1f(U.uFace, cfg.face);
+    gl.uniform1f(U.uEchoFade, cfg.echoFade);
+    gl.uniform1f(U.uSqueeze, cfg.squeeze);
+    gl.uniform1f(U.uCurve, cfg.curve);
+    gl.uniform1f(U.uBendFloor, cfg.bendFloor);
+    gl.uniform1f(U.uFmax, cfg.fmax * dpr);
+    gl.uniform1f(U.uFlash, 0.35);
+    gl.uniform1f(U.uSoftSplit, 0.022);
+    gl.uniform1f(U.uSoftMax, 1.6 * dpr);
+    gl.uniform1f(U.uSigma0, 0.55);
+    gl.uniform1f(U.uSigma1, 0.6 * dpr);
+    gl.uniform1f(U.uExposure, EXPOSURE);
+    gl.uniform1f(U.uToneNorm, toneNorm);
+    gl.uniform1f(U.uReach, reach);
+    gl.uniform1f(U.uSeam, cfg.seam);
+    gl.uniform1f(U.uSeamLight, cfg.seamLight);
+    gl.uniform1f(U.uSeamWidth, 1.6 * dpr);
+    gl.uniform4fv(U.uW, WAVE_TABLE);
+    gl.uniform4f(U.uSdfRect, ink.x0, ink.y0, 1 / ink.w, 1 / ink.h);
+    gl.uniform1i(U.uSdf, 0);
+  }
+
+  function draw(study, ms) {
+    const { gl, U, s, v, geo } = study;
+    if (!geo) return;
+    flutesAt(ms, geo, s, v);
+    gl.uniform1fv(U.uS, s);
+    gl.uniform1fv(U.uV, v);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // ---------------------------------------------------------------- page
+  const play = document.getElementById("play");
+  const canvases = [document.getElementById("study-h"), document.getElementById("study-v")];
+  let studies = [];
+  let playing = false;
+  let shown = null; // null = the crest, a number = a moment of the cycle
+
+  function fail() {
+    for (const c of canvases) {
+      const note = document.createElement("p");
+      note.className = "fallback";
+      note.textContent = "This preview needs WebGL 2, which this browser has turned off.";
+      c.replaceWith(note);
+    }
+    play.setAttribute("aria-disabled", "true");
+  }
+
+  function build() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const rect = canvases[0].getBoundingClientRect();
+    const width = Math.max(320, Math.round(rect.width * dpr));
+    const height = Math.round(width * 400 / 640);
+    const ink = inkField(width, height);
+    for (const st of studies) {
+      st.gl.canvas.width = width;
+      st.gl.canvas.height = height;
+      loadInk(st, ink, width, height, dpr);
+      draw(st, shown);
+    }
+  }
+
+  function renderAt(ms) {
+    shown = ms;
+    for (const st of studies) draw(st, ms);
+  }
+
+  function start(slow) {
+    if (playing || !studies.length) return;
+    playing = true;
+    play.setAttribute("aria-disabled", "true");
+    play.textContent = "Playing";
+    const rate = slow ? 0.25 : 1;
+    let origin = null;
+    const tick = (now) => {
+      origin ??= now;
+      const ms = Math.min((now - origin) * rate, T.end);
+      renderAt(ms);
+      if (ms < T.end) { requestAnimationFrame(tick); return; }
+      playing = false;
+      play.removeAttribute("aria-disabled");
+      play.textContent = "Play once";
+    };
+    renderAt(0);
     requestAnimationFrame(tick);
-    return;
   }
-  playing = false;
-  play.removeAttribute("aria-disabled");
-  play.textContent = "Play once";
-}
-play.addEventListener("click", () => {
-  if (playing) return;
-  playing = true;
-  workers ??= startWorkers();
-  origin = undefined;
-  play.setAttribute("aria-disabled", "true");
-  play.textContent = "Playing…";
-  render(0);
-  showingCrest = false;
-  requestAnimationFrame(tick);
-});
-render(outwardMs);
-const crestFrames = specimens.map(({ frame }) =>
-  new ImageData(new Uint8ClampedArray(frame.data), width, height));
+
+  play.addEventListener("click", (e) => start(e.shiftKey));
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && e.target === document.body) { e.preventDefault(); start(e.shiftKey); }
+  });
+
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (studies.length) build(); }, 150);
+  });
+
+  const ready = (async () => {
+    try { await document.fonts.load(`${WEIGHT} 100px "Inter Tight"`, WORD); } catch { /* falls back */ }
+    try {
+      studies = [makeStudy(canvases[0], STUDIES.h), makeStudy(canvases[1], STUDIES.v)];
+    } catch (err) {
+      console.error(err);
+      studies = [];
+    }
+    if (studies.some((st) => !st)) { studies = []; fail(); return; }
+    build();
+  })();
+
+  window.__reelicRipple = { ready, renderAt, timing: T, studies: () => studies };
+})();
 </script>
-</body>
-</html>
+
+</body></html>
