@@ -22,7 +22,9 @@ Everything is one fragment shader, 60 fps in Chromium and WebKit on an M1.
 - A and B: brightest by the word, fading outward. C and D: brightest at the tips.
 - A and C: each flute carries its copy one even step, with the steps ramping into each other. B and D: whole copies, each bowed outward like a ripple ring.
 
-## Fluted glass, after the reference video
+## Fluted glass, after the reference video (the Original)
+
+`original.html` is this version, kept as it was on 9 Nov when the owner named it the **Original**: the one to go back to.
 
 `fluted.html` follows the "S letters animate distort" Cavalry video (Pinterest pin 743797694746841478) and a fluted-text frame. It shows the open state only, with no Play. Each point shows one view through one flute; nothing is stacked. Dense, even flutes cover the word and magnify the strip behind them. The letters' tops and bottoms stay flat, fringed warm and blue. Past the letters, each flute looks a step further off their end and squeezes it into a hairline, blue on its outer side, each one fainter, down to nothing. In the vertical study, each column's echoes start from that column's own top and bottom, so every letter ripples both up and down.
 
