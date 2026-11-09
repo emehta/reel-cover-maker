@@ -5,7 +5,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;900&display=swap">
 <style>
-  /* A dark stage: two studies side by side, one control above them. */
+  /* A dark stage: the two studies side by side, held open. */
   :root {
     --ground: #0b0b0d;
     --stage: #000000;
@@ -36,21 +36,6 @@
     padding-left: max(16px, env(safe-area-inset-left, 0px));
     padding-right: max(16px, env(safe-area-inset-right, 0px));
   }
-  .bar { display: flex; justify-content: flex-end; }
-  #play {
-    min-width: 104px;
-    height: 38px;
-    padding: 0 16px;
-    border: 1px solid var(--control-edge);
-    border-radius: 4px;
-    background: var(--control);
-    color: var(--ink);
-    font: inherit;
-    cursor: pointer;
-  }
-  #play:hover { background: var(--control-hover); }
-  #play:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-  #play[aria-disabled="true"] { cursor: default; color: var(--label); }
   .studies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   figure { margin: 0; min-width: 0; background: var(--stage); }
   canvas { display: block; width: 100%; max-width: 100%; height: auto; aspect-ratio: 640 / 400; }
@@ -69,7 +54,6 @@
 </style>
 
 <main>
-  <div class="bar"><button id="play" type="button">Play once</button></div>
   <div class="studies">
     <figure><canvas id="study-h" role="img" aria-label="Horizontal refraction on Ripple"></canvas><figcaption>Horizontal</figcaption></figure>
     <figure><canvas id="study-v" role="img" aria-label="Vertical refraction on Ripple"></canvas><figcaption>Vertical</figcaption></figure>
@@ -91,14 +75,14 @@
   const STUDIES = {
     h: {
       squeezeTip: -0.2,
-      kappaB: -0.45,
+      local: false,
+      kappaB: 0.12,
       axis: 0,
       pitch: 0.06,       // flute width, of the ink's half width
       core: 0,         // every letter is behind the glass
       edge: 1.0,         // where the word ends along the axis
       fan: 0.12,          // the end flutes show the word moved out this much of its half width
       fanPow: 1.4,       // more toward the tips
-      fanTail: 0,     // past the end the flutes keep sliding off the letters
       pullIn: 0,
       echoes: 11,
       echoAnchor: 0.98,     // no separate echo zone
@@ -106,7 +90,6 @@
       squeeze: 0.5,     // each flute shows a strip wider than itself, narrowed
       squeezeEcho: -3,
       curve: 0.25,       // the convex face of each flute
-      bulge: 0.3,       // and its bulge across, so edges round into pills
       bendFloor: 0.7,    // even the middle flutes bend a little
       tilt: 0,
       face: 0.35,        // light split across a flute's face, of its width
@@ -122,22 +105,21 @@
     },
     v: {
       squeezeTip: -0.2,
-      kappaB: -0.45,
+      local: true,
+      kappaB: 0.04,
       axis: 1,
       pitch: 0.18,
       core: 0,
       edge: 1.0,
       fan: 0.12,
       fanPow: 1.4,
-      fanTail: 0,
       pullIn: 0,
-      echoes: 6,
+      echoes: 5,
       echoAnchor: 0.98,
       echoStep: 0.18,
       squeeze: 0.5,
       squeezeEcho: -3,
       curve: 0.25,
-      bulge: 0.1,
       bendFloor: 0.7,
       tilt: 0,
       face: 0.35,
@@ -312,7 +294,20 @@
         sdf[y * w + x] = sum / (S * S) / S;
       }
     }
-    return { sdf, x0, y0, w, h, centre, half };
+    const ends = new Float32Array(width * 2);
+    for (let X = Math.max(0, x0); X < Math.min(width, x0 + w); X++) {
+      let lo = Infinity, hi = -Infinity;
+      for (let dx = 0; dx < S; dx++) {
+        const col = (X - x0) * S + dx;
+        for (let y = 0; y < h * S; y++) {
+          if (alpha[(y * w * S + col) * 4 + 3] >= 128) { if (y < lo) lo = y; if (y > hi) hi = y; }
+        }
+      }
+      if (hi < lo) continue;
+      ends[X * 2] = centre.y - (y0 + lo / S);
+      ends[X * 2 + 1] = y0 + (hi + 1) / S - centre.y;
+    }
+    return { sdf, x0, y0, w, h, centre, half, ends };
   }
 
   // ---------------------------------------------------------------- GPU
@@ -324,7 +319,8 @@
   uniform vec2 uRes, uCentre;
   uniform float uPitchScale;
   uniform float uAxis, uHalf, uPitch, uCore, uEdge, uPullIn, uSqueeze, uSqueezeTip, uSqueezeEcho, uCurve, uBendFloor, uFace, uEchoFade, uEchoSoft;
-  uniform float uTilt, uKappaIn, uKappaOut, uKappaTilt, uEchoAnchor, uEchoStep, uFan, uFanPow, uFanTail, uKappaFan, uBulge, uKappaB;
+  uniform float uTilt, uKappaIn, uKappaOut, uKappaTilt, uEchoAnchor, uEchoStep, uFan, uFanPow, uKappaFan, uEchoes, uLocal, uKappaB;
+  uniform sampler2D uExtent;
   uniform float uFmax, uSoftSplit, uSoftMax, uFlash, uSigma0, uSigma1, uExposure, uToneNorm;
   uniform float uReach, uSeam, uSeamLight, uSeamWidth;
   uniform float uS[${FLUTES}], uV[${FLUTES}];
@@ -350,59 +346,48 @@
     float r = ac / uHalf;
     float sig = mix(uSigma0, uSigma1, clamp(abs(s), 0.0, 1.0));
     if (abs(s) < 1e-4) return vec3(cover(field(a, b), uSigma0));
-    // Inside the word the end letters are drawn out a little. Past its end
-    // each flute looks back into the end letter, a step deeper each time,
-    // as if the letter were reflected through the glass.
-    float inner = min(max(0.0, ac - uCore * uHalf), (uEdge - uCore) * uHalf);
-    float outer = max(0.0, ac - uEdge * uHalf);
+    // Where the letters end on this flute's side. In the vertical study it is
+    // each column's own top or bottom, so every letter throws echoes both up
+    // and down; in the horizontal one, the word's two ends.
+    float endAt = uEdge * uHalf;
+    if (uLocal > 0.5) {
+      vec2 ext = texture(uExtent, vec2((uCentre.x + b) / uRes.x, 0.5)).rg;
+      endAt = c < 0.0 ? ext.r : ext.g;
+    }
+    float outer = max(0.0, ac - endAt);
     float echo = step(0.5 * uPitch, outer) * step(0.0001, uEchoAnchor);
-    float inPart = -s * sign(c) * uPullIn * inner;
-    // A fan of prisms: each flute shows the word moved out by its own step,
-    // more the further out it sits, as in the sliced 3.
-    float ft = max(0.0, (r - uCore) / (uEdge - uCore));
-    // Past the word's end the fan steadies, so each further flute slides off
-    // the end letter and its copy thins away by itself.
-    float fan = -s * sign(c) * uFan * uHalf * (ft <= 1.0 ? pow(ft, uFanPow) : 1.0 + uFanTail * (ft - 1.0)) * (1.0 - echo);
-    // The echoes run out as far as the glass is strong, so on the way back
-    // the furthest go first and the rest draw in toward the letter.
+    float far = clamp(outer / ((uEchoes + 0.5) * uPitch), 0.0, 1.0);
+    // Over the letters each flute shows the word moved out a little, more
+    // toward the ends.
+    float fan = -s * sign(c) * uFan * uHalf * pow(min(r / uEdge, 1.0), uFanPow) * (1.0 - echo);
+    // Past the letters each flute looks a small step further off their end,
+    // and the echoes reach as far as the glass is strong.
     float run = outer / max(s, 0.001);
-    float view = uEchoAnchor * uHalf + uEchoStep * (run - 0.5 * uPitch);
+    float view = uEchoAnchor * endAt + uEchoStep * (run - 0.5 * uPitch);
     float outPart = echo * sign(c) * (view - ac);
-    float zone = smoothstep(uCore, uEdge, r);
-    // The face of each flute: a convex strip, narrower than the flute.
-    float bend = s * mix(uBendFloor, 1.0, zone);
-    // Near the middle a flute magnifies the strip behind it; further out it
-    // is looked through more steeply, so it squeezes more in, down to a hairline.
-    float farOut = clamp((ac - uEdge * uHalf) / max(1.0, (uReach - uEdge) * uHalf), 0.0, 1.0);
-    float sq = r <= uEdge ? mix(uSqueeze, uSqueezeTip, smoothstep(0.0, uEdge, r)) : mix(uSqueezeTip, uSqueezeEcho, smoothstep(0.0, 0.8, farOut));
+    float bend = s * mix(uBendFloor, 1.0, smoothstep(uCore, uEdge, r));
+    // Over the letters a flute magnifies the strip behind it; past them it is
+    // looked through more steeply, so it squeezes the letter down to a hairline.
+    float sq = echo < 0.5
+      ? mix(uSqueeze, uSqueezeTip, smoothstep(0.0, uEdge, min(r, uEdge)))
+      : mix(uSqueezeTip, uSqueezeEcho, smoothstep(0.0, 0.8, far));
     float h = u * (1.0 - bend * sq) + bend * uCurve * (4.0 * u * u * u - u);
     float dh = (1.0 - bend * sq) + bend * uCurve * (12.0 * u * u - 1.0);
-    // Each slat leans a little differently, so its view steps up or down.
-    float tilt = bend * uTilt * sin(2.39996 * k + 0.6) * uPitch;
-    float D = inPart + outPart + fan + tilt + (h - u) * uPitch;
-    float split = uKappaIn * inPart + uKappaOut * outPart + uKappaFan * fan + uKappaTilt * tilt
-      + bend * uFace * 2.0 * u * uPitch;
+    float D = outPart + fan + (h - u) * uPitch;
+    float split = uKappaOut * outPart + uKappaFan * fan + bend * uFace * 2.0 * u * uPitch;
     split *= 1.0 + uFlash * abs(uV[i]);
     split = split / (1.0 + abs(split) / uFmax);
-    float far = clamp((ac - uEdge * uHalf) / max(1.0, (uReach - uEdge) * uHalf), 0.0, 1.0);
-    float beyond = max(echo, step(uHalf + 0.5 * uPitch, ac) * step(0.0001, uFan));
     sig += s * far * uEchoSoft;
     // A wide fringe is a soft one, in the poster's proportion, but only
     // across edges that face along the bend: the light is not split the
     // other way, so those edges stay as sharp as the letters.
     float soft = min(sqrt(uSoftSplit) * abs(split), uSoftMax);
-    // Echoes past the word's end come and go with the glass, and the
-    // furthest are dimmest, down to nothing at the last.
     // Each further hairline a little fainter than the last, down to nothing.
     float fade = pow(1.0 - far, 1.0 + 1.4 * uEchoFade);
-    float bright = mix(1.0, fade * clamp(s, 0.0, 1.0), beyond);
-    // Each flute is a lens both ways: across the bend it magnifies most at
-    // its middle, falling away fast at its sides like a round rod, so an edge
-    // running across the flute rounds into a pill.
-    float b0 = b;
-    b = b / (1.0 + uBulge * bend * sqrt(max(0.0, 1.0 - 4.0 * u * u)));
-    // That bend splits the light too, so the pill's caps are fringed.
-    float splitB = uKappaB * (b - b0);
+    float bright = mix(1.0, fade * clamp(s, 0.0, 1.0), echo);
+    // The glass splits the light a little across too, about the middle, so
+    // the letters' flat tops and bottoms are fringed without being reshaped.
+    float splitB = uKappaB * bend * b;
     float mid = field(a + D, b);
     float along = clamp(0.5 * abs(field(a + D + 1.0, b) - field(a + D - 1.0, b)), 0.0, 1.0);
     float se = sqrt(sig * sig + along * along * (0.16 * dh * dh + soft * soft));
@@ -518,9 +503,20 @@
     gl.uniform1f(U.uFan, cfg.fan);
     gl.uniform1f(U.uKappaFan, cfg.kappaFan);
     gl.uniform1f(U.uFanPow, cfg.fanPow || 1);
-    gl.uniform1f(U.uFanTail, cfg.fanTail || 0);
-    gl.uniform1f(U.uBulge, cfg.bulge || 0);
+    gl.uniform1f(U.uEchoes, cfg.echoes);
+    gl.uniform1f(U.uLocal, cfg.local ? 1 : 0);
     gl.uniform1f(U.uKappaB, cfg.kappaB || 0);
+    // Each column's own top and bottom, for echoes off every letter both ways.
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, study.ext ??= gl.createTexture());
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, width, 1, 0, gl.RG, gl.FLOAT, ink.ends);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1i(U.uExtent, 1);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.uniform1f(U.uEchoAnchor, cfg.echoAnchor);
     gl.uniform1f(U.uEchoStep, cfg.echoStep);
     gl.uniform1f(U.uSqueezeEcho, cfg.squeezeEcho);
@@ -574,10 +570,8 @@
   }
 
   // ---------------------------------------------------------------- page
-  const play = document.getElementById("play");
   const canvases = [document.getElementById("study-h"), document.getElementById("study-v")];
   let studies = [];
-  let playing = false;
   let shown = null; // null = the crest, a number = a moment of the cycle
 
   function fail() {
@@ -587,7 +581,6 @@
       note.textContent = "This preview needs WebGL 2, which this browser has turned off.";
       c.replaceWith(note);
     }
-    play.setAttribute("aria-disabled", "true");
   }
 
   function build() {
@@ -608,31 +601,6 @@
     shown = ms;
     for (const st of studies) draw(st, ms);
   }
-
-  function start(slow) {
-    if (playing || !studies.length) return;
-    playing = true;
-    play.setAttribute("aria-disabled", "true");
-    play.textContent = "Playing";
-    const rate = slow ? 0.25 : 1;
-    let origin = null;
-    const tick = (now) => {
-      origin ??= now;
-      const ms = Math.min((now - origin) * rate, T.end);
-      renderAt(ms);
-      if (ms < T.end) { requestAnimationFrame(tick); return; }
-      playing = false;
-      play.removeAttribute("aria-disabled");
-      play.textContent = "Play once";
-    };
-    renderAt(0);
-    requestAnimationFrame(tick);
-  }
-
-  play.addEventListener("click", (e) => start(e.shiftKey));
-  window.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && e.target === document.body) { e.preventDefault(); start(e.shiftKey); }
-  });
 
   let resizeTimer = 0;
   window.addEventListener("resize", () => {
