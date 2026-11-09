@@ -158,7 +158,13 @@ npm run build   # the static site, in out/
   crests are eased (`soften`), and no line goes under 40% of itself. The
   still cover is its picked animation stopped mid-wave (the owner: "it
   should just have a wave"), so each animation is a loop from the still,
-  through its pass and a rest on the plain lockup, back to the still. A
+  through its pass and a rest on the plain lockup, back to the still.
+  Shuffle moves the wave (the owner's ask, 9 Nov): unshuffled the still
+  is the animation's own moment; shuffled, another moment of its pass,
+  half the time running the other way (`flip`), picked by the shuffle and
+  the title among the moments that move the letters at least 0.6 as much
+  as the most any does, so the loop starts there too. Wave has no Jitter:
+  its animations are the owner's five waves. A
   title of one line waves within itself, its middle moving, at two thirds
   strength (at full, an H's crossbar tilted into an N). As a text box its
   lines are each as wide as the box (as Pasty's fill their block), so a
@@ -210,7 +216,7 @@ npm run build   # the static site, in out/
   (`.tipEnd` runs inward at a row's end, `.tipLeft` opens to the left
   where there is no room above, the header's ?); every button's name is
   one of these, never a native `title`. A tool that cannot act is
-  disabled, never removed (Shuffle in Echo, Mono and Wave, `shuffles`). Hover
+  disabled, never removed (Shuffle in Echo and Mono, `shuffles`). Hover
   fills are only for a pointer that hovers (`@media (hover: hover)`), so a
   tap never leaves one lit.
   There is no contrast warning any more (the owner's ask, 7 Oct: "I

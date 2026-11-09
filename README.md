@@ -145,7 +145,10 @@ on a label's row.
 - **Shuffle**, over the cover, draws the letters another way: every random choice a style
   makes (each letter's hand, the drips, where the stickers sit) is seeded by
   the title and the shuffle together, so what you see is exactly what
-  downloads, until you shuffle again.
+  downloads, until you shuffle again. In Wave, a shuffle moves the wave:
+  the still is stopped at another moment of its animation, the swell on
+  another part of the words, sometimes running the other way, and an
+  animated cover plays on from there.
 - **Pick a colour** with two sliders: the hue, and the shade from near-black
   to near-white. The colour is the letters' (the paste, the ink), and in
   Stickery the stickers' (**Sticker colour**). Dragging a slider only

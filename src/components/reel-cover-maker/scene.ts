@@ -55,9 +55,9 @@ export const STYLES: readonly Style[] = [
 
 export const DEFAULT_STYLE: StyleId = "stickery";
 
-/** Whether a shuffle changes anything in a style: Echo, Mono and Wave are set the same every time, with nothing drawn by chance. */
+/** Whether a shuffle changes anything in a style: Echo and Mono are set the same every time, with nothing drawn by chance. (Wave's shuffle moves its wave.) */
 export function shuffles(style: StyleId): boolean {
-  return style !== "echo" && style !== "mono" && style !== "wave";
+  return style !== "echo" && style !== "mono";
 }
 
 /**
@@ -2327,7 +2327,7 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
       case "mono":
         return mono(paragraphs, safe, palette, measurer, wrap);
       case "wave":
-        return wave(paragraphs, safe, measurer, { face: input.waveFace ?? DEFAULT_WAVE_FACE, ink: palette.ink, animation: input.waveAnimation ?? DEFAULT_WAVE_VARIANT, wrap });
+        return wave(paragraphs, safe, measurer, { face: input.waveFace ?? DEFAULT_WAVE_FACE, ink: palette.ink, animation: input.waveAnimation ?? DEFAULT_WAVE_VARIANT, seed, wrap });
       case "renaissance": {
         // A script picked in the capitals' own colour is no colour of its own: it cuts a thin gap, as the same colour does.
         const script = input.scriptColour && input.scriptColour !== palette.ink ? input.scriptColour : null;

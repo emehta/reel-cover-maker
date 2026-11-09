@@ -3690,7 +3690,8 @@ check("the animations on offer: Stickery spells, slaps, pops, reveals or jitters
   }
   // Not Renaissance yet (the owner, 24 Oct), and not Echo or Mono, which a shuffle does not change.
   for (const style of ["renaissance", "echo", "mono"]) assert.ok(!AN.offers(style, "jitter"), `${style} offers Jitter`);
-  for (const style of S.STYLES) assert.equal(AN.offers(style.id, "jitter"), S.shuffles(style.id) && style.id !== "renaissance", `${style.id}: Jitter where a shuffle changes the cover`);
+  // Wave's shuffle moves its wave, but its animations are the owner's five waves.
+  for (const style of S.STYLES) assert.equal(AN.offers(style.id, "jitter"), S.shuffles(style.id) && style.id !== "renaissance" && style.id !== "wave", `${style.id}: Jitter where a shuffle changes the cover`);
   for (const cut of ["rise", "together", "swell"]) for (const style of S.STYLES) assert.ok(!AN.offers(style.id, cut), `${style.id} still offers ${cut}`);
   for (const style of S.STYLES) if (style.id !== "stickery") for (const only of ["pop", "reveal", "slap"]) assert.ok(!AN.offers(style.id, only), `${style.id} offers ${only}`);
 });
@@ -4800,6 +4801,69 @@ check("Wave's animations loop from the still cover, stopped mid-wave in the one 
   assert.ok(frame.ops[0].ops[0].at.s > W.stillOf("crossing").s);
 });
 
+check("Wave's Shuffle moves its wave: each shuffle stops the still at another moment of its animation, sometimes running the other way, always with most of the wave showing, the same every time for the same shuffle, and the loop starts and ends on it", () => {
+  for (const face of WAVE_FACE_IDS) {
+    for (const title of ["the ripple effect", "golden hour", "productivity", "5 things I wish I knew before moving to Lisbon"]) {
+      for (const v of W.WAVE_VARIANTS) {
+        const at = (seed) => waveOf(waveCover(title, face, { waveAnimation: v.id, seed })).at;
+        // Unshuffled, the animation's own still.
+        assert.deepEqual(at(0), W.stillOf(v.id));
+        const seen = new Set();
+        let most = 0;
+        for (let s = 0.12; s <= 0.88; s += 0.02) for (const flip of [false, true]) most = Math.max(most, waveMoved({ ...waveOf(waveCover(title, face, { waveAnimation: v.id })), at: { variant: v.id, s, flip } }));
+        for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+          const a = at(seed);
+          assert.equal(a.variant, v.id);
+          assert.deepEqual(at(seed), a, `${face} "${title}" ${v.id}: shuffle ${seed} not the same twice`);
+          const op = waveOf(waveCover(title, face, { waveAnimation: v.id, seed }));
+          // Most of the wave any moment shows (the shuffle judges by a sample of the letters, so a little under its own share).
+          assert.ok(waveMoved(op) >= most * 0.5, `${face} "${title}" ${v.id}: shuffle ${seed} shows little wave (${waveMoved(op).toFixed(1)} of ${most.toFixed(1)})`);
+          seen.add(JSON.stringify(a));
+          // Played, the loop starts and ends on the shuffled cover, running its way.
+          const scene = waveCover(title, face, { waveAnimation: v.id, seed });
+          const p = AN.plan(scene, "wave", v.id, measurer);
+          assert.equal(p.frame(0), scene);
+          assert.equal(p.frame(p.duration), scene);
+          const on = waveOf(p.frame(0.1)).at;
+          assert.ok(on.s > a.s && (on.flip === true) === (a.flip === true), `${face} "${title}" ${v.id}: the loop does not run on from the shuffle`);
+        }
+        assert.ok(seen.size >= 6, `${face} "${title}" ${v.id}: only ${seen.size} different stills in twelve shuffles`);
+        if (!v.ring) assert.ok([...seen].some((x) => JSON.parse(x).flip), `${face} "${title}" ${v.id}: never runs the other way`);
+      }
+    }
+  }
+  // Running the other way mirrors where the crests are: Crossing's first line, from the left one way, from the right the other.
+  const base = waveOf(waveCover("the ripple effect"));
+  const xOfCrest = (flip) => {
+    let best = -1;
+    let at = 0;
+    for (let x = base.x; x <= base.x + base.w; x += 2) {
+      const b = W.waveBands({ ...base, at: { variant: "crossing", s: 0.2, flip } }, x);
+      if (b && b[1] - b[0] > best) {
+        best = b[1] - b[0];
+        at = x;
+      }
+    }
+    return at - base.x;
+  };
+  assert.ok(xOfCrest(false) < base.w / 2 && xOfCrest(true) > base.w / 2, `${xOfCrest(false)} ${xOfCrest(true)}`);
+});
+
+/** How far a wave op's moment moves its letters, on average: what a still shows of the wave. */
+function waveMoved(op) {
+  const rest = op.rows.flatMap((r) => r.polygons);
+  const at = W.wavePolygons(op);
+  let sum = 0;
+  let n = 0;
+  at.forEach((p, i) => p.forEach((c, j) => {
+    if (j % 2) {
+      sum += Math.abs(c - rest[i][j]);
+      n += 1;
+    }
+  }));
+  return n ? sum / n : 0;
+}
+
 check("Wave draws what a phone types: curly quotes and Latin Extended-A in its faces' own letters, a letter it lacks as its base letter, an emoji as text in its line", () => {
   for (const face of WAVE_FACE_IDS) {
     const quoted = waveOf(waveCover("it’s “Łódź” café", face));
@@ -4847,7 +4911,7 @@ check("Wave's face is kept with the design (anything else read as Mona Sans), an
   assert.equal(D.readDesign(JSON.stringify({ animations: { wave: "jelly" } })).animations.wave, undefined);
   assert.equal(D.animationOf({ style: "wave", animations: {} }), "crossing");
   assert.notEqual(S.wrapTypeOf({ style: "wave", waveFace: "mona" }), S.wrapTypeOf({ style: "wave", waveFace: "anton" }));
-  assert.equal(S.shuffles("wave"), false);
+  assert.equal(S.shuffles("wave"), true);
   // Its lines are each as wide as its text box, so a height has no wrap: its top and bottom scale it; every other style's re-wrap.
   for (const style of S.STYLES) assert.equal(S.wrapsByHeight(style.id), style.id !== "wave", style.id);
   const arity = { M: 2, L: 2, Q: 4, C: 6, Z: 0 };

@@ -56,6 +56,7 @@
 import type { FaceId, Measurer } from "@/components/reel-cover-maker/faces";
 import type { Rect } from "@/components/reel-cover-maker/formats";
 import type { Op, Scene, Wrap, WrapRef } from "@/components/reel-cover-maker/scene";
+import { hashString, mixSeed, random } from "@/components/reel-cover-maker/noise";
 import { graphemes, type Paragraph } from "@/components/reel-cover-maker/title";
 import { waveFaceData, waveFaceOf, type WaveFace, type WaveFaceData, type WaveFaceId } from "@/components/reel-cover-maker/wave-faces";
 
@@ -825,6 +826,8 @@ export interface WaveRow {
 export interface WaveMoment {
   variant: WaveVariantId;
   s: number;
+  /** Its crests run the other way: a shuffle's (the ring of Ripple is the same either way). */
+  flip?: boolean;
 }
 
 export interface WaveOp {
@@ -843,6 +846,8 @@ export interface WaveSpec {
   ink: string;
   /** The animation the still cover is stopped in. */
   animation: WaveVariantId;
+  /** The shuffle: where in the animation the still is stopped, and which way it runs. */
+  seed: number;
   wrap?: Wrap | null;
 }
 
@@ -996,7 +1001,8 @@ export function wave(paragraphs: Paragraph[], safe: Rect, measurer: Measurer, sp
     }
     return { text: r.line.text, top: oy + r.top * W, base, polygons, ...(texts.length ? { texts } : {}) };
   });
-  const op: WaveOp = { kind: "wave", color: spec.ink, x: ox, w: W, rows, at: stillOf(spec.animation) };
+  const placed: WaveOp = { kind: "wave", color: spec.ink, x: ox, w: W, rows, at: null };
+  const op: WaveOp = { ...placed, at: shuffledStill(placed, spec.animation, spec.seed, stack.rows.map((r) => r.line.text).join("\n")) };
   const readable = { x: ox + stack.ink.x0 * W, y: oy + stack.ink.y0 * W, w: inkW(stack) * W, h: inkH(stack) * W };
   return { ops: [op as Op], readable, ...(ref ? { ref } : {}), ...(wrapped ? { wrapped } : {}) };
 }
@@ -1103,9 +1109,68 @@ export function isWaveVariantId(value: unknown): value is WaveVariantId {
   return WAVE_VARIANTS.some((v) => v.id === value);
 }
 
-/** The still cover's moment in an animation. */
+/** The still cover's moment in an animation, unshuffled. */
 export function stillOf(id: WaveVariantId): WaveMoment {
   return { variant: id, s: waveVariant(id).still };
+}
+
+/** Where in its pass a shuffle may stop the still, and how much of the most wave the block shows there it must show: a moment of a crest half off the block, or of a lull between two, is no wave. */
+const SHUFFLE_SPAN = [0.12, 0.88] as const;
+const SHUFFLE_WAVE = 0.6;
+
+/** How far a moment moves the letters up or down, on average over a few hundred of their points: how much wave it shows. */
+function waviness(op: WaveOp): number {
+  const points = op.rows.reduce((n, r) => n + r.polygons.reduce((k, p) => k + p.length / 2, 0), 0);
+  const stride = Math.max(1, Math.floor(points / 240));
+  const field = fieldOf(op);
+  const st = op.at ? stateOf(field, op.at) : null;
+  if (!st || !op.at) return 0;
+  const cap = waveVariant(op.at.variant).cap;
+  const A = strengthOf(op, field, op.at.variant);
+  let sum = 0;
+  let count = 0;
+  let k = 0;
+  op.rows.forEach((r, ri) => {
+    const h = r.base - r.top;
+    for (const p of r.polygons) {
+      for (let j = 0; j < p.length; j += 2, k += 1) {
+        if (k % stride) continue;
+        const b = bandsAt(field, gapsAt(field, p[j], st, A, cap));
+        const u = (p[j + 1] - r.top) / h;
+        const y = field.split ? (u <= 0.5 ? warpY(field, 0, u * 2, b) : warpY(field, 1, u * 2 - 1, b)) : warpY(field, ri, u, b);
+        sum += Math.abs(y - p[j + 1]);
+        count += 1;
+      }
+    }
+  });
+  return count ? sum / count : 0;
+}
+
+/**
+ * The still a shuffle stops the cover at (the owner, 9 Nov: Shuffle should
+ * move the part that is waved): unshuffled, the animation's own still;
+ * shuffled, another moment of its pass, the crests elsewhere across the
+ * block, and half the time running the other way, chosen by the shuffle
+ * and the title among the moments that show at least most of the wave
+ * any moment does.
+ */
+function shuffledStill(op: WaveOp, id: WaveVariantId, seed: number, text: string): WaveMoment {
+  if (!seed) return stillOf(id);
+  const v = waveVariant(id);
+  const flips = v.ring ? [false] : [false, true];
+  const step = 0.03;
+  const tried: { s: number; flip: boolean; wave: number }[] = [];
+  for (let s = SHUFFLE_SPAN[0]; s <= SHUFFLE_SPAN[1] + 1e-9; s += step) {
+    for (const flip of flips) tried.push({ s, flip, wave: waviness({ ...op, at: flip ? { variant: id, s, flip } : { variant: id, s } }) });
+  }
+  const most = Math.max(...tried.map((t) => t.wave));
+  const good = tried.filter((t) => t.wave >= most * SHUFFLE_WAVE);
+  // Anywhere in the stretch round a moment that shows enough wave, so no two shuffles are quite the same.
+  const next = random(mixSeed(seed, hashString(text, 0x5a7e)));
+  const pick = next() * good.length;
+  const at = good[Math.min(good.length - 1, Math.floor(pick))];
+  const s = Math.min(SHUFFLE_SPAN[1], Math.max(SHUFFLE_SPAN[0], at.s + (pick - Math.floor(pick) - 0.5) * step));
+  return at.flip ? { variant: id, s, flip: true } : { variant: id, s };
 }
 
 /** Where every crest starts and ends, in thousandths of the block's width from its left: wholly off it, a hanging T included (further out where a short line's T hangs further); and how much of the pass is eased. */
@@ -1184,7 +1249,8 @@ function stateOf(field: Field, moment: WaveMoment): State | null {
       const R = l.reach * unit;
       const from = left - R;
       const to = right + R;
-      return { c: l.dir > 0 ? from + (to - from) * u : to - (to - from) * u, R, k: l.k };
+      const dir = moment.flip ? -l.dir : l.dir;
+      return { c: dir > 0 ? from + (to - from) * u : to - (to - from) * u, R, k: l.k };
     }),
   };
 }
@@ -1412,6 +1478,18 @@ function replaceWaves(ops: Op[], at: (op: WaveOp) => Op): Op[] {
   });
 }
 
+/** The first wave op of some ops, wherever it is drawn. */
+function firstWave(ops: Op[]): WaveOp | null {
+  for (const op of ops) {
+    if (op.kind === "wave") return op;
+    if (op.kind === "matrix") {
+      const inner = firstWave(op.ops);
+      if (inner) return inner;
+    }
+  }
+  return null;
+}
+
 /** A played wave: how long its loop runs, and the scene at a moment of it. */
 export interface WavePlay {
   duration: number;
@@ -1429,20 +1507,24 @@ export interface WavePlay {
 export function wavePlay(scene: Scene, id: WaveVariantId, pace: number): WavePlay {
   const v = waveVariant(id);
   const loop = v.pass + v.hold;
-  const start = v.still * v.pass;
-  const mine = (op: WaveOp) => op.at?.variant === id && Math.abs(op.at.s - v.still) < 1e-12;
+  // From the cover's own still where it is stopped in this animation (a shuffle's moment and way), else from this one's own.
+  const own = firstWave(scene.ops)?.at;
+  const still = own && own.variant === id ? own : stillOf(id);
+  const start = still.s * v.pass;
+  const flip = still.flip === true;
+  const mine = (op: WaveOp) => op.at === still;
   return {
     duration: loop / pace,
     loops: true,
     frame(t: number): Scene {
       const tau = (((Math.max(0, t) * pace + start) % loop) + loop) % loop;
       const onStill = Math.abs(tau - start) < 1e-9 || Math.abs(tau - start - loop) < 1e-9;
-      const at: WaveMoment | null = tau < v.pass ? { variant: id, s: tau / v.pass } : null;
+      const at: WaveMoment | null = tau < v.pass ? (flip ? { variant: id, s: tau / v.pass, flip } : { variant: id, s: tau / v.pass }) : null;
       let same = true;
       const ops = replaceWaves(scene.ops, (op) => {
         if (onStill && mine(op)) return op;
         same = false;
-        return { ...op, at: onStill ? stillOf(id) : at };
+        return { ...op, at: onStill ? still : at };
       });
       return same ? scene : { ...scene, ops };
     },
