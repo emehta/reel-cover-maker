@@ -36,4 +36,18 @@ Everything is one fragment shader, 60 fps in Chromium and WebKit on an M1.
 - **B Contour:** each echo looks deeper into its letter at the letter's middle, so it comes out a crescent: "(((" off the R, ")))" off the e, arcs over every letter in the vertical study.
 - **C Lens:** in the horizontal, further echoes are shorter, so they narrow into a cone off each end. In the vertical, echoes reach furthest over the word's middle, closing into an oval.
 
+
+## Contour, after B
+
+`contour.html` takes **B Contour** (the owner's pick from the explorations) further: crescents that contour more, the one beside each letter widest and each further one a step narrower, so they trail outward. Press B, D, E or F for a version; **Open** holds it open, **Play** (or the space bar) runs the motion once.
+
+- **B Contour:** as picked, unchanged to the pixel.
+- **D Deep:** each crescent fills most of its flute at its letter's middle and comes to a point at the letter's ends; each is about a seventh narrower than the one before.
+- **E Trail:** the same with a steeper step, and each crescent a little shorter than the last, so the echoes trail away to a point.
+- **F Swell:** fuller, rounder crescents, fewer of them, narrowing and shortening fastest.
+
+In D, E and F each crescent is drawn to measure. The shader decides how much of its flute the echo fills at this height, then aims the flute so the letter's edge lands exactly there. The glass stretches each letter by up to half a flute, evenly from the word's middle, so it ends exactly on a flute line; its first, widest crescent sits one fine dark seam away, so every flat top, bottom and side stays flat and no corner is lost. The crescents stay where the fully open glass puts them: as the glass opens, the letter slides out to meet them. In the vertical study the echoes see each letter's outline smoothed (the notch in a heavy p and the gap under the R bridged), split where it steps (a p's descender gets its own arcs), and every column of a letter part starts its echoes on the same flute, so the arcs come out whole. The letters themselves are untouched, and the columns between letters show the glass as it is.
+
+The motion is copied from the reference video, measured on all 241 frames at 60 fps (the owner's screen recording plays the same 4 s loop three and a half times). In the video the flutes never move: each echo widens and narrows where it is, the outer ones lighting later and going dark first. Two things are measured on every frame: how far the glass over the letter displaces its edges, and how much echo shows past the letter. They become the GLASS and REACH curves in the page. The glass starts first and lets go last; both swell to full by 1.35 s and fall; the glass lets go entirely for three frames, comes back in steps, and both make a second, smaller swell that holds and is drawn in by 3.4 s, the steps settling by 4 s. Each echo grows out of nothing over the same stretch of reach and is born white; its colour follows the glass a tenth of a second behind. Left out on purpose: the reference's glow and defocus (it would read as haze), its one-frame cyan flashes, and the flip of its crescents in the second take.
+
 `codex-2026-11-08.html` is the previous version, kept for comparison.

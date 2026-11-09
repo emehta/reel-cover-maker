@@ -1,0 +1,958 @@
+<title>Reelic Ripple Contour</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;900&display=swap">
+<style>
+  /* A dark stage: the two studies side by side, held open. */
+  :root {
+    --ground: #0b0b0d;
+    --stage: #000000;
+    --rule: #232326;
+    --label: #a9a8a3;
+    --ink: #ecebe6;
+    --control: #19191c;
+    --control-hover: #232327;
+    --control-edge: #34343a;
+    --ui: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 500 14px/1.3 var(--ui);
+  }
+  main {
+    width: min(100%, 1600px);
+    min-height: 100svh;
+    margin: 0 auto;
+    display: grid;
+    align-content: center;
+    gap: 12px;
+    padding-block: clamp(16px, 4vw, 56px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .bar { display: flex; gap: 6px 24px; flex-wrap: wrap; justify-content: space-between; }
+  .group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .bar button {
+    min-width: 44px;
+    height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--control-edge);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--label);
+    font: inherit;
+    cursor: pointer;
+  }
+  .bar button:hover { background: var(--control-hover); color: var(--ink); }
+  .bar button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--ground); }
+  .bar button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .bar b { font-weight: 900; margin-right: 6px; }
+  .studies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  figure { margin: 0; min-width: 0; background: var(--stage); }
+  canvas { display: block; width: 100%; max-width: 100%; height: auto; aspect-ratio: 640 / 400; }
+  figcaption {
+    border-top: 1px solid var(--rule);
+    background: var(--control);
+    color: var(--label);
+    padding: 12px 14px;
+    letter-spacing: 0.01em;
+  }
+  .fallback { padding: 24px; color: var(--label); }
+  @media (max-width: 800px) {
+    main { align-content: start; }
+    .studies { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+
+<main>
+  <div class="bar">
+    <div class="group" id="options" role="group" aria-label="Versions">
+      <button type="button" aria-pressed="true"><b>B</b>Contour</button>
+      <button type="button" aria-pressed="false"><b>D</b>Deep</button>
+      <button type="button" aria-pressed="false"><b>E</b>Trail</button>
+      <button type="button" aria-pressed="false"><b>F</b>Swell</button>
+    </div>
+    <div class="group" id="mode" role="group" aria-label="View">
+      <button type="button" aria-pressed="true">Open</button>
+      <button type="button" aria-pressed="false">Play</button>
+    </div>
+  </div>
+  <div class="studies">
+    <figure><canvas id="study-h" role="img" aria-label="Horizontal refraction on Ripple"></canvas><figcaption>Horizontal</figcaption></figure>
+    <figure><canvas id="study-v" role="img" aria-label="Vertical refraction on Ripple"></canvas><figcaption>Vertical</figcaption></figure>
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const WORD = "Ripple";
+  const FACE = '"Inter Tight", "Arial Black", "Helvetica Neue", Arial, sans-serif';
+  const WEIGHT = 900;
+  const FLUTES = 64;
+  const WAVES = 32;
+
+  // The two studies. Lengths are in units of the word's ink: `pitch` and
+  // `core` against the half extent along the axis the glass bends.
+  const STUDIES = {
+    h: {
+      squeezeTip: -0.2,
+      local: false,
+      kappaB: 0.12,
+      axis: 0,
+      pitch: 0.06,       // flute width, of the ink's half width
+      core: 0,         // every letter is behind the glass
+      edge: 1.0,         // where the word ends along the axis
+      fan: 0.12,          // the end flutes show the word moved out this much of its half width
+      fanPow: 1.4,       // more toward the tips
+      pullIn: 0,
+      echoes: 11,
+      echoAnchor: 0.98,     // no separate echo zone
+      echoStep: 0.18,
+      squeeze: 0.5,     // each flute shows a strip wider than itself, narrowed
+      squeezeEcho: -3,
+      curve: 0.25,       // the convex face of each flute
+      bendFloor: 0.7,    // even the middle flutes bend a little
+      tilt: 0,
+      face: 0.35,        // light split across a flute's face, of its width
+      kappaIn: 0,
+      kappaOut: 0.3,
+      kappaFan: -0.28,   // light split per pixel the fan moves the word
+      kappaTilt: 0,
+      fmax: 16,          // widest fringe, in css px
+      echoFade: 0.85,     // the outermost flutes fade away
+      echoSoft: 0.3,
+      seam: 0,
+      seamLight: 0,
+    },
+    v: {
+      squeezeTip: -0.2,
+      local: true,
+      kappaB: 0.04,
+      axis: 1,
+      pitch: 0.18,
+      core: 0,
+      edge: 1.0,
+      fan: 0.12,
+      fanPow: 1.4,
+      pullIn: 0,
+      echoes: 5,
+      echoAnchor: 0.98,
+      echoStep: 0.18,
+      squeeze: 0.5,
+      squeezeEcho: -3,
+      curve: 0.25,
+      bendFloor: 0.7,
+      tilt: 0,
+      face: 0.35,
+      kappaIn: 0,
+      kappaOut: 0.3,
+      kappaFan: -0.28,
+      kappaTilt: 0,
+      fmax: 16,
+      echoFade: 0.85,
+      echoSoft: 0.3,
+      seam: 0,
+      seamLight: 0,
+    },
+  };
+
+  // The versions: B as it was picked, then three that contour more and
+  // trail outward, each echo narrower than the one before it. Colours and the
+  // glass over the letters stay the same.
+  const VERSIONS = [
+    { // B Contour, as picked.
+      h: { echoes: 12, bow: 1.6, bowOut: 0.7 },
+      v: { echoes: 6, bow: 1.6, bowOut: 0.7 },
+    },
+    { // D Deep: crescents that come to a point at their letter's ends, each
+      // a step narrower than the one before.
+      h: { echoes: 12, cres: true, wNear: 0.92, wFar: 0.16, ratio: 0.82, gamma: 1.0, fadeExp: 0.9, gap: 0.12, dissolve: 0.7 },
+      v: { echoes: 6, cres: true, wNear: 0.92, wFar: 0.16, ratio: 0.82, gamma: 1.0, fadeExp: 0.9, gap: 0.12, dissolve: 0.7 },
+    },
+    { // E Trail: and each a little shorter too, the field closing into an
+      // oval, so they trail away.
+      h: { echoes: 11, cres: true, wNear: 0.92, wFar: 0.14, ratio: 0.78, gamma: 0.75, fadeExp: 0.75, tauFar: 0.45, tauPow: 2.2, gap: 0.12, dissolve: 0.65 },
+      v: { echoes: 6, cres: true, wNear: 0.92, wFar: 0.14, ratio: 0.78, gamma: 0.75, fadeExp: 0.75, tauFar: 0.45, tauPow: 2.2, gap: 0.12, dissolve: 0.65 },
+    },
+    { // F Swell: fuller, rounder crescents, fewer, narrowing and shortening fastest.
+      h: { echoes: 9, cres: true, wNear: 0.95, wFar: 0.12, ratio: 0.72, gamma: 0.55, fadeExp: 0.7, tauFar: 0.4, tauPow: 1.0, gap: 0.12, dissolve: 0.6 },
+      v: { echoes: 5, cres: true, wNear: 0.95, wFar: 0.12, ratio: 0.72, gamma: 0.55, fadeExp: 0.7, tauFar: 0.4, tauPow: 1.0, gap: 0.12, dissolve: 0.6 },
+    },
+  ];
+
+  // A harness may try other settings before the page builds.
+  const tune = window.__reelicTune || {};
+  Object.assign(STUDIES.h, tune.h);
+  Object.assign(STUDIES.v, tune.v);
+  if (tune.versions) tune.versions.forEach((o, i) => { Object.assign(VERSIONS[i].h, o.h); Object.assign(VERSIONS[i].v, o.v); });
+
+  // The motion, copied from the reference video (the Cavalry "S", 241
+  // frames at 60 fps), measured on every frame. GLASS is how strongly the
+  // flutes over the letters bend; REACH is how far the echoes reach out. The
+  // two are separate in the video: the glass starts first and lets go last.
+  // After the big swell the glass lets go entirely for a moment (f128 to
+  // f130), comes back in steps, and both make a second, smaller swell: it
+  // holds from f155 to f184 and is drawn in by f202, the steps settling by
+  // f240. The echoes' colour follows the glass a tenth of a second behind,
+  // so each echo is born white and colours as it grows.
+  const FPS = 60;
+  const GLASS = [0, 0, 0, 0.005, 0.008, 0.012, 0.016, 0.021, 0.026, 0.033, 0.04, 0.049, 0.058, 0.068, 0.079, 0.09, 0.103, 0.116, 0.131, 0.146, 0.162, 0.178, 0.196, 0.214, 0.232, 0.251, 0.27, 0.289, 0.308, 0.328, 0.347, 0.366, 0.385, 0.404, 0.422, 0.44, 0.457, 0.474, 0.492, 0.509, 0.527, 0.545, 0.562, 0.58, 0.598, 0.615, 0.632, 0.649, 0.665, 0.68, 0.694, 0.708, 0.722, 0.735, 0.748, 0.761, 0.773, 0.787, 0.8, 0.813, 0.826, 0.839, 0.851, 0.863, 0.875, 0.886, 0.897, 0.907, 0.918, 0.928, 0.938, 0.947, 0.956, 0.965, 0.972, 0.979, 0.985, 0.99, 0.994, 0.997, 0.999, 1, 1, 0.999, 0.997, 0.995, 0.991, 0.987, 0.982, 0.975, 0.968, 0.96, 0.951, 0.941, 0.93, 0.918, 0.904, 0.889, 0.874, 0.858, 0.84, 0.818, 0.792, 0.763, 0.732, 0.697, 0.661, 0.623, 0.583, 0.542, 0.5, 0.458, 0.415, 0.373, 0.331, 0.291, 0.251, 0.213, 0.178, 0.144, 0.113, 0.085, 0.061, 0.04, 0.023, 0.01, 0.003, 0, 0, 0, 0.012, 0.047, 0.101, 0.167, 0.236, 0.302, 0.356, 0.391, 0.403, 0.413, 0.423, 0.431, 0.438, 0.445, 0.452, 0.458, 0.464, 0.469, 0.475, 0.48, 0.484, 0.488, 0.491, 0.494, 0.497, 0.499, 0.5, 0.502, 0.502, 0.503, 0.503, 0.503, 0.502, 0.502, 0.501, 0.5, 0.499, 0.498, 0.497, 0.495, 0.494, 0.492, 0.49, 0.488, 0.485, 0.483, 0.48, 0.478, 0.474, 0.471, 0.467, 0.462, 0.457, 0.45, 0.444, 0.436, 0.429, 0.421, 0.413, 0.405, 0.397, 0.39, 0.383, 0.377, 0.37, 0.363, 0.355, 0.347, 0.339, 0.33, 0.32, 0.311, 0.301, 0.29, 0.28, 0.268, 0.257, 0.244, 0.231, 0.217, 0.203, 0.189, 0.175, 0.161, 0.148, 0.136, 0.124, 0.113, 0.102, 0.092, 0.083, 0.075, 0.067, 0.059, 0.052, 0.045, 0.039, 0.034, 0.029, 0.024, 0.02, 0.016, 0.013, 0.01, 0.007, 0.005, 0.003, 0.002, 0.001, 0, 0];
+  const REACH = [0, 0, 0, 0, 0, 0, 0, 0.003, 0.005, 0.009, 0.014, 0.021, 0.03, 0.041, 0.054, 0.068, 0.083, 0.1, 0.117, 0.134, 0.152, 0.17, 0.189, 0.207, 0.226, 0.245, 0.264, 0.284, 0.306, 0.329, 0.354, 0.38, 0.407, 0.435, 0.463, 0.49, 0.518, 0.546, 0.574, 0.603, 0.632, 0.661, 0.69, 0.717, 0.742, 0.766, 0.788, 0.807, 0.826, 0.843, 0.858, 0.873, 0.886, 0.898, 0.909, 0.92, 0.929, 0.937, 0.945, 0.951, 0.957, 0.962, 0.967, 0.971, 0.975, 0.979, 0.982, 0.985, 0.988, 0.991, 0.993, 0.994, 0.996, 0.997, 0.997, 0.998, 0.999, 0.999, 1, 1, 1, 0.999, 0.999, 0.997, 0.996, 0.994, 0.991, 0.987, 0.983, 0.978, 0.972, 0.965, 0.958, 0.949, 0.94, 0.931, 0.92, 0.908, 0.895, 0.88, 0.864, 0.846, 0.826, 0.805, 0.783, 0.759, 0.733, 0.706, 0.677, 0.647, 0.615, 0.58, 0.545, 0.508, 0.47, 0.432, 0.393, 0.353, 0.312, 0.271, 0.231, 0.192, 0.155, 0.121, 0.09, 0.064, 0.045, 0.034, 0.001, 0.003, 0.005, 0.008, 0.011, 0.013, 0.016, 0.021, 0.033, 0.056, 0.091, 0.136, 0.185, 0.233, 0.277, 0.314, 0.345, 0.371, 0.393, 0.411, 0.427, 0.441, 0.452, 0.462, 0.47, 0.477, 0.483, 0.488, 0.493, 0.496, 0.498, 0.499, 0.5, 0.5, 0.5, 0.499, 0.499, 0.497, 0.496, 0.494, 0.492, 0.489, 0.486, 0.483, 0.479, 0.475, 0.471, 0.466, 0.46, 0.454, 0.448, 0.442, 0.434, 0.426, 0.417, 0.407, 0.396, 0.384, 0.371, 0.356, 0.34, 0.323, 0.303, 0.282, 0.258, 0.231, 0.203, 0.172, 0.14, 0.109, 0.082, 0.06, 0.043, 0.031, 0.021, 0.013, 0.006, 0.002, 0.001, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const LAST = GLASS.length - 1;
+  const T = { end: Math.round(LAST * 1000 / FPS) };
+  Object.assign(T, tune.t);
+  function curveAt(curve, ms) {
+    const f = Math.min(LAST, Math.max(0, ms * FPS / 1000));
+    const i = Math.floor(f), j = Math.min(LAST, i + 1);
+    return curve[i] + (curve[j] - curve[i]) * (f - i);
+  }
+  const FASTEST = (() => {
+    let top = 0;
+    for (let i = 1; i <= LAST; i++) top = Math.max(top, Math.abs(GLASS[i] - GLASS[i - 1]));
+    return top * FPS;
+  })();
+
+  // ---------------------------------------------------------------- light
+  // CIE 1931 2-degree observer (Wyman, Sloan and Shirley's fit) taken into
+  // linear sRGB, signed, each channel normalised so the whole spectrum sums
+  // to white. Bend per wavelength is mostly linear with a little Cauchy, as
+  // fitted to the measured fringes of the 2024 poster.
+  function spectrum(n) {
+    const g = (x, mu, a, b) => Math.exp(-0.5 * ((x - mu) / (x < mu ? a : b)) ** 2);
+    const rows = [];
+    const sum = [0, 0, 0];
+    const cau = (l) => 1 / (l * l);
+    const span = cau(400) - cau(700);
+    for (let i = 0; i < n; i++) {
+      const l = 400 + 300 * (i + 0.5) / n;
+      const X = 1.056 * g(l, 599.8, 37.9, 31.0) + 0.362 * g(l, 442.0, 16.0, 26.7) - 0.065 * g(l, 501.1, 20.4, 26.2);
+      const Y = 0.821 * g(l, 568.8, 46.9, 40.5) + 0.286 * g(l, 530.9, 16.3, 31.1);
+      const Z = 1.217 * g(l, 437.0, 11.8, 36.0) + 0.681 * g(l, 459.0, 26.0, 13.8);
+      const rgb = [
+        3.2406 * X - 1.5372 * Y - 0.4986 * Z,
+        -0.9689 * X + 1.8758 * Y + 0.0415 * Z,
+        0.0557 * X - 0.2040 * Y + 1.0570 * Z,
+      ];
+      rgb.forEach((v, k) => { sum[k] += v; });
+      const bend = 0.9 * (550 - l) / 300 + 0.1 * (cau(l) - cau(550)) / span;
+      rows.push([...rgb, bend]);
+    }
+    const out = new Float32Array(n * 4);
+    rows.forEach((r, i) => {
+      out[i * 4] = r[0] / sum[0];
+      out[i * 4 + 1] = r[1] / sum[1];
+      out[i * 4 + 2] = r[2] / sum[2];
+      out[i * 4 + 3] = r[3];
+    });
+    return out;
+  }
+
+  // ---------------------------------------------------------------- motion
+  // Strength and speed of the flutes at time ms (null = held open).
+  function flutesAt(ms, out, speed) {
+    const g = ms === null ? 1 : curveAt(GLASS, ms);
+    const v = ms === null ? 0 : (curveAt(GLASS, ms + 8) - curveAt(GLASS, ms - 8)) / 0.016 / FASTEST;
+    for (let i = 0; i < FLUTES; i++) { out[i] = g; speed[i] = v; }
+  }
+  const reachAt = (ms) => (ms === null ? 1 : curveAt(REACH, ms));
+  const colourAt = (ms) => (ms === null ? 1 : Math.min(1, Math.max(0, (curveAt(GLASS, ms - 100) - 0.2) / 0.4)));
+
+  // ---------------------------------------------------------------- ink
+  // Exact Euclidean distance (Felzenszwalb and Huttenlocher) on a mask drawn
+  // at twice the canvas resolution, then averaged down, so the letters stay
+  // sharp however the glass magnifies them.
+  function edt(grid, w, h) {
+    const n = Math.max(w, h);
+    const f = new Float64Array(n), d = new Float64Array(n), z = new Float64Array(n + 1);
+    const v = new Int32Array(n);
+    const pass = (len, get, set) => {
+      for (let q = 0; q < len; q++) f[q] = get(q);
+      let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+      for (let q = 1; q < len; q++) {
+        let s;
+        for (;;) {
+          const p = v[k];
+          s = ((f[q] + q * q) - (f[p] + p * p)) / (2 * q - 2 * p);
+          if (s <= z[k]) { k--; if (k < 0) { k = 0; break; } } else break;
+        }
+        k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+      }
+      k = 0;
+      for (let q = 0; q < len; q++) {
+        while (z[k + 1] < q) k++;
+        const p = v[k];
+        d[q] = (q - p) * (q - p) + f[p];
+      }
+      for (let q = 0; q < len; q++) set(q, d[q]);
+    };
+    for (let x = 0; x < w; x++) pass(h, (y) => grid[y * w + x], (y, val) => { grid[y * w + x] = val; });
+    for (let y = 0; y < h; y++) pass(w, (x) => grid[y * w + x], (x, val) => { grid[y * w + x] = val; });
+  }
+
+  function inkField(width, height) {
+    const probe = document.createElement("canvas").getContext("2d");
+    probe.font = `${WEIGHT} 200px ${FACE}`;
+    const m = probe.measureText(WORD);
+    const inkW = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+    const inkH = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+    // Wide enough to read at once, with room left for the echoes either way.
+    const size = 200 * Math.min(0.5 * width / inkW, 0.3 * height / inkH);
+    const k = size / 200;
+    const half = { x: inkW * k / 2, y: inkH * k / 2 };
+    const centre = { x: width / 2, y: height / 2 };
+    const margin = Math.ceil(Math.max(40, 0.12 * inkH * k));
+    const x0 = Math.floor(centre.x - half.x - margin), y0 = Math.floor(centre.y - half.y - margin);
+    const w = Math.ceil(2 * half.x + 2 * margin), h = Math.ceil(2 * half.y + 2 * margin);
+    const S = 2;
+    const big = document.createElement("canvas");
+    big.width = w * S; big.height = h * S;
+    const ctx = big.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#fff";
+    ctx.font = `${WEIGHT} ${size * S}px ${FACE}`;
+    const ox = (centre.x - half.x - x0) * S + m.actualBoundingBoxLeft * k * S;
+    const oy = (centre.y - half.y - y0) * S + m.actualBoundingBoxAscent * k * S;
+    ctx.fillText(WORD, ox, oy);
+    const alpha = ctx.getImageData(0, 0, w * S, h * S).data;
+    const N = w * S * h * S;
+    const outside = new Float64Array(N), inside = new Float64Array(N);
+    const BIG = 1e12;
+    for (let i = 0; i < N; i++) {
+      const on = alpha[i * 4 + 3] >= 128;
+      outside[i] = on ? 0 : BIG;
+      inside[i] = on ? BIG : 0;
+    }
+    edt(outside, w * S, h * S);
+    edt(inside, w * S, h * S);
+    const sdf = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let sum = 0;
+        for (let dy = 0; dy < S; dy++) {
+          for (let dx = 0; dx < S; dx++) {
+            const i = (y * S + dy) * w * S + x * S + dx;
+            const o = outside[i], n = inside[i];
+            sum += o > 0 ? Math.sqrt(o) - 0.5 : 0.5 - Math.sqrt(n);
+          }
+        }
+        sdf[y * w + x] = sum / (S * S) / S;
+      }
+    }
+    const ends = new Float32Array(width * 4);
+    for (let X = Math.max(0, x0); X < Math.min(width, x0 + w); X++) {
+      let lo = Infinity, hi = -Infinity;
+      for (let dx = 0; dx < S; dx++) {
+        const col = (X - x0) * S + dx;
+        for (let y = 0; y < h * S; y++) {
+          if (alpha[(y * w * S + col) * 4 + 3] >= 128) { if (y < lo) lo = y; if (y > hi) hi = y; }
+        }
+      }
+      if (hi < lo) continue;
+      ends[X * 4] = centre.y - (y0 + lo / S);
+      ends[X * 4 + 1] = y0 + (hi + 1) / S - centre.y;
+    }
+    // Letters as runs of inked columns: each column learns its letter's middle
+    // and half width, and the first and last letters their height.
+    const runs = [];
+    for (let X = 0; X < width; X++) {
+      const inked = ends[X * 4] !== 0 || ends[X * 4 + 1] !== 0;
+      const last = runs[runs.length - 1];
+      if (!inked) continue;
+      if (last && last.x1 === X - 1) {
+        last.x1 = X;
+        last.top = Math.max(last.top, ends[X * 4]);
+        last.bottom = Math.max(last.bottom, ends[X * 4 + 1]);
+      } else runs.push({ x0: X, x1: X, top: ends[X * 4], bottom: ends[X * 4 + 1] });
+    }
+    for (const run of runs) {
+      for (let X = run.x0; X <= run.x1; X++) {
+        ends[X * 4 + 2] = (run.x0 + run.x1 + 1) / 2 - centre.x;
+        ends[X * 4 + 3] = (run.x1 - run.x0 + 1) / 2;
+      }
+    }
+    // For the crescents: each letter's top and bottom with its notches and
+    // gaps bridged (a heavy p dips where its bowl meets the stem, an R opens
+    // between its stem and leg) and eased, so its echoes come out as whole
+    // arcs; and split where the outline steps (a p's descender beside its
+    // bowl), so each part throws its own. `smooth` holds the eased outline
+    // and the top's parts, `lower` the raw outline and the bottom's parts.
+    const smooth = new Float32Array(ends), lower = new Float32Array(ends), peak = new Float32Array(ends.length);
+    const r = Math.max(2, Math.round(0.26 * half.y)), sig = Math.max(1, 0.07 * half.y);
+    const stepAt = 0.2 * half.y, least = Math.max(3, Math.round(0.06 * half.y));
+    for (const run of runs) {
+      for (const ch of [0, 1]) {
+        const n = run.x1 - run.x0 + 1, src = [], up = [], closed = [];
+        for (let X = run.x0; X <= run.x1; X++) src.push(ends[X * 4 + ch]);
+        for (let i = 0; i < n; i++) { let m = -Infinity; for (let j = Math.max(0, i - r); j <= Math.min(n - 1, i + r); j++) m = Math.max(m, src[j]); up.push(m); }
+        for (let i = 0; i < n; i++) { let m = Infinity; for (let j = Math.max(0, i - r); j <= Math.min(n - 1, i + r); j++) m = Math.min(m, up[j]); closed.push(Math.max(m, src[i])); }
+        const cuts = [0];
+        for (let i = 1; i < n; i++) if (Math.abs(closed[i] - closed[i - 1]) > stepAt && i - cuts[cuts.length - 1] >= least && n - i >= least) cuts.push(i);
+        cuts.push(n);
+        const parts = ch === 0 ? smooth : lower;
+        for (let q = 0; q + 1 < cuts.length; q++) {
+          const p0 = cuts[q], p1 = cuts[q + 1], R = Math.ceil(3 * sig);
+          let most = 0;
+          for (let i = p0; i < p1; i++) most = Math.max(most, closed[i]);
+          for (let i = p0; i < p1; i++) peak[(run.x0 + i) * 4 + ch] = most;
+          for (let i = p0; i < p1; i++) {
+            let a = 0, w = 0;
+            for (let j = -R; j <= R; j++) { const k = i + j; if (k < p0 || k >= p1) continue; const g = Math.exp(-0.5 * (j / sig) ** 2); a += g * closed[k]; w += g; }
+            const X = run.x0 + i;
+            smooth[X * 4 + ch] = a / w;
+            parts[X * 4 + 2] = run.x0 + (p0 + p1) / 2 - centre.x;
+            parts[X * 4 + 3] = (p1 - p0) / 2;
+          }
+        }
+      }
+    }
+    const span = (run) => run ? [(run.bottom - run.top) / 2, (run.bottom + run.top) / 2] : [0, half.y];
+    const spans = { first: span(runs[0]), last: span(runs[runs.length - 1]) };
+    return { sdf, x0, y0, w, h, centre, half, ends, smooth, lower, peak, spans };
+  }
+
+  // ---------------------------------------------------------------- GPU
+  const VERT = `#version 300 es
+  in vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
+
+  const FRAG = `#version 300 es
+  precision highp float;
+  uniform vec2 uRes, uCentre;
+  uniform float uPitchScale;
+  uniform float uAxis, uHalf, uPitch, uCore, uEdge, uPullIn, uSqueeze, uSqueezeTip, uSqueezeEcho, uCurve, uBendFloor, uFace, uEchoFade, uEchoSoft;
+  uniform float uTilt, uKappaIn, uKappaOut, uKappaTilt, uEchoAnchor, uEchoStep, uFan, uFanPow, uKappaFan, uEchoes, uLocal, uKappaB;
+  uniform float uSqRamp, uBow, uBowOut, uLens, uLensPow, uOval, uOvalW;
+  uniform float uGap, uRatio, uDissolve, uDisp, uBand, uFadeExp, uCres, uWNear, uWFar, uTaperPow, uGamma, uTauFar, uTauPow, uTipSoft, uReachNow;
+  uniform vec2 uSpanL, uSpanR;
+  uniform sampler2D uExtent, uExtentRaw, uExtentPeak;
+  uniform float uFmax, uSoftSplit, uSoftMax, uFlash, uSigma0, uSigma1, uExposure, uToneNorm;
+  uniform float uReach, uSeam, uSeamLight, uSeamWidth;
+  uniform float uS[${FLUTES}], uV[${FLUTES}];
+  uniform vec4 uW[${WAVES}];
+  uniform sampler2D uSdf;
+  uniform vec4 uSdfRect;
+  out vec4 outColor;
+
+  float field(float a, float b) {
+    vec2 xy = uCentre + (uAxis < 0.5 ? vec2(a, b) : vec2(b, a));
+    return texture(uSdf, (xy - uSdfRect.xy) * uSdfRect.zw).r;
+  }
+  // The ink as the crescents over a letter see it: with a notch in its edge
+  // (no deeper than band) filled, so every arc above a heavy p is whole.
+  // The echoes see each letter as far out as its smoothed edge and no
+  // further, filled in to band under it: whole arcs at the designed width,
+  // with the letter's own counters still there deeper in.
+  float fieldE(float a, float b, float sgn, float endS, float endR, float band) {
+    float f = field(a, b);
+    if (band <= 0.0) return f;
+    float o = sgn * a;
+    float fill = max(o - endS, min(endR, endS) - band - o);
+    return max(min(f, fill), o - endS);
+  }
+  float cover(float d, float s) { return 1.0 / (1.0 + exp(1.702 * d / s)); }
+  int slot(float k) { return clamp(int(k) + ${FLUTES / 2}, 0, ${FLUTES - 1}); }
+
+  // One flute: where it looks into the ink, wavelength by wavelength.
+  vec3 flute(float k, float u, float a, float b) {
+    float uPitch = uPitch * uPitchScale;
+    int i = slot(k);
+    float s = uS[i];
+    float c = k * uPitch;
+    float ac = abs(c);
+    float r = ac / uHalf;
+    float sig = mix(uSigma0, uSigma1, clamp(abs(s), 0.0, 1.0));
+    if (abs(s) < 1e-4) return vec3(cover(field(a, b), uSigma0));
+    // Where the letters end on this flute's side. In the vertical study it is
+    // each column's own top or bottom, so every letter throws echoes both up
+    // and down; in the horizontal one, the word's two ends.
+    float endAt = uEdge * uHalf;
+    float endRaw = endAt;
+    vec4 ext = vec4(0.0), raw = vec4(0.0);
+    if (uLocal > 0.5) {
+      vec2 at = vec2((uCentre.x + b) / uRes.x, 0.5);
+      ext = texture(uExtent, at);
+      raw = texture(uExtentRaw, at);
+      endAt = c < 0.0 ? ext.r : ext.g;
+      endRaw = c < 0.0 ? raw.r : raw.g;
+    }
+    // The letter an echo comes off: its middle and half extent across the
+    // bend (in the vertical study, its top's and its bottom's own).
+    vec2 span = uLocal > 0.5 ? (c < 0.0 ? ext.ba : raw.ba) : (c < 0.0 ? uSpanL : uSpanR);
+    // Crescents are drawn to measure only off a letter; between letters the
+    // glass does what it always did.
+    float ch = 0.0;
+    float endE = endAt;
+    // (The crescents are placed past the fully open glass's push and stay
+    // there all through the motion: each widens and narrows where it is, and
+    // the letter slides out toward them.)
+    // Their echoes start past where the fully open glass has pushed the
+    // letter's edge, so no letter loses a corner to its first crescent; and
+    // in the vertical study all of a letter's columns start them on the same
+    // flute, past its highest point, so a round letter's crescents do not
+    // jump a flute partway across it. Every flute of a column reckons that
+    // edge with the push of the one flute that holds it.
+    vec4 pk = texture(uExtentPeak, vec2((uCentre.x + b) / uRes.x, 0.5));
+    float top = uLocal > 0.5 ? (c < 0.0 ? pk.r : pk.g) : endAt;
+    float guess = top + uFan * uHalf * pow(clamp(top / (uEdge * uHalf), 0.0, 1.0), uFanPow);
+    float acE = ac - uPitch * floor((ac - guess) / uPitch + 0.5);
+    float pushE = uFan * uHalf * pow(min(acE / (uEdge * uHalf), 1.0), uFanPow);
+    if (uCres > 0.5 && (uLocal < 0.5 || span.y > 0.5)) {
+      ch = 1.0;
+      endE = top + pushE;
+    }
+    float outer = max(0.0, ac - endE);
+    float echo = step(0.5 * uPitch, outer) * step(0.0001, uEchoAnchor);
+    float os = ac - endE;
+    // Each letter's edge is met at the nearest flute line: the glass shows
+    // the letter stretched out (or drawn in) by up to half a flute, evenly
+    // from the word's middle to its edge, so the letter ends exactly where a
+    // flute ends and its first, widest crescent starts one seam later,
+    // wherever the edge falls among the flutes.
+    // (A flute near the edge magnifies a little, so the line it shows at its
+    // outer side lies half a magnified flute past its middle.)
+    float kRel = floor(os / uPitch + 0.5);
+    float gEdge = 1.0 - uSqueezeTip;
+    float reachOut = acE + 0.5 * gEdge * uPitch - endE;
+    float reachIn = acE - uPitch + 0.5 * gEdge * uPitch - endE;
+    float first = abs(reachOut) <= abs(reachIn) ? 1.0 : 0.0;
+    float delta = first > 0.5 ? reachOut : reachIn;
+    if (ch > 0.5) echo = (kRel >= first ? 1.0 : 0.0) * step(0.0001, uEchoAnchor);
+    // In the vertical study, a column between letters throws no echoes in
+    // the versions drawn to measure: it shows the glass as it is, so the
+    // letters' sides keep their edge and fringe from the first frame on.
+    float between = uCres > 0.5 && uLocal > 0.5 && span.y <= 0.5 ? 1.0 : 0.0;
+    echo *= 1.0 - between;
+    // Oval: echoes reach furthest over the word's middle, less toward its ends.
+    float reachScale = uOval > 0.0 ? mix(1.0, sqrt(max(0.0, 1.0 - b * b / (uOvalW * uOvalW))), uOval) : 1.0;
+    float far = clamp(outer / max(0.001, (uEchoes + 0.5) * uPitch * reachScale), 0.0, 1.0);
+    // Lens: further echoes look through a narrower part of the glass, so
+    // they come out shorter and the field closes into an oval.
+    if (echo > 0.5 && uLens > 0.0) {
+      float about = span.x;
+      b = about + (b - about) * (1.0 + uLens * pow(far, uLensPow));
+      if (uLocal > 0.5) {
+        vec4 there = texture(uExtent, vec2((uCentre.x + b) / uRes.x, 0.5));
+        endAt = c < 0.0 ? there.r : there.g;
+      }
+    }
+    // Over the letters each flute shows the word moved out a little, more
+    // toward the ends.
+    float fan = -s * sign(c) * uFan * uHalf * pow(min(r / uEdge, 1.0), uFanPow) * (1.0 - echo) * (1.0 - between);
+    // Past the letters each flute looks a small step further off their end,
+    // and the echoes reach as far as the glass is strong.
+    float run = outer / max(uReachNow, 0.001);
+    float view = uEchoAnchor * endAt + uEchoStep * (run - 0.5 * uPitch);
+    // Contour: each echo looks deeper into its letter at the letter's middle
+    // than at its ends, so it comes out a crescent, thick and then pointed.
+    if (uBow > 0.0) {
+      float t = clamp((b - span.x) / max(span.y, 1.0), -1.0, 1.0);
+      view += uPitch * (uBowOut - uBow * (1.0 - t * t)) * sqrt(far);
+    }
+    float bend = s * mix(uBendFloor, 1.0, smoothstep(uCore, uEdge, r));
+    // Over the letters a flute magnifies the strip behind it; past them it is
+    // looked through more steeply, so it squeezes the letter down to a hairline.
+    float sq = echo < 0.5
+      ? mix(uSqueeze, uSqueezeTip, smoothstep(0.0, uEdge, min(r, uEdge)))
+      : mix(uSqueezeTip, uSqueezeEcho, uSqRamp > 0.0 ? pow(far, uSqRamp) : smoothstep(0.0, 0.8, far));
+    float h = u * (1.0 - bend * sq) + bend * uCurve * (4.0 * u * u * u - u);
+    float dh = (1.0 - bend * sq) + bend * uCurve * (12.0 * u * u - 1.0);
+    float D = 0.0;
+    // (The stretch grows with the glass.)
+    float acLast = ac - (kRel - first + 1.0) * uPitch;
+    float snap = ch > 0.5 && echo < 0.5 ? -s * sign(c) * delta * clamp(ac / max(acLast, uPitch), 0.0, 1.0) : 0.0;
+    // Which crescent this flute holds, counting out from the letter.
+    float nth = kRel - first;
+    float from = -0.5 + uGap;
+    float isEcho = echo;
+    // Crescents drawn to measure: how much of its flute each echo fills,
+    // each narrower than the one before by the same share, full at its
+    // letter's middle and narrowing toward its ends, behind a fine dark seam
+    // on the flute's near side. The flute is aimed so its letter's edge falls
+    // exactly there. While the glass opens, the echoes reach only as far as
+    // it has, and each grows out of nothing over the same stretch of reach
+    // (about a tenth of a second at full speed), near ones first.
+    float cres = 1.0, cut = 1.0;
+    bool drawn = false;
+    if (ch > 0.5 && isEcho > 0.5) {
+      float fs = far / max(uReachNow, 0.001);
+      float at = min(fs, 1.0);
+      float t = clamp((b - span.x) / max(span.y, 1.0), -1.0, 1.0);
+      float tau = mix(1.0, uTauFar, pow(at, uTauPow));
+      float prof = pow(max(0.0, 1.0 - t * t / (tau * tau)), uGamma);
+      float wide = uRatio > 0.0 ? uWFar + (uWNear - uWFar) * pow(uRatio, max(nth, 0.0)) : mix(uWNear, uWFar, pow(at, uTaperPow));
+      // (The first crescent grows in over its first quarter flute past the
+      // edge, so when the glass pushes a letter into the next flute that
+      // flute changes over from dark to dark, not to a whole crescent.)
+      float wf = wide * prof * smoothstep(0.0, 0.15, uReachNow * 1.15 - far);
+      float ub = wf - 0.5;
+      float hb = ub * (1.0 - bend * sq) + bend * uCurve * (4.0 * ub * ub * ub - ub);
+      view = endAt - uPitch * hb;
+      float G = 1.0 - bend * sq;
+      float up = u * sign(c);
+      float o = endAt + G * uPitch * (up - from - wf);
+      cut = clamp((up - from) * uPitch + 0.5, 0.0, 1.0);
+      D = sign(c) * o - a;
+      dh = G;
+      drawn = true;
+      cres = smoothstep(0.0, 0.12, wf);
+    }
+    float outPart = isEcho * sign(c) * (view - ac);
+    if (!drawn) D = outPart + fan + snap + (h - u) * uPitch;
+    // The colour comes in a moment after the glass does and goes a moment
+    // before it, so echoes are born white and the letters start and end
+    // white (uDisp, from the motion; 1 when held open).
+    float split = (uKappaOut * outPart + uKappaFan * fan + bend * uFace * 2.0 * u * uPitch) * uDisp;
+    split *= 1.0 + uFlash * abs(uV[i]);
+    split = split / (1.0 + abs(split) / uFmax);
+    sig += s * far * uEchoSoft;
+    // A wide fringe is a soft one, in the poster's proportion, but only
+    // across edges that face along the bend: the light is not split the
+    // other way, so those edges stay as sharp as the letters.
+    float soft = min(sqrt(uSoftSplit) * abs(split), uSoftMax);
+    // Each further hairline a little fainter than the last, down to nothing.
+    // (Crescents fade by their own exponent: they also thin and shorten, so
+    // they need less dimming to die away and stay white instead of grey; the
+    // last of them dissolve.)
+    float fade = pow(1.0 - far, ch > 0.5 ? uFadeExp : 1.0 + 1.4 * uEchoFade);
+    if (ch > 0.5) fade *= 1.0 - smoothstep(uDissolve, 1.0, far);
+    float bright = mix(1.0, fade * (ch > 0.5 ? cres : clamp(s, 0.0, 1.0)), isEcho);
+    // The glass splits the light a little across too, about the middle, so
+    // the letters' flat tops and bottoms are fringed without being reshaped.
+    float splitB = uKappaB * bend * b * uDisp;
+    float band = isEcho > 0.5 && uLocal > 0.5 && ch > 0.5 ? uBand : 0.0;
+    if (band > 0.0) {
+      // Filled as deep as the edge of any column a wavelength looks into.
+      float dB = 0.5 * abs(splitB) + 1.0;
+      vec4 r0 = texture(uExtentRaw, vec2((uCentre.x + b - dB) / uRes.x, 0.5));
+      vec4 r1 = texture(uExtentRaw, vec2((uCentre.x + b + dB) / uRes.x, 0.5));
+      endRaw = min(endRaw, min(c < 0.0 ? r0.r : r0.g, c < 0.0 ? r1.r : r1.g));
+    }
+    float sgn = sign(c);
+    float mid = fieldE(a + D, b, sgn, endAt, endRaw, band);
+    float along = clamp(0.5 * abs(fieldE(a + D + 1.0, b, sgn, endAt, endRaw, band) - fieldE(a + D - 1.0, b, sgn, endAt, endRaw, band)), 0.0, 1.0);
+    // (The magnified softness eases in with the glass, so the first frame of
+    // the motion does not jump from the resting letters.)
+    float se = sqrt(sig * sig + along * along * (0.16 * dh * dh * smoothstep(0.0, 0.08, abs(s)) + soft * soft));
+    if (abs(mid) > (abs(split) + abs(splitB)) * 0.6 + 4.5 * se + 2.0) return vec3(mid < 0.0 ? bright * cut : 0.0);
+    vec3 acc = vec3(0.0);
+    for (int w = 0; w < ${WAVES}; w++) {
+      acc += cover(fieldE(a + D + split * uW[w].w, b + splitB * uW[w].w, sgn, endAt, endRaw, band), se) * uW[w].rgb;
+    }
+    return acc * bright * cut;
+  }
+
+  vec3 tone(vec3 x) {
+    vec3 hi = 0.6 + 0.4 * (1.0 - exp(-(x - 0.6) / 0.4));
+    return mix(x, hi, step(0.6, x));
+  }
+  vec3 encode(vec3 c) {
+    c = clamp(c, 0.0, 1.0);
+    return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+  }
+
+  void main() {
+    vec2 q = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) - uCentre;
+    float a = uAxis < 0.5 ? q.x : q.y;
+    float b = uAxis < 0.5 ? q.y : q.x;
+    float f = a / (uPitch * uPitchScale);
+    float k = floor(f + 0.5);
+    float u = f - k;
+    vec3 col = flute(k, u, a, b);
+    float edge = (0.5 - abs(u)) * uPitch * uPitchScale;
+    float side = u >= 0.0 ? 1.0 : -1.0;
+    if (edge < 0.5) col = mix(col, flute(k + side, f - k - side, a, b), 0.5 - edge);
+    vec3 lit = tone(max(col, 0.0) * uExposure) / uToneNorm;
+    if (uSeam > 0.0) {
+      // Where two slats meet: a fine dark line, and just past it the glass
+      // edge catches a warm glint of the letters it sits over.
+      float s = 0.5 * (clamp(uS[slot(k)], 0.0, 1.0) + clamp(uS[slot(k + side)], 0.0, 1.0));
+      float line = 1.0 - smoothstep(uSeamWidth * 0.5 - 0.6, uSeamWidth * 0.5 + 0.6, edge);
+      lit *= 1.0 - uSeam * s * line;
+      float after = (u + 0.5) * uPitch - uSeamWidth * 1.6;
+      float near = 1.0 - smoothstep(0.0, 0.12 * uHalf, max(field(a, b), 0.0));
+      lit += uSeamLight * s * near * exp(-after * after / (0.3 * uSeamWidth * uSeamWidth)) * vec3(1.0, 0.94, 0.78);
+    }
+    outColor = vec4(encode(lit), 1.0);
+  }`;
+
+  function compile(gl, type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+    return sh;
+  }
+
+  const EXPOSURE = 1.8;
+  const toneNorm = ((x) => (x < 0.6 ? x : 0.6 + 0.4 * (1 - Math.exp(-(x - 0.6) / 0.4))))(EXPOSURE);
+  const WAVE_TABLE = spectrum(WAVES);
+
+  function makeStudy(canvas, cfg) {
+    const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, preserveDrawingBuffer: true });
+    if (!gl) return null;
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, "p");
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const U = {};
+    const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const info = gl.getActiveUniform(prog, i);
+      const name = info.name.replace(/\[0\]$/, "");
+      U[name] = gl.getUniformLocation(prog, info.name);
+    }
+    const tex = gl.createTexture();
+    const s = new Float32Array(FLUTES), v = new Float32Array(FLUTES);
+    const study = { gl, U, tex, cfg, geo: null, s, v };
+    return study;
+  }
+
+  function loadInk(study, ink, width, height, dpr) {
+    const { gl, U, tex, cfg } = study;
+    gl.viewport(0, 0, width, height);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, ink.w, ink.h, 0, gl.RED, gl.FLOAT, ink.sdf);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const half = cfg.axis === 0 ? ink.half.x : ink.half.y;
+    const pitch = cfg.pitch * half;
+    // Echoes run `echoes` flutes past the word's end; a fan reaches as far
+    // as its outermost flute still looks back into the word.
+    const win = 0.5 * pitch * (1 + cfg.squeeze) / half;
+    const reach = cfg.fan > 0 && !(cfg.echoAnchor > 0)
+      ? cfg.edge + (cfg.fan + win) / (1 - cfg.fan * (cfg.fanTail || 0) / (cfg.edge - cfg.core))
+      : cfg.edge + (cfg.echoes + 0.5) * pitch / half;
+    study.geo = { half, pitch, reach, core: cfg.core };
+    gl.uniform2f(U.uRes, width, height);
+    gl.uniform2f(U.uCentre, ink.centre.x, ink.centre.y);
+    gl.uniform1f(U.uAxis, cfg.axis);
+    gl.uniform1f(U.uHalf, half);
+    gl.uniform1f(U.uPitch, pitch);
+    gl.uniform1f(U.uCore, cfg.core);
+    gl.uniform1f(U.uEdge, cfg.edge);
+    gl.uniform1f(U.uPullIn, cfg.pullIn);
+    gl.uniform1f(U.uFan, cfg.fan);
+    gl.uniform1f(U.uKappaFan, cfg.kappaFan);
+    gl.uniform1f(U.uFanPow, cfg.fanPow || 1);
+    gl.uniform1f(U.uEchoes, cfg.echoes);
+    gl.uniform1f(U.uLocal, cfg.local ? 1 : 0);
+    gl.uniform1f(U.uKappaB, cfg.kappaB || 0);
+    // Each column's own top and bottom, for echoes off every letter both ways.
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, study.ext ??= gl.createTexture());
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, 1, 0, gl.RGBA, gl.FLOAT, cfg.cres ? ink.smooth : ink.ends);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1i(U.uExtent, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, study.raw ??= gl.createTexture());
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, 1, 0, gl.RGBA, gl.FLOAT, cfg.cres ? ink.lower : ink.ends);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1i(U.uExtentRaw, 2);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, study.peak ??= gl.createTexture());
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, 1, 0, gl.RGBA, gl.FLOAT, ink.peak);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1i(U.uExtentPeak, 3);
+    gl.uniform2f(U.uSpanL, ink.spans.first[0], ink.spans.first[1]);
+    gl.uniform2f(U.uSpanR, ink.spans.last[0], ink.spans.last[1]);
+    gl.uniform1f(U.uSqRamp, cfg.sqRamp || 0);
+    gl.uniform1f(U.uBow, cfg.bow || 0);
+    gl.uniform1f(U.uBowOut, cfg.bowOut || 0);
+    gl.uniform1f(U.uLens, cfg.lens || 0);
+    gl.uniform1f(U.uLensPow, cfg.lensPow || 1);
+    gl.uniform1f(U.uOval, cfg.oval || 0);
+    gl.uniform1f(U.uCres, cfg.cres ? 1 : 0);
+    gl.uniform1f(U.uFadeExp, cfg.fadeExp ?? 1.0);
+    gl.uniform1f(U.uGap, cfg.gap ?? 0);
+    gl.uniform1f(U.uRatio, cfg.ratio ?? 0);
+    gl.uniform1f(U.uDissolve, cfg.dissolve ?? 1);
+    gl.uniform1f(U.uBand, (cfg.band ?? 0.15) * (cfg.axis === 0 ? ink.half.x : ink.half.y));
+    gl.uniform1f(U.uWNear, cfg.wNear ?? 0.8);
+    gl.uniform1f(U.uWFar, cfg.wFar ?? 0.4);
+    gl.uniform1f(U.uTaperPow, cfg.taperPow ?? 1);
+    gl.uniform1f(U.uGamma, cfg.gamma ?? 1);
+    gl.uniform1f(U.uTauFar, cfg.tauFar ?? 1);
+    gl.uniform1f(U.uTauPow, cfg.tauPow ?? 1);
+    gl.uniform1f(U.uTipSoft, cfg.tipSoft ?? 0.2);
+    gl.uniform1f(U.uOvalW, (cfg.axis === 0 ? ink.half.y : ink.half.x) * (cfg.ovalW || 1.1));
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1f(U.uEchoAnchor, cfg.echoAnchor);
+    gl.uniform1f(U.uEchoStep, cfg.echoStep);
+    gl.uniform1f(U.uSqueezeEcho, cfg.squeezeEcho);
+    gl.uniform1f(U.uEchoSoft, cfg.echoSoft * dpr);
+    gl.uniform1f(U.uTilt, cfg.tilt);
+    gl.uniform1f(U.uKappaIn, cfg.kappaIn);
+    gl.uniform1f(U.uKappaOut, cfg.kappaOut);
+    gl.uniform1f(U.uKappaTilt, cfg.kappaTilt);
+    gl.uniform1f(U.uFace, cfg.face);
+    gl.uniform1f(U.uEchoFade, cfg.echoFade);
+    gl.uniform1f(U.uSqueeze, cfg.squeeze);
+    gl.uniform1f(U.uSqueezeTip, cfg.squeezeTip ?? cfg.squeeze);
+    gl.uniform1f(U.uCurve, cfg.curve);
+    gl.uniform1f(U.uBendFloor, cfg.bendFloor);
+    gl.uniform1f(U.uFmax, cfg.fmax * dpr);
+    gl.uniform1f(U.uFlash, 0.35);
+    gl.uniform1f(U.uSoftSplit, 0.022);
+    gl.uniform1f(U.uSoftMax, 1.6 * dpr);
+    gl.uniform1f(U.uSigma0, 0.55);
+    gl.uniform1f(U.uSigma1, 0.6 * dpr);
+    gl.uniform1f(U.uExposure, EXPOSURE);
+    gl.uniform1f(U.uToneNorm, toneNorm);
+    gl.uniform1f(U.uReach, reach);
+    gl.uniform1f(U.uSeam, cfg.seam);
+    gl.uniform1f(U.uSeamLight, cfg.seamLight);
+    gl.uniform1f(U.uSeamWidth, 1.6 * dpr);
+    gl.uniform4fv(U.uW, WAVE_TABLE);
+    gl.uniform4f(U.uSdfRect, ink.x0, ink.y0, 1 / ink.w, 1 / ink.h);
+    gl.uniform1i(U.uSdf, 0);
+  }
+
+  function draw(study, ms) {
+    const { gl, U, s, v, geo } = study;
+    if (!geo) return;
+    gl.uniform1f(U.uPitchScale, 1);
+    gl.uniform1f(U.uReachNow, reachAt(ms));
+    gl.uniform1f(U.uDisp, colourAt(ms));
+    flutesAt(ms, s, v);
+    gl.uniform1fv(U.uS, s);
+    gl.uniform1fv(U.uV, v);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // ---------------------------------------------------------------- page
+  const canvases = [document.getElementById("study-h"), document.getElementById("study-v")];
+  let studies = [];
+  let shown = null; // null = the crest, a number = a moment of the cycle
+  const tabs = [...document.querySelectorAll("#options button")];
+  const modes = [...document.querySelectorAll("#mode button")];
+  const KEYS = ["b", "d", "e", "f"];
+  let chosen = Math.max(0, KEYS.indexOf(location.hash.slice(1)));
+  let built = null;
+  let frame = 0;
+
+  function configFor(st, i) {
+    const axis = st === studies[0] ? "h" : "v";
+    return { ...STUDIES[axis], ...VERSIONS[i][axis] };
+  }
+
+  function choose(i) {
+    chosen = i;
+    tabs.forEach((t, j) => t.setAttribute("aria-pressed", String(j === i)));
+    if (!built) return;
+    for (const st of studies) {
+      st.cfg = configFor(st, i);
+      loadInk(st, built.ink, built.width, built.height, built.dpr);
+    }
+    // A version chosen after the motion has finished shows it open again.
+    if (!frame && shown !== null) open();
+    else for (const st of studies) draw(st, shown);
+  }
+
+  function pressMode(i) { modes.forEach((m, j) => m.setAttribute("aria-pressed", String(j === i))); }
+  function open() {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    pressMode(0);
+    renderAt(null);
+  }
+  function play() {
+    cancelAnimationFrame(frame);
+    pressMode(1);
+    const t0 = performance.now();
+    const tick = (now) => {
+      const ms = now - t0;
+      renderAt(Math.min(ms, T.end));
+      frame = ms < T.end ? requestAnimationFrame(tick) : 0;
+    };
+    renderAt(0);
+    frame = requestAnimationFrame(tick);
+  }
+
+  const letGo = (e, t) => { if (e.detail > 0) t.blur(); };
+  tabs.forEach((t, i) => t.addEventListener("click", (e) => { choose(i); letGo(e, t); }));
+  modes[0].addEventListener("click", (e) => { open(); letGo(e, modes[0]); });
+  modes[1].addEventListener("click", (e) => { play(); letGo(e, modes[1]); });
+  window.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    const i = KEYS.indexOf(k);
+    if (i >= 0) choose(i);
+    else if (k === "o") open();
+    else if (k === "p" || (k === " " && !(e.target instanceof HTMLButtonElement))) { e.preventDefault(); play(); }
+  });
+
+  function fail() {
+    for (const c of canvases) {
+      const note = document.createElement("p");
+      note.className = "fallback";
+      note.textContent = "This preview needs WebGL 2, which this browser has turned off.";
+      c.replaceWith(note);
+    }
+  }
+
+  function build() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const rect = canvases[0].getBoundingClientRect();
+    const width = Math.max(320, Math.round(rect.width * dpr));
+    const height = Math.round(width * 400 / 640);
+    const ink = inkField(width, height);
+    built = { ink, width, height, dpr };
+    for (const st of studies) {
+      st.gl.canvas.width = width;
+      st.gl.canvas.height = height;
+    }
+    choose(chosen);
+  }
+
+  function renderAt(ms) {
+    shown = ms;
+    for (const st of studies) draw(st, ms);
+  }
+
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (studies.length) build(); }, 150);
+  });
+
+  const ready = (async () => {
+    try { await document.fonts.load(`${WEIGHT} 100px "Inter Tight"`, WORD); } catch { /* falls back */ }
+    try {
+      studies = [makeStudy(canvases[0], STUDIES.h), makeStudy(canvases[1], STUDIES.v)];
+    } catch (err) {
+      console.error(err);
+      studies = [];
+    }
+    if (studies.some((st) => !st)) { studies = []; fail(); return; }
+    build();
+  })();
+
+  window.__reelicRipple = { ready, renderAt, choose, play, open, timing: T, curves: { GLASS, REACH }, studies: () => studies };
+})();
+</script>
