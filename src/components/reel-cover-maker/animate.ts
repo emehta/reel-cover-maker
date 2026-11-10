@@ -38,9 +38,11 @@
  * - Engraved, Wick and Jelly are the owner's picks of twenty tried (31
  *   Oct); the other seventeen, and all five for Stickery, were turned down
  *   ("too weird").
- * - Echo: Ripple (the words, then each echo out from them in turn), Spread
- *   (the echoes slide out from the words to their places), Cascade (every
- *   line drops in, top to bottom).
+ * - Ripple: Pulse (the owner's ask, 10 Nov: the whole ripple pulse), a
+ *   loop of the reference video's motion measured frame by frame (glass.ts):
+ *   from the cover, the glass held open, it lets go, the word goes clean
+ *   for a moment, swells a second time and is drawn in, rests, and swells
+ *   out to open again.
  * - Mono: Typewriter (its cursor typing), Word by word.
  * - Wave: Crossing, Cascade, Loose, Ripple and One wave (the owner's five
  *   of 9 Nov), each a loop of the block waving inside its own rectangle
@@ -68,10 +70,11 @@ import { apply, invert, multiply, type Matrix, type Point } from "@/components/r
 import { isBackdrop, pasteKey, type LiquidOp, type Op, type Scene, type StyleId } from "@/components/reel-cover-maker/scene";
 import { fillHoles, insidePolygon, polygonBounds, traceCells, type Polygon } from "@/components/reel-cover-maker/stepped";
 import { isStill, STILL_BELOW, type Drop as WaterDrop, type Surface } from "@/components/reel-cover-maker/ripple";
+import { pulsePlay } from "@/components/reel-cover-maker/glass";
 import { graphemes } from "@/components/reel-cover-maker/title";
 import { WAVE_VARIANTS, wavePlay, type WaveVariantId } from "@/components/reel-cover-maker/wave";
 
-export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "ripple" | "spread" | "cascade" | "engraved" | "wick" | "jelly" | "ribbon" | "drop" | WaveVariantId;
+export type AnimationId = "type-draw" | "slap" | "pop" | "reveal" | "jitter" | "written" | "words" | "typewriter" | "lines" | "pulse" | "engraved" | "wick" | "jelly" | "ribbon" | "drop" | WaveVariantId;
 
 export interface Animation {
   id: AnimationId;
@@ -115,11 +118,8 @@ export const ANIMATIONS: Record<StyleId, readonly Animation[]> = {
     { id: "wick", name: "Wick" },
     { id: "jitter", name: "Jitter" },
   ],
-  echo: [
-    { id: "ripple", name: "Ripple" },
-    { id: "spread", name: "Spread" },
-    { id: "cascade", name: "Cascade" },
-  ],
+  // The owner's ask of 10 Nov: the whole pulse, from the cover held open.
+  ripple: [{ id: "pulse", name: "Pulse" }],
   mono: [
     { id: "typewriter", name: "Typewriter" },
     { id: "words", name: "Word by word" },
@@ -2128,53 +2128,6 @@ function drop(scene: Scene, measurer: Measurer): Built {
   };
 }
 
-/** Echo: the words and their echoes, rings out from the middle. */
-function echo(scene: Scene, id: AnimationId, measurer: Measurer): Built {
-  const leaves = leavesOf(scene.ops).filter((l): l is Leaf & { op: Extract<Op, { kind: "text" }> } => l.op.kind === "text");
-  const main = leaves.filter((l) => !l.op.outline);
-  const echoes = leaves.filter((l) => !!l.op.outline);
-  const mid = main.length ? main.reduce((sum, l) => sum + l.op.y, 0) / main.length : 0;
-  const distances = [...new Set(echoes.map((l) => Math.round(Math.abs(l.op.y - mid))))].sort((a, b) => a - b);
-  const ring = (l: Leaf & { op: Extract<Op, { kind: "text" }> }) => distances.indexOf(Math.round(Math.abs(l.op.y - mid))) + 1;
-  const sheet = new Map<Op, (t: number) => Look | null>();
-  let natural: number;
-  if (id === "cascade") {
-    const order = [...leaves].sort((a, b) => a.op.y - b.op.y);
-    const gap = Math.min(0.06, 2.4 / Math.max(1, order.length));
-    natural = (order.length - 1) * gap + 0.55;
-    const k = fitted(natural);
-    order.forEach((l, i) => {
-      const centre = leafCentre(l, measurer);
-      sheet.set(l.op, (now) => arrive("drop", centre, i * gap * k, 0.55 * k, now, l.op.size * 0.4));
-    });
-    return { duration: natural * k, look: (leaf, t) => sheet.get(leaf.op)?.(t) ?? null };
-  }
-  const rings = distances.length;
-  const gap = Math.min(0.13, 2.2 / Math.max(1, rings));
-  natural = 0.35 + rings * gap + (id === "spread" ? 0.75 : 0.4);
-  const k = fitted(natural);
-  for (const l of main) {
-    const centre = leafCentre(l, measurer);
-    sheet.set(l.op, (now) => arrive(id === "ripple" ? "settle" : "fade", centre, 0, 0.5 * k, now, 0));
-  }
-  for (const l of echoes) {
-    const r = ring(l);
-    const at = (0.35 + (r - 1) * gap) * k;
-    if (id === "ripple") {
-      sheet.set(l.op, (now) => arrive("fade", leafCentre(l, measurer), at, 0.4 * k, now, 0));
-    } else {
-      // From the words' own place out to its own.
-      const dy = mid - l.op.y;
-      sheet.set(l.op, (now) => {
-        const u = span(now, at, 0.75 * k);
-        if (u >= 1) return null;
-        return { alpha: clamp01(u / 0.3), move: [1, 0, 0, 1, 0, dy * (1 - easeOut(u))] };
-      });
-    }
-  }
-  return { duration: natural * k, look: (leaf, t) => sheet.get(leaf.op)?.(t) ?? null };
-}
-
 /**
  * The animation `id` of a cover's scene in `style`, at `speed` (1 its own,
  * 2 twice as fast, 0.5 half): every time in it divided by the speed.
@@ -2186,14 +2139,13 @@ export function plan(scene: Scene, style: StyleId, id: AnimationId, measurer: Me
   if (id === "jelly") return jelly(scene, pace);
   if (id === "ribbon") return ribbon(scene, measurer, pace);
   if (style === "wave") return wavePlay(scene, offers("wave", id) ? (id as WaveVariantId) : WAVE_VARIANTS[0].id, pace);
+  if (style === "ripple") return pulsePlay(scene, pace);
   const built: Built =
     style === "stickery"
       ? stickery(scene, id, measurer)
       : style === "pasty" || style === "pasty-flat"
         ? pasty(scene)
-        : style === "echo"
-          ? echo(scene, id, measurer)
-          : style === "inkblot"
+        : style === "inkblot"
             ? inkblot(scene, id, measurer)
             : style === "renaissance"
               ? renaissanceIn(scene, id, measurer)

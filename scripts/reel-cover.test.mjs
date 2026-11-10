@@ -44,6 +44,7 @@ const RUN = await import("@/components/reel-cover-maker/ink-run");
 const REN = await import("@/components/reel-cover-maker/renaissance");
 const RIP = await import("@/components/reel-cover-maker/ripple");
 const W = await import("@/components/reel-cover-maker/wave");
+const GL = await import("@/components/reel-cover-maker/glass");
 const WF = await import("@/components/reel-cover-maker/wave-faces");
 // Wave's letters, fetched as the page fetches them.
 for (const face of WF.WAVE_FACES) assert.ok(await WF.loadWaveFace(face.id), `Wave's ${face.name} did not load`);
@@ -72,6 +73,8 @@ const FACE_WIDTH = {
   condensed: 0.36,
   sans: 0.52,
   "sans-heavy": 0.58,
+  // Ripple's Inter Tight at its heaviest.
+  heavy: 0.6,
   wide: 0.8,
   mono: 0.6,
   "mono-bold": 0.6,
@@ -99,6 +102,7 @@ const FACE_METRICS = {
   condensed: { cap: 0.73, ascent: 0.98, descent: 0.18 },
   sans: { cap: 0.73, ascent: 0.97, descent: 0.22 },
   "sans-heavy": { cap: 0.73, ascent: 0.98, descent: 0.22 },
+  heavy: { cap: 0.73, ascent: 0.98, descent: 0.24 },
   wide: { cap: 0.72, ascent: 0.96, descent: 0.2 },
   mono: { cap: 0.68, ascent: 0.9, descent: 0.26 },
   "mono-bold": { cap: 0.68, ascent: 0.99, descent: 0.26 },
@@ -117,13 +121,13 @@ const FACE_METRICS = {
 
 const liquidOf = (scene) => scene.ops.find((op) => op.kind === "liquid");
 
-/** Every text op, those inside a turn too, in drawing order. */
+/** Every text op, those inside a turn too, in drawing order; Ripple's word through the glass is text set as a text op is. */
 function textOps(scene) {
   const out = [];
   const walk = (ops) => {
     for (const op of ops) {
       if (op.kind === "turn" || op.kind === "knockout") walk(op.ops);
-      else if (op.kind === "text") out.push(op);
+      else if (op.kind === "text" || op.kind === "glass") out.push(op);
     }
   };
   walk(scene.ops);
@@ -282,7 +286,7 @@ function applyTurn(rect, turn) {
   return turn ? S.turnedBounds(rect, turn.cx, turn.cy, turn.angle) : rect;
 }
 
-/** Every op that must be read, as the rectangle it can ink. Outlines (Echo's copies) are ornament. */
+/** Every op that must be read, as the rectangle it can ink. Outlines are ornament, and so is the trail of Ripple's glass. */
 function readableInk(scene) {
   const out = [];
   const walk = (ops, turn) => {
@@ -308,6 +312,9 @@ function readableInk(scene) {
       } else if (op.kind === "ink") {
         const b = INKM.loopBounds(op.polygons);
         out.push({ op, rect: { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 } });
+      } else if (op.kind === "glass") {
+        // Ripple's word, its letters pushed out by the glass and fringed; its trail is ornament.
+        out.push({ op, rect: applyTurn(GL.glassReadable(op, measurer), turn) });
       } else if (op.kind === "wave") {
         // Wave's letters at rest and as its wave holds them, and anything in it set as text.
         for (const polygons of [op.rows.flatMap((r) => r.polygons), W.wavePolygons(op)]) {
@@ -349,7 +356,7 @@ function mainText(scene) {
   const walk = (ops) => {
     for (const op of ops) {
       if (op.kind === "turn" || op.kind === "knockout" || op.kind === "matrix") walk(op.ops);
-      else if ((op.kind === "text" && !op.outline) || op.kind === "ink") out.push(op.text);
+      else if ((op.kind === "text" && !op.outline) || op.kind === "ink" || op.kind === "glass") out.push(op.text);
       else if (op.kind === "wave") out.push(...op.rows.map((r) => r.text));
     }
   };
@@ -636,7 +643,7 @@ check("no word is dropped or doubled: the drawn text is the typed text", () => {
           assert.equal(letters(stripSpaces(mainText(scene))), letters(typed), `${style.id} ${format.id} "${title}"`);
           continue;
         }
-        const expected = style.id === "echo" || style.id === "wave" ? typed.toLocaleUpperCase() : typed;
+        const expected = style.id === "wave" ? typed.toLocaleUpperCase() : typed;
         assert.equal(stripSpaces(mainText(scene)), expected, `${style.id} ${format.id} "${title}"`);
       }
     }
@@ -655,16 +662,88 @@ check("even the longest unbroken title stays inside the safe area", () => {
   }
 });
 
-check("Echo repeats the title in outline toward both edges, never a copy wholly off the cover", () => {
+check("Ripple sets the bold word alone on its line, through the glass, and the rest plainly round it in the order typed; with none bold, the longest word", () => {
+  const glassOf = (scene) => scene.ops.filter((op) => op.kind === "glass");
+  const plainOf = (scene) => scene.ops.filter((op) => op.kind === "text");
+  for (const axis of ["h", "v"]) {
+    const scene = cover("How I *plan* my week", "ripple", "reel", { rippleAxis: axis });
+    assert.deepEqual(glassOf(scene).map((op) => op.text), ["plan"]);
+    assert.deepEqual(plainOf(scene).map((op) => op.text), ["How", "I", "my", "week"]);
+    const [glass] = glassOf(scene);
+    assert.equal(glass.axis, axis);
+    assert.equal(glass.face, GL.GLASS_FACE);
+    // Above it and below it, in its own colour, the plain words smaller.
+    for (const op of plainOf(scene)) assert.ok(near(op.size, glass.size * GL.PLAIN_SHARE, 1e-6) && op.color === glass.color, `${axis}: ${op.text} at ${op.size}`);
+    assert.ok(plainOf(scene).slice(0, 2).every((op) => op.y < glass.y) && plainOf(scene).slice(2).every((op) => op.y > glass.y));
+    // On Vertical, a plain line as clear of the arcs over it as of those under it, by its own letters.
+    if (axis === "v") {
+      const two = cover("*rate* my *setup*", "ripple", "reel", { rippleAxis: "v" });
+      const [rate, setup] = glassOf(two);
+      const my = plainOf(two)[0];
+      const ink = (op) => measurer.bounds(op.face, op.text);
+      const above = my.y - ink(my).ascent * my.size - (GL.glassReadable(rate, measurer).y + GL.glassReadable(rate, measurer).h);
+      const below = GL.glassReadable(setup, measurer).y - (my.y + ink(my).descent * my.size);
+      assert.ok(near(above, below, 0.5), `"my" ${above.toFixed(1)} from the arcs over it, ${below.toFixed(1)} from those under it`);
+    }
+    // Lit for its own ground: a clear file but for the letters.
+    assert.equal(glass.ground, P.paletteFor({ ...INK, hex: null }).bg);
+    assert.equal(glass.at, undefined);
+  }
+  // No word bold: the longest word ripples, the first of two as long.
+  assert.deepEqual(glassOf(cover("the art of doing less", "ripple", "reel")).map((op) => op.text), ["doing"]);
+  assert.deepEqual(glassOf(cover("abc xyz", "ripple", "reel")).map((op) => op.text), ["abc"]);
+  // Bold words side by side are one line through the glass, broken evenly at their spaces where they would run wider than five em; a run apart, or on a typed line of its own, is another.
+  assert.deepEqual(glassOf(cover("the *my week* is here", "ripple", "reel")).map((op) => op.text), ["my week"]);
+  assert.deepEqual(glassOf(cover("the *ripple effect* is here", "ripple", "reel")).map((op) => op.text), ["ripple", "effect"]);
+  assert.deepEqual(glassOf(cover("*how I plan my whole week*", "ripple", "reel")).map((op) => op.text), ["how I plan", "my whole", "week"]);
+  assert.deepEqual(glassOf(cover("*rate* my *setup*", "ripple", "reel")).map((op) => op.text), ["rate", "setup"]);
+  assert.deepEqual(glassOf(cover("*one*\n*two*", "ripple", "reel")).map((op) => op.text), ["one", "two"]);
+  // A plain word never outgrows the rippled line, down to a quarter of its size: "SUMMERTIME" round a rippled "OF".
+  const caps = cover("THE ART *OF* SUMMERTIME", "ripple", "reel");
+  const of = glassOf(caps)[0];
+  const summer = plainOf(caps).find((op) => op.text === "SUMMERTIME");
+  assert.ok(near(summer.size, of.size * GL.PLAIN_LEAST, 1e-6), `${summer.size / of.size}`);
+  // An emoji is never the word through the glass by being longest (as a shape alone it would lose its colours); a title of emoji alone is set plainly.
+  assert.deepEqual(glassOf(cover("Week 12 👍", "ripple", "reel")).map((op) => op.text), ["Week"]);
+  assert.deepEqual(glassOf(cover("👍👍👍👍 hi", "ripple", "reel")).map((op) => op.text), ["hi"]);
+  assert.deepEqual(glassOf(cover("👍", "ripple", "reel")), []);
+  assert.deepEqual(plainOf(cover("👍", "ripple", "reel")).map((op) => op.text), ["👍"]);
+  // Nothing to set: nothing drawn, and nothing that is not a number.
+  const none = GL.ripple([], F.formatById("reel").safe, F.formatById("reel").safe, P.paletteFor({ ...INK, hex: null }), measurer, "h", null);
+  assert.deepEqual(none.ops, []);
+  assert.ok(Object.values(none.readable).every(Number.isFinite));
+  // On Vertical too, a text box at its own width is the cover as it was set.
+  for (const title of ["How I *plan* my week", "the art of slow mornings and *coffee* in the sun"]) {
+    const own = cover(title, "ripple", "reel", { rippleAxis: "v" });
+    const same = cover(title, "ripple", "reel", { rippleAxis: "v", wrap: { width: own.wrapRef.width, ref: own.wrapRef } });
+    assert.deepEqual(textOps(same).map((op) => [op.text, op.x.toFixed(3), op.y.toFixed(3), op.size.toFixed(4)]), textOps(own).map((op) => [op.text, op.x.toFixed(3), op.y.toFixed(3), op.size.toFixed(4)]), `"${title}"`);
+  }
+  // A bold part of a word ripples the whole word; the case is as typed.
+  assert.deepEqual(glassOf(cover("re*think*ing it", "ripple", "reel")).map((op) => op.text), ["rethinking"]);
+  assert.deepEqual(GL.glassPieces(T.parseTitle("a *b* c\nd *e f*"), measurer).map((p) => p.kind === "glass" ? p.text : p.paragraphs.map((q) => q.map((w) => w.map((sg) => sg.text).join("")).join(" ")).join("/")), ["a", "b", "c/d", "e f"]);
+});
+
+check("Ripple's glass never has its trail cut by an edge Instagram shows, and on Vertical no plain line stands in its arcs", () => {
   for (const format of F.FORMATS) {
-    const scene = cover("FOCUS", "echo", format.id);
-    const copies = scene.ops.filter((op) => op.kind === "text" && op.outline);
-    const main = scene.ops.find((op) => op.kind === "text" && !op.outline);
-    assert.ok(copies.some((op) => op.y < main.y) && copies.some((op) => op.y > main.y), `${format.id} echoes one way only`);
-    for (const op of copies) {
-      const m = FACE_METRICS[op.face];
-      assert.ok(op.y + m.descent * op.size > 0 && op.y - m.ascent * op.size < format.height, `${format.id} copy off the cover`);
-      assert.ok(op.alpha > 0 && op.alpha < 1);
+    const seen = F.intersect(format.crops);
+    for (const axis of ["h", "v"]) {
+      for (const title of TITLES.slice(0, 160)) {
+        const scene = cover(title, "ripple", format.id, { rippleAxis: axis });
+        const glass = scene.ops.filter((op) => op.kind === "glass");
+        assert.ok(glass.length >= 1, `${format.id} ${axis} "${title}": nothing through the glass`);
+        for (const op of glass) {
+          assert.ok(inside(seen, GL.glassReach(op, measurer), 1e-6), `${format.id} ${axis} "${title}": the trail of "${op.text}" is cut`);
+          if (axis !== "v") continue;
+          // The arcs run up and down the word's whole width: no plain word's ink inside them.
+          const reach = GL.glassReach(op, measurer);
+          for (const { op: other, rect } of readableInk(scene)) {
+            if (other === op || other.kind === "glass") continue;
+            const across = rect.x < reach.x + reach.w && rect.x + rect.w > reach.x;
+            const upDown = rect.y < reach.y + reach.h && rect.y + rect.h > reach.y;
+            assert.ok(!(across && upDown), `${format.id} "${title}": "${other.text}" stands in the arcs of "${op.text}"`);
+          }
+        }
+      }
     }
   }
 });
@@ -680,8 +759,8 @@ check("Mono ends with its cursor after the last letter, and the block sits in th
   assert.ok(near(centre, format.safe.x + format.safe.w / 2, 0.01));
 });
 
-check("stars mean something only to Stickery: every other style sets a starred word exactly as the rest", () => {
-  for (const style of S.STYLES.filter((st) => st.id !== "stickery" && st.id !== "renaissance")) {
+check("stars mean something only to Stickery, Renaissance and Ripple: every other style sets a starred word exactly as the rest", () => {
+  for (const style of S.STYLES.filter((st) => st.id !== "stickery" && st.id !== "renaissance" && st.id !== "ripple")) {
     for (const [starred, plain] of [["How I *actually* save", "How I actually save"], ["*ÉÅ*", "ÉÅ"], ["take up *space* now", "take up space now"]]) {
       for (const ground of ["light", "dark"]) {
         const a = cover(starred, style.id, "post-4x5", { ...COLOURS.blue, ground });
@@ -840,11 +919,11 @@ check("a design round-trips through storage", () => {
   assert.equal(D.DEFAULT_DESIGN.hex, null);
   assert.equal(D.DEFAULT_DESIGN.textHex, null);
   // Animated or not, and each style's animation: one a style does not offer is let go, the rest kept.
-  const animated = { ...design, animated: true, animations: { stickery: "slap", pasty: "written", echo: "spread" }, animationSpeed: 1.5 };
+  const animated = { ...design, animated: true, animations: { stickery: "slap", pasty: "written", ripple: "pulse" }, animationSpeed: 1.5 };
   assert.deepEqual(D.readDesign(D.writeDesign(animated)), animated);
   // An animation since cut (Rise, All at once, Pasty's Pop) is let go, the style back on its first; Stickery's Pop is back.
   assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "rise", mono: "words", editorial: 7, pasty: "together", "pasty-flat": "swell" } })).animations, { mono: "words" });
-  assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "pop", echo: "reveal" } })).animations, { stickery: "pop" });
+  assert.deepEqual(D.readDesign(JSON.stringify({ ...animated, animations: { stickery: "pop", echo: "spread", ripple: "reveal" } })).animations, { stickery: "pop" });
   // A speed is held to half to twice, and is its own where unreadable.
   assert.equal(D.readDesign(JSON.stringify({ animationSpeed: 9 })).animationSpeed, AN.FASTEST);
   assert.equal(D.readDesign(JSON.stringify({ animationSpeed: 0.1 })).animationSpeed, AN.SLOWEST);
@@ -853,7 +932,7 @@ check("a design round-trips through storage", () => {
   assert.equal(D.DEFAULT_DESIGN.animated, false);
   // The animation a style is on: its pick, else its first.
   assert.equal(D.animationOf({ style: "stickery", animations: { stickery: "slap" } }), "slap");
-  assert.equal(D.animationOf({ style: "echo", animations: { stickery: "slap" } }), "ripple");
+  assert.equal(D.animationOf({ style: "ripple", animations: { stickery: "slap" } }), "pulse");
   assert.equal(D.animationOf({ style: "pasty", animations: { pasty: "pop" } }), "written");
   // A placement stored wrong is home, or held to what can be drawn.
   assert.deepEqual(D.readDesign(JSON.stringify({ ...design, place: "moved" })).place, PL.HOME);
@@ -886,8 +965,15 @@ check("whatever storage holds, the maker opens with something it understands", (
   // Its animation too, where Inkblot has it; one picked for Inkblot itself comes first.
   assert.deepEqual(D.readDesign(JSON.stringify({ style: "editorial", animations: { editorial: "lines", mono: "words" } })).animations, { inkblot: "lines", mono: "words" });
   assert.deepEqual(D.readDesign(JSON.stringify({ animations: { editorial: "lines", inkblot: "words" } })).animations, { inkblot: "words" });
-  // The owner's order of 20 Oct, Renaissance new in it.
-  assert.deepEqual(S.STYLES.map((st) => st.name), ["Stickery", "Renaissance", "Inkblot", "Pasty", "Pasty Flat", "Echo", "Mono", "Wave"]);
+  // The owner's order of 20 Oct, Renaissance new in it; Ripple in Echo's place (10 Nov).
+  assert.deepEqual(S.STYLES.map((st) => st.name), ["Stickery", "Renaissance", "Inkblot", "Pasty", "Pasty Flat", "Ripple", "Mono", "Wave"]);
+  // Echo was taken out for Ripple, in its place (10 Nov): a design on it is on Ripple, its words kept, its animation let go.
+  assert.deepEqual(D.readDesign(JSON.stringify({ text: "kept", style: "echo", animations: { echo: "spread" } })), { ...D.DEFAULT_DESIGN, text: "kept", style: "ripple" });
+  // Ripple's flutes: Horizontal unless Vertical was kept.
+  assert.equal(D.DEFAULT_DESIGN.rippleAxis, "h");
+  assert.equal(D.readDesign(JSON.stringify({ rippleAxis: "v" })).rippleAxis, "v");
+  for (const rippleAxis of ["x", 1, null, "V"]) assert.equal(D.readDesign(JSON.stringify({ rippleAxis })).rippleAxis, "h");
+  assert.deepEqual(GL.GLASS_AXES.map((a) => a.name), ["Horizontal", "Vertical"]);
   assert.equal(D.readDesign(JSON.stringify({ text: "x".repeat(500) })).text.length, T.MAX_TITLE_LENGTH);
 });
 
@@ -1114,7 +1200,8 @@ check("every word is drawn where the scene puts it, at any scale and from any or
         for (const op of ops) {
           if (op.kind === "turn") walk(op.ops, op);
           else if (op.kind === "knockout") walk(op.ops, turn);
-          else if (op.kind === "text") texts.push({ op, turn });
+          // Ripple's word through the glass is set as text where there is no shader, as here.
+          else if (op.kind === "text" || op.kind === "glass") texts.push({ op, turn });
         }
       };
       walk(scene.ops, null);
@@ -1778,7 +1865,7 @@ check("Stickery's text colour: every letter on every sticker takes it, paste and
     assert.deepEqual(cover(title, "stickery", "reel", { ...COLOURS.green, lettering, textColour: null }), auto);
   }
   // Every other style's letters are the chosen colour, whatever Stickery's text colour is.
-  for (const style of ["pasty", "pasty-flat", "inkblot", "echo", "mono"]) {
+  for (const style of ["pasty", "pasty-flat", "inkblot", "ripple", "mono"]) {
     assert.deepEqual(cover("How I *plan* my week", style, "reel", { ...COLOURS.blue, textColour: pick }), cover("How I *plan* my week", style, "reel", COLOURS.blue), `${style} read the text colour`);
   }
 });
@@ -3095,7 +3182,7 @@ console.log("placing");
       const walk = (ops) => {
         for (const op of ops) {
           if (op.ops) walk(op.ops);
-          else if ((op.kind === "text" && !op.outline) || op.kind === "ink") {
+          else if ((op.kind === "text" && !op.outline) || op.kind === "ink" || op.kind === "glass") {
             const y = Math.round(op.y ?? (op.polygons ? INKM.loopBounds(op.polygons).y1 : 0));
             rows.set(y, (rows.get(y) ?? 0) + 1);
             sizes.push(op.size);
@@ -3159,7 +3246,7 @@ console.log("placing");
       const walk = (ops) => {
         for (const op of ops) {
           if (op.ops) walk(op.ops);
-          else if (op.kind === "text" && !op.outline) out.push([op.text, op.x, op.y, op.size]);
+          else if ((op.kind === "text" && !op.outline) || op.kind === "glass") out.push([op.text, op.x, op.y, op.size]);
           else if (op.kind === "ink") out.push([op.text, op.polygons[0][0], op.polygons[0][1], op.size]);
           else if (op.kind === "wave") out.push(...op.rows.map((r) => [r.text, r.polygons[0][0], r.polygons[0][1], r.base - r.top]));
           else if (op.kind === "liquid") out.push(...op.chains.map((c) => ["bead", c[0].x, c[0].y, c[0].r]));
@@ -3224,11 +3311,11 @@ console.log("placing");
     }
     // The owner's two covers (21 Oct): pulled out, the box goes on past the cover and the words join up; pushed in, they wrap, never smaller.
     {
-      // The words themselves, not Echo's outlined repeats.
+      // The words themselves.
       const words = (sc) => textOps(sc).filter((op) => !op.outline);
       const lines = (sc) => new Set(words(sc).map((op) => Math.round(op.y / 8))).size;
       const sizes = (sc) => new Set(words(sc).map((op) => op.size.toFixed(6)));
-      for (const [title, style, extra] of [["Maybe *not so* sweet after all", "stickery", { lettering: "damion" }], ["MAYBE *not so* SWEET AFTER ALL", "renaissance", { renaissanceLook: "summertime" }], ["Type your *title*", "echo", {}]]) {
+      for (const [title, style, extra] of [["Maybe *not so* sweet after all", "stickery", { lettering: "damion" }], ["MAYBE *not so* SWEET AFTER ALL", "renaissance", { renaissanceLook: "summertime" }], ["the art of slow mornings and *coffee* in the sun", "ripple", {}]]) {
         const own = cover(title, style, "reel", extra);
         const at = (k) => cover(title, style, "reel", { ...extra, wrap: { width: own.wrapRef.width * k, ref: own.wrapRef } });
         const ownSizes = sizes(own);
@@ -3269,7 +3356,8 @@ console.log("placing");
     const tall = cover("rate my setup and my desk", "inkblot", "reel", { wrap: { width: 300, ref } });
     assert.ok(textOps(tall).concat(tall.ops.filter((op) => op.kind === "ink")).every((op) => near(op.size, short.wrapRef.size, 1e-6)), "narrowed, its letters changed size");
     // Another type keeps nothing of it.
-    assert.equal(S.textBoxRef(long.wrapRef, kept, S.wrapTypeOf({ style: "echo" })), long.wrapRef);
+    assert.equal(S.textBoxRef(long.wrapRef, kept, S.wrapTypeOf({ style: "ripple" })), long.wrapRef);
+    assert.notEqual(S.wrapTypeOf({ style: "ripple", rippleAxis: "h" }), S.wrapTypeOf({ style: "ripple", rippleAxis: "v" }));
     assert.notEqual(S.wrapTypeOf({ style: "stickery", lettering: "goo" }), S.wrapTypeOf({ style: "stickery", lettering: "yesteryear" }));
     assert.notEqual(S.wrapTypeOf({ style: "renaissance", renaissanceLook: "niche" }), S.wrapTypeOf({ style: "renaissance", renaissanceLook: "travel" }));
     // Stickery's plain lines keep the sizes the box was made with as more is typed: "sweet after all" never grows or shrinks for a word typed after it.
@@ -3419,7 +3507,8 @@ const ANIMATED = [
   ["renaissance", { renaissanceLook: "niche", scriptColour: "#141414" }],
   ["renaissance", { renaissanceLook: "travel" }],
   ["inkblot", {}],
-  ["echo", {}],
+  ["ripple", {}],
+  ["ripple", { rippleAxis: "v" }],
   ["mono", {}],
   ["wave", { waveFace: "mona" }],
   ["wave", { waveFace: "anton" }],
@@ -3616,29 +3705,44 @@ check("an effect is where it is seen: a sticker pressed flat as it lands is pres
   assert.ok(Math.hypot(corner.x - world.x, corner.y - world.y) < Math.hypot(final.x - world.x, final.y - world.y));
 });
 
-check("Echo's Ripple and Spread bring the words first and each ring after the one inside it; Mono's cursor ends where the cover has it", () => {
-  const scene = cover("How I *plan* my week", "echo", "reel");
-  const main = scene.ops.filter((op) => op.kind === "text" && !op.outline);
-  const mid = main.reduce((sum, op) => sum + op.y, 0) / main.length;
-  for (const id of ["ripple", "spread"]) {
-    const p = AN.plan(scene, "echo", id, measurer);
-    const seen = new Map();
-    for (let t = 0; t <= p.duration; t += 1 / 120) {
-      const walk = (ops) => {
-        for (const op of ops) {
-          if (op.kind === "fade" || op.kind === "matrix") walk(op.ops);
-          else if (op.kind === "text") {
-            const ring = op.outline ? Math.round(Math.abs(op.y - mid)) : 0;
-            if (!seen.has(ring)) seen.set(ring, t);
-          }
-        }
-      };
-      walk(p.frame(t).ops);
-    }
-    const rings = [...seen.keys()].sort((a, b) => a - b);
-    assert.ok(rings.length > 3, `${id}: only ${rings.length} rings`);
-    for (let i = 1; i < rings.length; i += 1) assert.ok(seen.get(rings[i]) >= seen.get(rings[i - 1]) - 1e-9, `${id}: ring ${rings[i]} before ${rings[i - 1]}`);
+check("Ripple's Pulse is the reference's motion as a loop from the cover held open: let go, clean, a second swell, rest, open again; Mono's cursor ends where the cover has it", () => {
+  const scene = S.placeScene(cover("How I *plan* my week", "ripple", "reel"), { ...PL.HOME, angle: 0.3 });
+  const pulse = AN.plan(scene, "ripple", "pulse", measurer);
+  assert.equal(pulse.loops, true);
+  assert.ok(near(pulse.duration, 4, 1e-9));
+  assert.ok(near(AN.plan(scene, "ripple", "pulse", measurer, 2).duration, 2, 1e-9));
+  assert.equal(pulse.frame(0), scene);
+  assert.equal(pulse.frame(pulse.duration), scene);
+  // The glass in every frame, wherever the placement put it; only its moment changes.
+  const momentAt = (t) => {
+    let at = null;
+    const walk = (ops) => {
+      for (const op of ops) {
+        if (op.ops) walk(op.ops);
+        else if (op.kind === "glass") at = op.at ?? GL.OPEN;
+      }
+    };
+    walk(pulse.frame(t).ops);
+    return at;
+  };
+  assert.deepEqual(momentAt(0), GL.OPEN);
+  const moments = Array.from({ length: 241 }, (_, f) => momentAt(f / 60));
+  // From open it lets go: clean for a moment (the reference's frames 128 to 130, here 47 to 49 in), then a smaller second swell, and rest.
+  const glassAt = (frame) => moments[frame].glass;
+  assert.ok(glassAt(48) === 0 && moments[48].reach < 0.05, `not clean at the beat: ${JSON.stringify(moments[48])}`);
+  const second = Math.max(...moments.slice(60, 130).map((m) => m.glass));
+  assert.ok(second > 0.3 && second < 0.8, `second swell ${second}`);
+  // The echoes drawn in by 126 (the reference's 207), the glass let go by 153, at rest to 161 (its 240, the loop's seam).
+  assert.ok(moments.slice(126, 162).every((m) => m.reach < 0.001), "the echoes never drawn in");
+  assert.ok(moments.slice(153, 162).every((m) => m.glass < 0.01), "no rest before it opens again");
+  // Smooth all round, the seam too: no step bigger than the reference's own quickest.
+  for (let f = 1; f < moments.length; f += 1) {
+    assert.ok(Math.abs(moments[f].glass - moments[f - 1].glass) < 0.08 && Math.abs(moments[f].reach - moments[f - 1].reach) < 0.08, `a jump at ${f}`);
   }
+  assert.ok(near(moments[240].glass, 1, 1e-9) && near(moments[240].reach, 1, 1e-9));
+  // The light splits behind the glass: a moment of glass with no colour yet as it swells out again.
+  assert.ok(moments.some((m) => m.glass > 0.15 && m.colour === 0), "the colour never lags the glass");
+  for (const m of moments) assert.ok([m.glass, m.reach, m.colour].every((v) => v >= 0 && v <= 1) && Number.isFinite(m.speed));
   const mono = cover("How I *plan* my week", "mono", "reel");
   const cursor = mono.ops.find((op) => op.kind === "box");
   const p = AN.plan(mono, "mono", "typewriter", measurer);
@@ -3688,8 +3792,12 @@ check("the animations on offer: Stickery spells, slaps, pops, reveals or jitters
     assert.equal(AN.offers(style.id, "ribbon"), style.id === "renaissance", `${style.id}: Ribbon`);
     assert.equal(AN.offers(style.id, "drop"), style.id === "renaissance", `${style.id}: Drop`);
   }
-  // Not Renaissance yet (the owner, 24 Oct), and not Echo or Mono, which a shuffle does not change.
-  for (const style of ["renaissance", "echo", "mono"]) assert.ok(!AN.offers(style, "jitter"), `${style} offers Jitter`);
+  // Not Renaissance yet (the owner, 24 Oct), and not Ripple or Mono, which a shuffle does not change.
+  for (const style of ["renaissance", "ripple", "mono"]) assert.ok(!AN.offers(style, "jitter"), `${style} offers Jitter`);
+  // Ripple pulses (the owner, 10 Nov), and nothing else does.
+  assert.deepEqual(AN.animationsFor("ripple").map((a) => [a.id, a.name]), [["pulse", "Pulse"]]);
+  for (const style of S.STYLES) assert.equal(AN.offers(style.id, "pulse"), style.id === "ripple", `${style.id}: Pulse`);
+  for (const gone of ["ripple", "spread", "cascade"]) for (const style of S.STYLES) assert.ok(!AN.offers(style.id, gone), `${style.id} still offers Echo's ${gone}`);
   // Wave's shuffle moves its wave, but its animations are the owner's five waves.
   for (const style of S.STYLES) assert.equal(AN.offers(style.id, "jitter"), S.shuffles(style.id) && style.id !== "renaissance" && style.id !== "wave", `${style.id}: Jitter where a shuffle changes the cover`);
   for (const cut of ["rise", "together", "swell"]) for (const style of S.STYLES) assert.ok(!AN.offers(style.id, cut), `${style.id} still offers ${cut}`);
@@ -4901,6 +5009,67 @@ check("Wave is painted as one fill of its letters in its colour, its wave and al
     const points = W.wavePolygons(op).reduce((n, p) => n + p.length / 2, 0);
     assert.equal(fills[0].points.length, points);
   }
+});
+
+check("Ripple's glass is the shader's; with no page to draw it on, its word is set as plain text in its colour where the text would be, at any scale", () => {
+  const scene = cover("How I *plan* my week", "ripple", "reel", COLOURS.blue);
+  const glass = scene.ops.find((op) => op.kind === "glass");
+  for (const scale of [1, 0.3]) {
+    const ctx = recorder();
+    paint(ctx, scene, { scale, font, grain: null });
+    assert.equal(ctx.depth, 0);
+    const drawn = ctx.calls.filter((c) => c.kind === "fillText" && c.text === "plan");
+    assert.equal(drawn.length, 1);
+    assert.equal(drawn[0].style, glass.color);
+    assert.ok(near(drawn[0].at[0], glass.x * scale, 1e-6) && near(drawn[0].at[1], glass.y * scale, 1e-6));
+    assert.equal(drawn[0].font, font(glass.face, glass.size));
+  }
+});
+
+check("Ripple's field is the letters' exact distance, a pixel's samples averaged, and each column knows its ink and its letter", () => {
+  // A bar 6 by 4 pixels in a field of 16 by 12, drawn twice over (each pixel four samples).
+  const w = 16;
+  const h = 12;
+  const s = 2;
+  const alpha = new Uint8Array(w * s * h * s);
+  for (let y = 4 * s; y < 8 * s; y += 1) for (let x = 5 * s; x < 11 * s; x += 1) alpha[y * w * s + x] = 255;
+  const f = GL.glassField(alpha, w, h, s, 8, 6);
+  const at = (x, y) => f.sdf[y * w + x];
+  // Inside negative, outside positive, the edge between pixels where it is.
+  assert.ok(at(7, 5) < 0 && at(2, 5) > 0);
+  assert.ok(near(at(2, 5), 2.5, 0.05) && near(at(13, 6), 2.5, 0.05) && near(at(8, 1), 2.5, 0.05), `${at(2, 5)} ${at(13, 6)} ${at(8, 1)}`);
+  assert.ok(near(at(5, 5), -0.5, 0.05) && near(at(4, 5), 0.5, 0.05) && near(at(7, 5), -1.5, 0.05), `${at(5, 5)} ${at(4, 5)} ${at(7, 5)}`);
+  // Each inked column: up 2 and down 2 from the middle row, one letter 6 wide about x = 8.
+  for (let x = 5; x < 11; x += 1) assert.deepEqual([...f.ends.slice(x * 4, x * 4 + 4)], [2, 2, 0, 3], `column ${x}`);
+  for (const x of [0, 4, 11, 15]) assert.deepEqual([...f.ends.slice(x * 4, x * 4 + 4)], [0, 0, 0, 0], `column ${x}`);
+  assert.deepEqual(f.first, [0, 2]);
+  assert.deepEqual(f.last, [0, 2]);
+  // Squared distances exact against brute force on a random grid.
+  const rnd = G.seeded(7);
+  const gw = 23;
+  const gh = 17;
+  const grid = new Float64Array(gw * gh).map(() => (rnd() < 0.08 ? 0 : 1e12));
+  const zeros = [];
+  grid.forEach((v, i) => v === 0 && zeros.push([i % gw, Math.floor(i / gw)]));
+  const brute = Array.from(grid, (_, i) => Math.min(...zeros.map(([x, y]) => (x - (i % gw)) ** 2 + (y - Math.floor(i / gw)) ** 2)));
+  GL.squaredDistance(grid, gw, gh);
+  assert.deepEqual([...grid], brute);
+});
+
+check("Ripple's light is the whole spectrum, every channel summing to white, bent from violet one way to red the other", () => {
+  const table = GL.spectrum(GL.WAVES);
+  for (const k of [0, 1, 2]) {
+    let sum = 0;
+    for (let i = 0; i < GL.WAVES; i += 1) sum += table[i * 4 + k];
+    assert.ok(near(sum, 1, 1e-6), `channel ${k} sums to ${sum}`);
+  }
+  const bends = Array.from({ length: GL.WAVES }, (_, i) => table[i * 4 + 3]);
+  for (let i = 1; i < bends.length; i += 1) assert.ok(bends[i] < bends[i - 1]);
+  assert.ok(bends[0] > 0 && bends.at(-1) < 0);
+  // Held open, as still as the cover; the loop starts there.
+  assert.deepEqual(GL.OPEN, { glass: 1, reach: 1, colour: 1, speed: 0 });
+  const start = GL.glassMomentAt(GL.PULSE_START);
+  assert.ok(near(start.glass, 1, 1e-12) && near(start.reach, 1, 1e-12) && near(start.colour, 1, 1e-12) && near(start.speed, 0, 1e-12), JSON.stringify(start));
 });
 
 check("Wave's face is kept with the design (anything else read as Mona Sans), and its letters are whole: every face draws the capitals, figures and a space, its outlines as long as their commands", () => {

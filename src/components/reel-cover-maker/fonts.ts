@@ -13,7 +13,6 @@
 
 import {
   Anton,
-  Archivo_Black,
   Archivo_Narrow,
   Big_Shoulders,
   Crimson_Pro,
@@ -38,10 +37,9 @@ import { contours, simplify, type Loop } from "@/components/reel-cover-maker/ink
 
 /** Inkblot's script, a roundhand much like Onehart's, printed from its outlines (ink.ts). */
 const pinyon = Pinyon_Script({ weight: "400", subsets: ["latin"] });
-const archivoBlack = Archivo_Black({ weight: "400", subsets: ["latin"] });
 const spaceMono = Space_Mono({ weight: "400", subsets: ["latin"] });
 
-/** Variable, so it sets Stickery's plain words and the maker's own controls at any weight. */
+/** Variable, so it sets Stickery's plain words, Ripple's heavy letters and the maker's own controls at any weight. */
 export const interTight = Inter_Tight({ subsets: ["latin"], variable: "--rcm-font-ui" });
 
 // Stickery's plain faces, one weight each, so a choice loads one file a script.
@@ -68,7 +66,7 @@ const luxurious = Luxurious_Script({ weight: "400", subsets: ["latin"] });
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
   script: { family: pinyon.style.fontFamily, weight: 400, italic: false },
   sans: { family: interTight.style.fontFamily, weight: 600, italic: false },
-  wide: { family: archivoBlack.style.fontFamily, weight: 400, italic: false },
+  heavy: { family: interTight.style.fontFamily, weight: 900, italic: false },
   mono: { family: spaceMono.style.fontFamily, weight: 400, italic: false },
   "plain-outfit": { family: outfit.style.fontFamily, weight: 300, italic: false },
   "plain-jost": { family: jost.style.fontFamily, weight: 300, italic: false },

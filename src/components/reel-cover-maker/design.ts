@@ -2,7 +2,7 @@
  * What the maker remembers between visits: the title being worked on, the
  * style, Stickery's lettering and plain face and the colour of its letters,
  * Pasty's lettering, Renaissance's look and the colour of its script,
- * Wave's face, the colour (hue, shade, a hex code typed, and ground), the size, the
+ * Wave's face, Ripple's flutes, the colour (hue, shade, a hex code typed, and ground), the size, the
  * shuffle, how the photo behind the cover is framed and adjusted (the
  * photo itself is kept in photo-store.ts, being too big for here), where
  * the letters have been moved to, and whether the cover is animated and
@@ -16,6 +16,7 @@
 
 import { animationsFor, offers, speedOf, type AnimationId } from "@/components/reel-cover-maker/animate";
 import { parseHex } from "@/components/reel-cover-maker/colour";
+import { DEFAULT_GLASS_AXIS, isGlassAxis, type GlassAxis } from "@/components/reel-cover-maker/glass";
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
 import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, isTextMode, type Ground, type TextMode } from "@/components/reel-cover-maker/palettes";
@@ -47,6 +48,8 @@ export interface Design {
   renaissanceLook: RenaissanceLookId;
   /** Wave's face: Mona Sans, Anton or Archivo. */
   waveFace: WaveFaceId;
+  /** Ripple's flutes: upright (Horizontal) or level (Vertical). */
+  rippleAxis: GlassAxis;
   hue: number;
   shade: number;
   /** A colour typed as a hex code, used exactly; null while the sliders' own colour is the colour. Moving a slider lets it go. */
@@ -95,6 +98,7 @@ export const DEFAULT_DESIGN: Design = {
   pastyLettering: DEFAULT_PASTY_LETTERING,
   renaissanceLook: DEFAULT_RENAISSANCE_LOOK,
   waveFace: DEFAULT_WAVE_FACE,
+  rippleAxis: DEFAULT_GLASS_AXIS,
   hue: DEFAULT_COLOUR.hue,
   shade: DEFAULT_COLOUR.shade,
   hex: null,
@@ -155,8 +159,8 @@ export function readDesign(raw: string | null): Design {
   }
   return {
     text: typeof stored.text === "string" ? clipMarked(stored.text, MAX_TITLE_LENGTH) : DEFAULT_DESIGN.text,
-    // Editorial was a design's style until Inkblot took its place (19 Oct): such a design is on Inkblot.
-    style: isStyleId(stored.style) ? stored.style : stored.style === "editorial" ? "inkblot" : DEFAULT_DESIGN.style,
+    // Editorial was a design's style until Inkblot took its place (19 Oct), and Echo until Ripple took its (10 Nov): such a design is on the style in its place.
+    style: isStyleId(stored.style) ? stored.style : stored.style === "editorial" ? "inkblot" : stored.style === "echo" ? "ripple" : DEFAULT_DESIGN.style,
     lettering: isLetteringId(stored.lettering) ? stored.lettering : DEFAULT_DESIGN.lettering,
     plainFace: isPlainFaceId(stored.plainFace) ? stored.plainFace : DEFAULT_DESIGN.plainFace,
     pastyLettering:
@@ -165,6 +169,7 @@ export function readDesign(raw: string | null): Design {
         : DEFAULT_DESIGN.pastyLettering,
     renaissanceLook: isRenaissanceLookId(stored.renaissanceLook) ? stored.renaissanceLook : DEFAULT_DESIGN.renaissanceLook,
     waveFace: isWaveFaceId(stored.waveFace) ? stored.waveFace : DEFAULT_DESIGN.waveFace,
+    rippleAxis: isGlassAxis(stored.rippleAxis) ? stored.rippleAxis : DEFAULT_DESIGN.rippleAxis,
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
     hex: hexCode(stored.hex),

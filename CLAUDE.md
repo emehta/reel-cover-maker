@@ -29,19 +29,20 @@ npm run build   # the static site, in out/
   hard-code `/reel-cover-maker` in a URL. It is no longer served by
   eshaanm.net, which only redirects to it.
 - **Pure on one side, the browser on the other.** `formats`, `title`,
-  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `renaissance`, `ripple`, `wave`, `noise`,
+  `layout`, `liquid-layout`, `liquid`, `liquid-render`, `stepped`, `ink`, `renaissance`, `ripple`, `wave`, `glass`, `noise`,
   `strokes`, `scene`, `colour`, `palettes`, `grain`, `save`, `design`,
   `photo`, `place` and `font-gate` never touch the DOM and are tested in
   `scripts/reel-cover.test.mjs`. `paint` takes a context, so it is tested
-  with a recording stand-in. `fonts`, `theme`, `Dropdown`, `photo-gl`,
+  with a recording stand-in. `fonts`, `theme`, `Dropdown`, `photo-gl`, `glass-gl`,
   `photo-store`, `Camera`, `PhotoControls`, `CoverSurface` and the
   component are the browser.
 - **One scene, every canvas.** The preview, the thumbnails and the download
   are all drawn from `buildScene`. Never draw a second way for one of them.
 - **Text stays in the safe area.** A new style or size must keep every word
   inside `format.safe`; the tests set every style over hundreds of titles and
-  fail if one leaves it. Ornament (Echo's outlines, the paste's droplets)
-  may run to the edges.
+  fail if one leaves it. Ornament (Ripple's trail and arcs, the paste's
+  droplets) may run past it, but Ripple's stays inside every window
+  Instagram shows (`glassReach`), so the grid never cuts a trail short.
 - **The liquid styles are paste, not a font.** `liquid-layout.ts` seeds
   each word and letter from its own text (a word is drawn the same wherever
   it goes), `liquid.ts` makes the beads, `liquid-render.ts` the field, in
@@ -100,12 +101,35 @@ npm run build   # the static site, in out/
   lettering's own grid (`steps`); `stepped.ts` steps every long run and
   each piece's outer sides. The tests hold all of it over every lettering,
   face and shuffle.
-- **Bold is Stickery's and Renaissance's alone.** Bold is kept as stars in
-  `design.text` (`readMarked`/`writeMarked` in title.ts, a typed star or
-  backslash escaped): Stickery's funky words, Renaissance's script;
+- **Bold is Stickery's, Renaissance's and Ripple's alone.** Bold is kept as
+  stars in `design.text` (`readMarked`/`writeMarked` in title.ts, a typed
+  star or backslash escaped): Stickery's funky words, Renaissance's script,
+  Ripple's word through the glass (the owner's ask, 10 Nov);
   `buildScene` reads every other style's title with its bold as plain
   words (the owner's ask, 7 Oct): no accent colour, italic or highlight
   anywhere else.
+- **Ripple is the owner's fluted glass** (10 Nov, in Echo's place: "I
+  don't want Echo"; `glass.ts`, pure, and `glass-gl.ts`, the shader). It
+  is the ripple studies of 9 Nov as the owner picked them, B Contour with
+  its horizontal trail ended at 8 flutes (I Tight), kept on the
+  `codex/ripple-studies` branch (`experiments/ripple-studies/index.html`
+  is the approved page): change the look there and here together, never
+  here alone. Each run of bold words is one line through the glass (never
+  broken); with nothing bold, the longest word; the plain words around
+  it are Inter Tight 900 (`heavy`) at `PLAIN_SHARE` of its size, in the
+  order typed, a Vertical's lines clear of its arcs. Flute widths and the
+  blur are in em of the word (`FLUTES`, `REFERENCE_INK`), so any word at
+  any size is the studies' look. The shader reads an exact distance field
+  of the word drawn twice over (`glassField`) at 32 wavelengths and lights
+  it for the cover's ground: see-through but for the letters and their
+  light, the word in its colour, the split light's colours laid on top at
+  full strength for a word as far from its ground as white, calmer for a
+  nearer colour (`FRINGE_LEAST`; the first try filtered the light by the
+  colour and lost the poster's fringes on red). Without WebGL 2 the word is
+  set as plain text. **Pulse** is its one animation, the reference video's
+  motion measured frame by frame (`GLASS_CURVE`, `REACH_CURVE`), as a loop
+  from frame 81, the glass held open, which is the cover. Saved Echo
+  designs open on Ripple (`readDesign`). Shuffle does nothing to it.
 - **Renaissance is a lockup** (the owner's ask, 20 Oct, after three
   posters: THE ART *of* SUMMERTIME, FIND *Your* NICHE, TRAVEL *The*
   WORLD; `renaissance.ts`, pure). Its **Look** is one poster, capitals
@@ -216,7 +240,7 @@ npm run build   # the static site, in out/
   (`.tipEnd` runs inward at a row's end, `.tipLeft` opens to the left
   where there is no room above, the header's ?); every button's name is
   one of these, never a native `title`. A tool that cannot act is
-  disabled, never removed (Shuffle in Echo and Mono, `shuffles`). Hover
+  disabled, never removed (Shuffle in Ripple and Mono, `shuffles`). Hover
   fills are only for a pointer that hovers (`@media (hover: hover)`), so a
   tap never leaves one lit.
   There is no contrast warning any more (the owner's ask, 7 Oct: "I
@@ -255,7 +279,8 @@ npm run build   # the static site, in out/
   scale (`speedPlace`, `speedAtPlace`), caught at 1 near the middle.
   Renaissance has Written (capitals rise in line by line, then the script
   is penned across them, its gap cut round what the pen has written:
-  `cutAround`), Word by word, Line by line, Engraved, Ribbon and Drop; Wave
+  `cutAround`), Word by word, Line by line, Engraved, Ribbon and Drop; Ripple
+  has Pulse (the owner's ask of 10 Nov, above); Wave
   has Crossing, Cascade, Loose, Ripple and One wave (the owner's five of 9
   Nov, all loops, above); Stickery has Spell
   (Type and draw until the owner renamed it, 24 Oct; its id is still
@@ -333,7 +358,7 @@ npm run build   # the static site, in out/
   each seed, in the same place (`Shuffle` in the page), made only as each
   first comes round (Inkblot costs about 40 ms a cover); a beat's paste is
   made once and shared by the frames it lasts (`usePaste`). Not for
-  Renaissance (its animations are the four above), nor Echo or
+  Renaissance (its animations are the four above), nor Ripple or
   Mono, which a shuffle does not change. All at once, Pasty's Pop and Rise were cut ("so bad"; 8
   Oct: "I don't want rise"), so do not bring them back; Stickery's Pop
   came back on the owner's ask of 8 Oct ("keep pop"). Every
@@ -446,7 +471,7 @@ npm run build   # the static site, in out/
 - **The style thumbnails are the whole cover**, in its own shape, eight to
   a row as wide as fits (four over four under 900; the owner's
   order of 20 Oct: Stickery, Renaissance, Inkblot, Pasty, Pasty Flat,
-  Echo, Mono, and Wave last since 9 Nov): never the profile grid's
+  Ripple in Echo's place since 10 Nov, Mono, and Wave last since 9 Nov): never the profile grid's
   crop, which cut a reel cover's sides off (the owner's ask, 7 Oct), and
   never a row that scrolls, the row as tall for every size so the cover
   never moves for it. The seven other styles are made from the design once

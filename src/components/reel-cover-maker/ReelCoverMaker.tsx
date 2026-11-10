@@ -55,6 +55,7 @@ import { lookOf, RENAISSANCE_LOOKS, renaissanceFaces } from "@/components/reel-c
 import { Shortcuts } from "@/components/reel-cover-maker/Shortcuts";
 import { TextField } from "@/components/reel-cover-maker/TextField";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
+import { GLASS_AXES } from "@/components/reel-cover-maker/glass";
 import type { WaveVariantId } from "@/components/reel-cover-maker/wave";
 import { loadWaveFace, subscribeWaveFaces, WAVE_FACES, waveFaceData, waveFaceFailed, waveFacesVersion } from "@/components/reel-cover-maker/wave-faces";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
@@ -90,9 +91,8 @@ const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
  * shown where the choice would be, at a size that reads as the others do (a
  * script's small letters are a small share of its em).
  */
-const FIXED_FACES: Record<"inkblot" | "echo" | "mono", { face: FaceId; name: string; size: number }> = {
+const FIXED_FACES: Record<"inkblot" | "mono", { face: FaceId; name: string; size: number }> = {
   inkblot: { face: "script", name: "Pinyon Script", size: 25 },
-  echo: { face: "wide", name: "Archivo Black", size: 17 },
   mono: { face: "mono", name: "Space Mono", size: 17 },
 };
 
@@ -183,9 +183,11 @@ function sceneFor(input: CoverInput, loads: number): Scene {
   const renaissance = input.style === "renaissance" ? [input.renaissanceLook, input.scriptColour ?? null] : null;
   // Wave's letters arrive after the page (wave-faces): a cover set before its face had come is set again once it has.
   const wave = input.style === "wave" ? [input.waveFace, input.waveAnimation, input.waveFace ? waveFaceData(input.waveFace) !== null : false] : null;
+  // Ripple's flutes are Ripple's alone.
+  const glass = input.style === "ripple" ? input.rippleAxis ?? null : null;
   // A text box's width and the layout it is set again from.
   const wrap = input.wrap ? [input.wrap.width, input.wrap.ref] : null;
-  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, renaissance, wave, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, wrap, loads]);
+  const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, renaissance, wave, glass, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, wrap, loads]);
   // A text box's scenes, a new one at every move of a drag, are kept apart: they would push every other style's out.
   const cache = input.wrap ? wrappedScenes : scenes;
   let scene = cache.get(key);
@@ -545,6 +547,7 @@ export default function ReelCoverMaker() {
     waveFace: d.waveFace,
     // Wave's still is its animation stopped mid-wave: the one picked for it, whether or not it is animated.
     waveAnimation: animationOf({ style: "wave", animations: d.animations }) as WaveVariantId,
+    rippleAxis: d.rippleAxis,
     hue: d.hue,
     shade: d.shade,
     hex: d.hex,
@@ -602,6 +605,7 @@ export default function ReelCoverMaker() {
     design.style === "stickery" ? input.textColour : null,
     design.style === "renaissance" ? [design.renaissanceLook, input.scriptColour] : null,
     design.style === "wave" ? [design.waveFace, input.waveAnimation] : null,
+    design.style === "ripple" ? design.rippleAxis : null,
     design.format,
     design.seed,
     loads,
@@ -1222,6 +1226,14 @@ export default function ReelCoverMaker() {
                 value={design.waveFace}
                 options={WAVE_FACES.map((f) => ({ value: f.id, label: f.name }))}
                 onChange={(waveFace) => update({ waveFace }, "alone")}
+              />
+            ) : design.style === "ripple" ? (
+              // Which way the flutes run: the two studies the owner picked from.
+              <Dropdown
+                label="Direction"
+                value={design.rippleAxis}
+                options={GLASS_AXES.map((a) => ({ value: a.id, label: a.name }))}
+                onChange={(rippleAxis) => update({ rippleAxis }, "alone")}
               />
             ) : design.style === "pasty" || design.style === "pasty-flat" ? (
               <Dropdown

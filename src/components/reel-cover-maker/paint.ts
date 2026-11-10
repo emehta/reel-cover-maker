@@ -9,6 +9,7 @@
  */
 
 import type { FaceId } from "@/components/reel-cover-maker/faces";
+import { drawGlass } from "@/components/reel-cover-maker/glass-gl";
 import { isStill, reachOf, surfaceAt, type Surface } from "@/components/reel-cover-maker/ripple";
 import type { LiquidOp, Op, Scene } from "@/components/reel-cover-maker/scene";
 import { wavePolygons, waveTextMap } from "@/components/reel-cover-maker/wave";
@@ -314,6 +315,13 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       else fill();
       return;
     }
+    case "glass": {
+      // A shadow cast is not of the glass's light; out of focus, or where the glass cannot be drawn, the word set plainly.
+      if (haze?.tint) return;
+      if (!haze && drawGlass(ctx as Shadowing, op, options.font)) return;
+      draw(ctx, scene, { kind: "text", text: op.text, face: op.face, size: op.size, x: op.x, y: op.y, color: op.color }, options, haze, inLayer);
+      return;
+    }
     case "ink": {
       // Printed letters: their outline filled, holes and all, by the nonzero rule.
       const fill = () => {
@@ -404,13 +412,6 @@ function draw(ctx: PaintTarget, scene: Scene, op: Op, options: PaintOptions, haz
       }
       const set = () =>
         lettered(ctx, op, (x, y) => {
-          if (op.outline) {
-            ctx.strokeStyle = colour;
-            ctx.lineWidth = op.outline;
-            ctx.lineJoin = "round";
-            ctx.strokeText(op.text, x, y);
-            return;
-          }
           ctx.fillStyle = colour;
           ctx.fillText(op.text, x, y);
           if (op.bold) {

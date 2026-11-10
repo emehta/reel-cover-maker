@@ -47,7 +47,7 @@ on a label's row.
   - The photo stays in this browser (IndexedDB), never uploaded anywhere,
     and is still there next time. Pasty's gel and paste cast their shadow
     onto it.
-- **Make a word bold** to make it Stickery's funky word, or Renaissance's script: select it and
+- **Make a word bold** to make it Stickery's funky word, Renaissance's script, or the word Ripple shows through its glass: select it and
   press **Cmd+B** (Ctrl+B on Windows), as in any editor. The field shows it bold. Press again to make it plain; with
   nothing selected, Cmd+B makes what you type next bold or plain. Bold
   carries on as you type the end of a word, and stops at a space. Words
@@ -56,7 +56,7 @@ on a label's row.
   it sets the rest. Every shortcut is listed behind the **?** at the top
   right.
 - **Pick a style** from the row of thumbnails under the cover: Stickery,
-  Renaissance, Inkblot, Pasty, Pasty Flat, Echo, Mono and Wave. Each thumbnail is
+  Renaissance, Inkblot, Pasty, Pasty Flat, Ripple, Mono and Wave. Each thumbnail is
   your whole cover in that style, in the cover's own shape, so nothing of
   it is cut off; all eight fit in one row however narrow the window (four
   over four on a phone), never scrolled. Once the cover is drawn, it is drawn in every
@@ -127,8 +127,18 @@ on a label's row.
     the same word prints the same wherever it goes, until you shuffle.
     Lines are as large as the cover allows, each centred by its ink, and let
     down only as far as keeps a descender clear of the line under it.
-  - **Echo** and **Mono**: wide capitals echoed in outline, and a typewriter
-    with its cursor.
+  - **Ripple**: the bold word seen through fluted glass, on a line of its
+    own, large, the rest of the title set plainly above and below it (with
+    nothing bold, the longest word). Its **Direction** is Horizontal, upright
+    flutes that push the word's ends out and leave a trail of crescents
+    running out past its first and last letters, each thinner and fainter
+    than the one before; or Vertical, level slats, every letter throwing
+    arcs both up and down. The light comes apart at every edge it bends,
+    warm one way and blue the other, as through real glass: the owner's
+    picks from the ripple studies of 9 November (B Contour, its trail ended
+    sooner, I Tight). Letters lighter than the ground split it into the
+    poster's colours, darker ones the other way round.
+  - **Mono**: a typewriter with its cursor.
   - **Wave**: the title in capitals, stacked, every line exactly as wide as
     the others, so the whole reads as one rectangle, after the owner's THE
     / RIPPLE / EFFECT; and the block waving inside its own rectangle, as
@@ -170,8 +180,8 @@ on a label's row.
   coloured, outlined and lit for.
 - **With no photo, the cover is a clear PNG**: the letters alone, with
   whatever is theirs (Stickery's stickers and their borders, Pasty's gel
-  and the soft shadow it casts, Pasty Flat's paste, Inkblot's ink, Echo's and
-  Mono's type), and nothing behind them, to lay over a video or anything
+  and the soft shadow it casts, Pasty Flat's paste, Inkblot's ink, Ripple's
+  glass and its light, Mono's type), and nothing behind them, to lay over a video or anything
   else. The page shows it on a check in the background's tone, as a picture
   with no background is shown; the check is never in the file. Pasty's
   shadow is a clear stain, worked out so that laid on the background picked
@@ -224,9 +234,11 @@ on a label's row.
   - **Jitter** is Shuffle pressed again and again: the cover rearranged
     four times a second, round twelve shuffles, the cover's own first. It
     loops with no pause, and its video loops too, with no held end.
-  - Echo: **Ripple** (the words, then each echo out from them), **Spread**
-    (the echoes slide out from the words to their places), **Cascade**
-    (every line drops in, top to bottom).
+  - Ripple: **Pulse**, the motion of the owner's reference video, measured
+    on every one of its 241 frames, as a loop from the cover: the glass
+    lets go, the word goes clean for a moment, swells a second time and is
+    drawn in, rests, and swells out to open again, its colours coming a
+    tenth of a second behind the glass so each echo is born white.
   - Mono: **Typewriter**, its cursor following the letters, and **Word by
     word**.
   - Wave: **Crossing** (every other line's crest runs the other way),
@@ -588,8 +600,8 @@ as outlines, with their advances and kerning, at every width where they
 change course; in between, every point moves in a straight line, so any
 width is read exactly. The page draws them as filled outlines.
 
-The web typefaces are Pinyon Script, Inter Tight, Archivo Black and Space
-Mono, and Stickery's and Renaissance's own (Playfair Display SC, Anton, Big
+The web typefaces are Pinyon Script, Inter Tight (at its heaviest, Ripple's
+too) and Space Mono, and Stickery's and Renaissance's own (Playfair Display SC, Anton, Big
 Shoulders, Luxurious Script and the rest), from Google Fonts under the SIL
 Open Font License, served from the page's own origin. The stroke fonts' licences are in
 `src/components/reel-cover-maker/strokes/LICENSE.md`, and Wave's faces' in

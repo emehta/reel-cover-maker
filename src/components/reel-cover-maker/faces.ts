@@ -7,10 +7,15 @@
 
 import type { Loop } from "@/components/reel-cover-maker/ink";
 
-/** The faces every cover may need: loaded up front. Inkblot's script is printed from its outlines (ink.ts), never drawn as text but where it cannot be traced. */
-export type CoreFaceId = "script" | "sans" | "wide" | "mono";
+/**
+ * The faces every cover may need: loaded up front. Inkblot's script is
+ * printed from its outlines (ink.ts), never drawn as text but where it
+ * cannot be traced; `heavy` is Inter Tight at its heaviest, Ripple's (the
+ * same file as `sans`, which is variable).
+ */
+export type CoreFaceId = "script" | "sans" | "heavy" | "mono";
 
-export const CORE_FACE_IDS: readonly CoreFaceId[] = ["script", "sans", "wide", "mono"];
+export const CORE_FACE_IDS: readonly CoreFaceId[] = ["script", "sans", "heavy", "mono"];
 
 /**
  * The faces Stickery may set its plain words in: the owner's four (Outfit

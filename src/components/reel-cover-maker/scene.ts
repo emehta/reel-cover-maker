@@ -10,7 +10,8 @@
  */
 
 import { DEFAULT_PLAIN_FACE, type FaceId, type FunkyFaceId, type Measurer, type PlainFaceId } from "@/components/reel-cover-maker/faces";
-import { formatById, type FormatId, type Rect } from "@/components/reel-cover-maker/formats";
+import { formatById, intersect, type FormatId, type Rect } from "@/components/reel-cover-maker/formats";
+import { DEFAULT_GLASS_AXIS, ripple, type GlassAxis, type GlassOp } from "@/components/reel-cover-maker/glass";
 import { printedWord, printReach, printSeed, loopBounds, type Loop } from "@/components/reel-cover-maker/ink";
 import { DEFAULT_RENAISSANCE_LOOK, renaissance, type RenaissanceLookId } from "@/components/reel-cover-maker/renaissance";
 import { flow, narrowestAt, type Block } from "@/components/reel-cover-maker/layout";
@@ -27,7 +28,7 @@ import { graphemes, parseTitle, type Paragraph } from "@/components/reel-cover-m
 import { DEFAULT_WAVE_VARIANT, wave, type WaveOp, type WaveVariantId } from "@/components/reel-cover-maker/wave";
 import { DEFAULT_WAVE_FACE, type WaveFaceId } from "@/components/reel-cover-maker/wave-faces";
 
-export type StyleId = "stickery" | "renaissance" | "inkblot" | "pasty" | "pasty-flat" | "echo" | "mono" | "wave";
+export type StyleId = "stickery" | "renaissance" | "inkblot" | "pasty" | "pasty-flat" | "ripple" | "mono" | "wave";
 
 export interface Style {
   id: StyleId;
@@ -36,11 +37,13 @@ export interface Style {
 
 /**
  * In the order the style picker shows them, the owner's of 20 Oct:
- * Stickery, Renaissance, Inkblot, Pasty, Pasty Flat, Echo, Mono. Spread
+ * Stickery, Renaissance, Inkblot, Pasty, Pasty Flat, Ripple, Mono. Spread
  * was taken out on 7 Oct; Inkblot took Editorial's place on 19 Oct (after
  * Onehart's inkblot script); Renaissance came on 20 Oct (capitals with a
  * script laid across them, after three posters); Wave on 9 Nov, last (the
- * owner's lockup of lines all one width, waving, wave.ts).
+ * owner's lockup of lines all one width, waving, wave.ts); Ripple took
+ * Echo's place on 10 Nov (the bold word seen through fluted glass, as the
+ * owner picked it in the ripple studies, glass.ts).
  */
 export const STYLES: readonly Style[] = [
   { id: "stickery", name: "Stickery" },
@@ -48,16 +51,16 @@ export const STYLES: readonly Style[] = [
   { id: "inkblot", name: "Inkblot" },
   { id: "pasty", name: "Pasty" },
   { id: "pasty-flat", name: "Pasty Flat" },
-  { id: "echo", name: "Echo" },
+  { id: "ripple", name: "Ripple" },
   { id: "mono", name: "Mono" },
   { id: "wave", name: "Wave" },
 ];
 
 export const DEFAULT_STYLE: StyleId = "stickery";
 
-/** Whether a shuffle changes anything in a style: Echo and Mono are set the same every time, with nothing drawn by chance. (Wave's shuffle moves its wave.) */
+/** Whether a shuffle changes anything in a style: Ripple and Mono are set the same every time, with nothing drawn by chance. (Wave's shuffle moves its wave.) */
 export function shuffles(style: StyleId): boolean {
-  return style !== "echo" && style !== "mono";
+  return style !== "ripple" && style !== "mono";
 }
 
 /**
@@ -146,8 +149,6 @@ export type Op =
       y: number;
       color: string;
       alpha?: number;
-      /** Drawn as an outline of this width rather than filled. */
-      outline?: number;
       /** Which line of Inkblot's it is on (an emoji set among its printed words), for an animation that brings each line in. */
       line?: number;
       /**
@@ -232,7 +233,12 @@ export type Op =
    * where the wave is (`at`), which paint draws them as: the block warped
    * up and down inside its own rectangle, or with no wave, as they are.
    */
-  | WaveOp;
+  | WaveOp
+  /**
+   * Ripple's word seen through fluted glass (glass.ts), drawn by the
+   * shader in glass-gl.ts; set as plain text where there is no WebGL 2.
+   */
+  | GlassOp;
 
 export interface Scene {
   width: number;
@@ -302,7 +308,9 @@ export function wrapTypeOf(input: CoverInput): string {
           ? [input.renaissanceLook ?? DEFAULT_RENAISSANCE_LOOK]
           : input.style === "wave"
             ? [input.waveFace ?? DEFAULT_WAVE_FACE]
-            : [];
+            : input.style === "ripple"
+              ? [input.rippleAxis ?? DEFAULT_GLASS_AXIS]
+              : [];
   return JSON.stringify([input.style, ...type]);
 }
 
@@ -408,6 +416,8 @@ export interface CoverInput {
   /** Wave's face, and the animation its still cover is stopped in (the one picked for it). */
   waveFace?: WaveFaceId;
   waveAnimation?: WaveVariantId;
+  /** Ripple's flutes: upright (Horizontal, the default) or level (Vertical). */
+  rippleAxis?: GlassAxis;
   /** A photo behind the letters, in place of the plain ground. */
   photo?: boolean;
   /** Set as a text box: the words wrapped to a width, at the size the style chose for them (from that layout's `wrapRef`). */
@@ -420,10 +430,6 @@ export interface CoverInput {
   format: FormatId;
   /** The shuffle: mixed into every random choice the style makes. */
   seed: number;
-}
-
-function upper(paragraphs: Paragraph[]): Paragraph[] {
-  return paragraphs.map((p) => p.map((w) => w.map((s) => ({ ...s, text: s.text.toLocaleUpperCase() }))));
 }
 
 /** The text of a block as ops, each segment in the colour `colour` gives it. */
@@ -759,41 +765,6 @@ function inkblot(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer
   }
   const readable = inked.length ? union(inked) : block.bounds;
   return { block, ops, readable, ...(wrap ? { wrapped: { width: wrapWidth, min } } : { ref: { size: size * k, width: readable.w, slack: Math.max(0, block.bounds.w * k - readable.w) } }) };
-}
-
-/** Heavy wide capitals, repeated in outline above and below to the cover's edges. */
-function echo(paragraphs: Paragraph[], safe: Rect, palette: Palette, measurer: Measurer, height: number, wrap: Wrap | null): Made {
-  const band = Math.min(safe.h, Math.max(safe.h * 0.36, 260));
-  const box = { x: safe.x, y: safe.y + (safe.h - band) / 2, w: safe.w, h: band };
-  const spec = { face: "wide", emphasisFace: "wide", leading: 0.94, align: "center" } as const;
-  const words = upper(paragraphs);
-  const boxed = wrap ? flowWrapped(words, spec, measurer, wrap, box, 0) : null;
-  const min = boxed?.min ?? 0;
-  const wrapWidth = boxed?.width ?? 0;
-  const block = boxed ? boxed.block : flow(words, { ...spec, box, maxSize: 210, minSize: 40 }, measurer);
-  const main = textOps(block, () => palette.ink);
-  const first = block.lines[0];
-  const last = block.lines[block.lines.length - 1];
-  const echoes: Op[] = [];
-  if (first) {
-    const step = last.baseline - first.baseline + first.size * (measurer.metrics("wide").cap + 0.3);
-    const outline = Math.max(1.5, block.size * 0.022);
-    for (let k = 1; k < 40; k += 1) {
-      const alpha = Math.max(0.07, 0.5 * 0.64 ** (k - 1));
-      let drawn = false;
-      for (const dir of [-1, 1]) {
-        const dy = dir * k * step;
-        // A copy wholly off the cover is not drawn.
-        if (block.bounds.y + block.bounds.h + dy < 0 || block.bounds.y + dy > height) continue;
-        drawn = true;
-        for (const op of main) {
-          if (op.kind === "text") echoes.push({ ...op, y: op.y + dy, color: palette.ink, alpha, outline });
-        }
-      }
-      if (!drawn) break;
-    }
-  }
-  return { block, ops: [...echoes, ...main], readable: block.bounds, ...(wrap ? { wrapped: { width: wrapWidth, min } } : { ref: { size: block.size, width: block.bounds.w } }) };
 }
 
 /** A typewriter's lines, set left in a block at the centre, with the cursor after them. */
@@ -2304,11 +2275,12 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
   const seed = input.seed | 0;
   const { width, height, safe } = format;
   // Stars mean something only to Stickery, where they pick the funky
-  // words, and Renaissance, where they pick the script; every other style
-  // sets a starred word as it sets the rest, in the same colour and face
-  // (the owner's ask of 7 Oct).
+  // words, Renaissance, where they pick the script, and Ripple, where they
+  // pick the word seen through the glass; every other style sets a starred
+  // word as it sets the rest, in the same colour and face (the owner's ask
+  // of 7 Oct).
   const typed = parseTitle(input.title);
-  const paragraphs = input.style === "stickery" || input.style === "renaissance" ? typed : typed.map((p) => p.map((w) => w.map((seg) => ({ ...seg, emphasis: false }))));
+  const paragraphs = input.style === "stickery" || input.style === "renaissance" || input.style === "ripple" ? typed : typed.map((p) => p.map((w) => w.map((seg) => ({ ...seg, emphasis: false }))));
   const canvas = { x: width * 0.03, y: height * 0.03, w: width * 0.94, h: height * 0.94 };
 
   // A text box needs words to wrap: with none, the style sets itself.
@@ -2322,8 +2294,8 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
         return pasty(paragraphs, safe, canvas, palette, measurer, true, seed, input.pastyLettering ?? DEFAULT_PASTY_LETTERING, input.photo === true, wrap);
       case "stickery":
         return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE, input.textColour ?? null, wrap);
-      case "echo":
-        return echo(paragraphs, safe, palette, measurer, height, wrap);
+      case "ripple":
+        return ripple(paragraphs, safe, intersect(format.crops), palette, measurer, input.rippleAxis ?? DEFAULT_GLASS_AXIS, wrap);
       case "mono":
         return mono(paragraphs, safe, palette, measurer, wrap);
       case "wave":
