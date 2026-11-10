@@ -119,7 +119,10 @@ npm run build   # the static site, in out/
   it are Inter Tight 900 (`heavy`) at `PLAIN_SHARE` of its size, in the
   order typed, a Vertical's lines clear of its arcs. Flute widths and the
   blur are in em of the word (`FLUTES`, `REFERENCE_INK`), so any word at
-  any size is the studies' look. The shader reads an exact distance field
+  any size is the studies' look, but for the letters' own bend through
+  each flute, half the studies' (`letterBend`; the echoes keep theirs): at
+  the preview's size, the studies' bend broke every curve into steps at
+  the flute lines, which the owner saw as pixelated (10 Nov). The shader reads an exact distance field
   of the word drawn twice over (`glassField`) at 32 wavelengths and lights
   it for the cover's ground: see-through but for the letters and their
   light, the word in its colour, the split light's colours laid on top at

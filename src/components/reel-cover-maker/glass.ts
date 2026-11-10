@@ -97,6 +97,13 @@ export interface Flutes {
   local: boolean;
   /** Columns with no ink, beside or between letters, show the glass as it is (Vertical). */
   sides: boolean;
+  /**
+   * How strongly the glass bends the letters themselves through each flute,
+   * of the studies' (the echoes keep theirs): at a cover's size on a screen,
+   * the studies' bend broke every curve into steps at the flute lines, which
+   * read as pixels (the owner, 10 Nov: "make sure it doesn't look pixelated").
+   */
+  letterBend: number;
   fan: number;
   fanPow: number;
   echoAnchor: number;
@@ -130,6 +137,7 @@ export const REFERENCE_INK = { w: 2.96484375, h: 0.98535156 };
 export const REFERENCE_WORD_PX = 624;
 
 const COMMON = {
+  letterBend: 0.5,
   fan: 0.12,
   fanPow: 1.4,
   echoAnchor: 0.98,

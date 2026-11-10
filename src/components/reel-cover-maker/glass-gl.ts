@@ -55,6 +55,8 @@ uniform vec4 uSdfRect;
 // what it was made in, how much larger the word is drawn than it was made, and how wide its columns' ink runs.
 uniform vec2 uCentreP;
 uniform float uScale, uResP;
+// How strongly the glass bends the letters themselves, of the studies' (the echoes as they were).
+uniform float uLetterBend;
 out vec4 outColor;
 
 float field(float a, float b) {
@@ -109,6 +111,11 @@ vec3 flute(float k, float u, float a, float b) {
     : mix(uSqueezeTip, uSqueezeEcho, smoothstep(0.0, 0.8, far));
   float h = u * (1.0 - bend * sq) + bend * uCurve * (4.0 * u * u * u - u);
   float dh = (1.0 - bend * sq) + bend * uCurve * (12.0 * u * u - 1.0);
+  // Over the letters, their own bend through each flute gentler than the studies': at a cover's size on a screen, a curve broken at
+  // every flute line by the studies' bend read as stair steps (the owner: "pixelated"). The echoes keep theirs.
+  float own = mix(uLetterBend, 1.0, echo);
+  h = u + (h - u) * own;
+  dh = 1.0 + (dh - 1.0) * own;
   float outPart = echo * sign(c) * (view - ac);
   float D = outPart + fan + (h - u) * uPitch;
   // The light splits a moment after the glass comes and stops a moment
@@ -209,7 +216,7 @@ const NAMES = [
   "uEchoes", "uFadeTo", "uEchoAnchor", "uEchoStep", "uEchoFade", "uEchoSoft", "uBow", "uBowOut", "uReachNow",
   "uFace", "uKappaOut", "uKappaFan", "uKappaB", "uDisp", "uFlash", "uS", "uV",
   "uFmax", "uSoftSplit", "uSoftMax", "uSigma0", "uSigma1", "uExposure", "uToneNorm",
-  "uSpanL", "uSpanR", "uInk", "uGround", "uGroundSrgb", "uLight", "uContrast", "uLift", "uExtent", "uW", "uSdf", "uSdfRect", "uCentreP", "uScale", "uResP",
+  "uSpanL", "uSpanR", "uInk", "uGround", "uGroundSrgb", "uLight", "uContrast", "uLift", "uExtent", "uW", "uSdf", "uSdfRect", "uCentreP", "uScale", "uResP", "uLetterBend",
 ];
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
@@ -508,6 +515,7 @@ function render(op: GlassOp, word: PreparedWord, size: number, frac: { x: number
   gl.uniform2f(U.uCentre, cx, cy);
   gl.uniform2f(U.uCentreP, word.cx, word.cy);
   one("uScale", k);
+  one("uLetterBend", f.letterBend);
   one("uResP", word.w);
   one("uAxis", op.axis === "h" ? 0 : 1);
   one("uHalf", (op.axis === "h" ? word.half.x : word.half.y) * k);
