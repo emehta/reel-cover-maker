@@ -73,8 +73,9 @@ const FACE_WIDTH = {
   condensed: 0.36,
   sans: 0.52,
   "sans-heavy": 0.58,
-  // Ripple's Inter Tight at its heaviest.
-  heavy: 0.6,
+  // Ripple's Mona Sans and Unbounded at their heaviest, Unbounded wide (its third, Anton, is Renaissance's above).
+  "glass-mona": 0.62,
+  "glass-unbounded": 0.8,
   wide: 0.8,
   mono: 0.6,
   "mono-bold": 0.6,
@@ -102,7 +103,8 @@ const FACE_METRICS = {
   condensed: { cap: 0.73, ascent: 0.98, descent: 0.18 },
   sans: { cap: 0.73, ascent: 0.97, descent: 0.22 },
   "sans-heavy": { cap: 0.73, ascent: 0.98, descent: 0.22 },
-  heavy: { cap: 0.73, ascent: 0.98, descent: 0.24 },
+  "glass-mona": { cap: 0.72, ascent: 0.98, descent: 0.24 },
+  "glass-unbounded": { cap: 0.74, ascent: 1.0, descent: 0.26 },
   wide: { cap: 0.72, ascent: 0.96, descent: 0.2 },
   mono: { cap: 0.68, ascent: 0.9, descent: 0.26 },
   "mono-bold": { cap: 0.68, ascent: 0.99, descent: 0.26 },
@@ -643,7 +645,8 @@ check("no word is dropped or doubled: the drawn text is the typed text", () => {
           assert.equal(letters(stripSpaces(mainText(scene))), letters(typed), `${style.id} ${format.id} "${title}"`);
           continue;
         }
-        const expected = style.id === "wave" ? typed.toLocaleUpperCase() : typed;
+        // Wave and Ripple set every word in capitals.
+        const expected = style.id === "wave" || style.id === "ripple" ? typed.toLocaleUpperCase() : typed;
         assert.equal(stripSpaces(mainText(scene)), expected, `${style.id} ${format.id} "${title}"`);
       }
     }
@@ -662,19 +665,28 @@ check("even the longest unbroken title stays inside the safe area", () => {
   }
 });
 
-check("Ripple sets the bold word alone on its line, through the glass, and the rest plainly round it in the order typed; with none bold, the longest word", () => {
-  const glassOf = (scene) => scene.ops.filter((op) => op.kind === "glass");
-  const plainOf = (scene) => scene.ops.filter((op) => op.kind === "text");
+check("Ripple sets the bold word alone on its line, through the glass, and the rest plainly round it in the order typed, all in capitals; with none bold, the longest word", () => {
+  // The rippled lines, and the plain ones: seen through the same sheet of glass (a line at a time), or as text where nothing ripples.
+  const glassOf = (scene) => scene.ops.filter((op) => op.kind === "glass" && !op.sheet);
+  const plainOf = (scene) => scene.ops.filter((op) => op.kind === "text" || (op.kind === "glass" && op.sheet));
   for (const axis of ["h", "v"]) {
     const scene = cover("How I *plan* my week", "ripple", "reel", { rippleAxis: axis });
-    assert.deepEqual(glassOf(scene).map((op) => op.text), ["plan"]);
-    assert.deepEqual(plainOf(scene).map((op) => op.text), ["How", "I", "my", "week"]);
+    assert.deepEqual(glassOf(scene).map((op) => op.text), ["PLAN"]);
+    assert.deepEqual(plainOf(scene).map((op) => op.text), ["HOW I", "MY WEEK"]);
     const [glass] = glassOf(scene);
     assert.equal(glass.axis, axis);
     assert.equal(glass.face, GL.GLASS_FACE);
     // Above it and below it, in its own colour, the plain words smaller.
     for (const op of plainOf(scene)) assert.ok(near(op.size, glass.size * GL.PLAIN_SHARE, 1e-6) && op.color === glass.color, `${axis}: ${op.text} at ${op.size}`);
-    assert.ok(plainOf(scene).slice(0, 2).every((op) => op.y < glass.y) && plainOf(scene).slice(2).every((op) => op.y > glass.y));
+    // Through the rippled word's own sheet: its flutes, lined up on its middle, as strongly; arcs only off the block's top and bottom, on Vertical.
+    for (const op of plainOf(scene)) {
+      assert.equal(op.kind, "glass");
+      assert.ok(near(op.sheet.pitch, GL.FLUTES[axis].pitch * glass.size, 1e-9) && op.sheet.strength === GL.SHEET_STRENGTH, `${axis}: ${op.text}'s sheet`);
+      const read = GL.glassReadable(glass, measurer);
+      assert.ok(near(op.sheet.grid, axis === "h" ? read.x + read.w / 2 : read.y + read.h / 2, 1e-6));
+      assert.equal(op.sheet.side, axis === "v" ? (op.y < glass.y ? -1 : 1) : undefined);
+    }
+    assert.ok(plainOf(scene).slice(0, 1).every((op) => op.y < glass.y) && plainOf(scene).slice(1).every((op) => op.y > glass.y));
     // On Vertical, a plain line as clear of the arcs over it as of those under it, by its own letters.
     if (axis === "v") {
       const two = cover("*rate* my *setup*", "ripple", "reel", { rippleAxis: "v" });
@@ -683,6 +695,8 @@ check("Ripple sets the bold word alone on its line, through the glass, and the r
       const ink = (op) => measurer.bounds(op.face, op.text);
       const above = my.y - ink(my).ascent * my.size - (GL.glassReadable(rate, measurer).y + GL.glassReadable(rate, measurer).h);
       const below = GL.glassReadable(setup, measurer).y - (my.y + ink(my).descent * my.size);
+      // Between two rippled lines, a plain line throws no arcs of its own.
+      assert.equal(my.sheet.trail, undefined);
       assert.ok(near(above, below, 0.5), `"my" ${above.toFixed(1)} from the arcs over it, ${below.toFixed(1)} from those under it`);
     }
     // Lit for its own ground: a clear file but for the letters.
@@ -690,22 +704,23 @@ check("Ripple sets the bold word alone on its line, through the glass, and the r
     assert.equal(glass.at, undefined);
   }
   // No word bold: the longest word ripples, the first of two as long.
-  assert.deepEqual(glassOf(cover("the art of doing less", "ripple", "reel")).map((op) => op.text), ["doing"]);
-  assert.deepEqual(glassOf(cover("abc xyz", "ripple", "reel")).map((op) => op.text), ["abc"]);
+  assert.deepEqual(glassOf(cover("the art of doing less", "ripple", "reel")).map((op) => op.text), ["DOING"]);
+  assert.deepEqual(glassOf(cover("abc xyz", "ripple", "reel")).map((op) => op.text), ["ABC"]);
   // Bold words side by side are one line through the glass, broken evenly at their spaces where they would run wider than five em; a run apart, or on a typed line of its own, is another.
-  assert.deepEqual(glassOf(cover("the *my week* is here", "ripple", "reel")).map((op) => op.text), ["my week"]);
-  assert.deepEqual(glassOf(cover("the *ripple effect* is here", "ripple", "reel")).map((op) => op.text), ["ripple", "effect"]);
-  assert.deepEqual(glassOf(cover("*how I plan my whole week*", "ripple", "reel")).map((op) => op.text), ["how I plan", "my whole", "week"]);
-  assert.deepEqual(glassOf(cover("*rate* my *setup*", "ripple", "reel")).map((op) => op.text), ["rate", "setup"]);
-  assert.deepEqual(glassOf(cover("*one*\n*two*", "ripple", "reel")).map((op) => op.text), ["one", "two"]);
+  assert.deepEqual(glassOf(cover("the *my day* is here", "ripple", "reel")).map((op) => op.text), ["MY DAY"]);
+  assert.deepEqual(glassOf(cover("the *ripple effect* is here", "ripple", "reel")).map((op) => op.text), ["RIPPLE", "EFFECT"]);
+  assert.deepEqual(glassOf(cover("*how I plan my whole week*", "ripple", "reel")).map((op) => op.text), ["HOW I", "PLAN MY", "WHOLE", "WEEK"]);
+  assert.deepEqual(glassOf(cover("*rate* my *setup*", "ripple", "reel")).map((op) => op.text), ["RATE", "SETUP"]);
+  assert.deepEqual(glassOf(cover("*one*\n*two*", "ripple", "reel")).map((op) => op.text), ["ONE", "TWO"]);
   // A plain word never outgrows the rippled line, down to a quarter of its size: "SUMMERTIME" round a rippled "OF".
   const caps = cover("THE ART *OF* SUMMERTIME", "ripple", "reel");
   const of = glassOf(caps)[0];
   const summer = plainOf(caps).find((op) => op.text === "SUMMERTIME");
+  assert.ok(summer, "no SUMMERTIME line");
   assert.ok(near(summer.size, of.size * GL.PLAIN_LEAST, 1e-6), `${summer.size / of.size}`);
   // An emoji is never the word through the glass by being longest (as a shape alone it would lose its colours); a title of emoji alone is set plainly.
-  assert.deepEqual(glassOf(cover("Week 12 👍", "ripple", "reel")).map((op) => op.text), ["Week"]);
-  assert.deepEqual(glassOf(cover("👍👍👍👍 hi", "ripple", "reel")).map((op) => op.text), ["hi"]);
+  assert.deepEqual(glassOf(cover("Week 12 👍", "ripple", "reel")).map((op) => op.text), ["WEEK"]);
+  assert.deepEqual(glassOf(cover("👍👍👍👍 hi", "ripple", "reel")).map((op) => op.text), ["HI"]);
   assert.deepEqual(glassOf(cover("👍", "ripple", "reel")), []);
   assert.deepEqual(plainOf(cover("👍", "ripple", "reel")).map((op) => op.text), ["👍"]);
   // Nothing to set: nothing drawn, and nothing that is not a number.
@@ -718,26 +733,43 @@ check("Ripple sets the bold word alone on its line, through the glass, and the r
     const same = cover(title, "ripple", "reel", { rippleAxis: "v", wrap: { width: own.wrapRef.width, ref: own.wrapRef } });
     assert.deepEqual(textOps(same).map((op) => [op.text, op.x.toFixed(3), op.y.toFixed(3), op.size.toFixed(4)]), textOps(own).map((op) => [op.text, op.x.toFixed(3), op.y.toFixed(3), op.size.toFixed(4)]), `"${title}"`);
   }
-  // A bold part of a word ripples the whole word; the case is as typed.
-  assert.deepEqual(glassOf(cover("re*think*ing it", "ripple", "reel")).map((op) => op.text), ["rethinking"]);
+  // A bold part of a word ripples the whole word.
+  assert.deepEqual(glassOf(cover("re*think*ing it", "ripple", "reel")).map((op) => op.text), ["RETHINKING"]);
+  // Always in capitals (the owner's rule), however it was typed: a title typed in small letters is set exactly as typed in capitals, its bold kept, on both directions and in every face.
+  for (const rippleFace of GL.GLASS_FACES.map((f) => f.id)) {
+    for (const rippleAxis of ["h", "v"]) {
+      const marks = (sc) => textOps(sc).map((op) => [op.kind, op.text, op.face, op.x.toFixed(3), op.y.toFixed(3), op.size.toFixed(4)]);
+      const typed = cover("How I *plan* my Week, naïve café", "ripple", "reel", { rippleFace, rippleAxis });
+      assert.deepEqual(marks(typed), marks(cover("HOW I *PLAN* MY WEEK, NAÏVE CAFÉ", "ripple", "reel", { rippleFace, rippleAxis })), `${rippleFace} ${rippleAxis}`);
+      for (const op of textOps(typed)) assert.equal(op.text, op.text.toLocaleUpperCase());
+      assert.deepEqual(glassOf(typed).map((op) => [op.text, op.face]), [["PLAN", rippleFace]]);
+    }
+  }
+  assert.deepEqual(GL.capitals(T.parseTitle("a *b*c\nß")), T.parseTitle("A *B*C\nSS"));
   assert.deepEqual(GL.glassPieces(T.parseTitle("a *b* c\nd *e f*"), measurer).map((p) => p.kind === "glass" ? p.text : p.paragraphs.map((q) => q.map((w) => w.map((sg) => sg.text).join("")).join(" ")).join("/")), ["a", "b", "c/d", "e f"]);
 });
 
-check("Ripple's glass never has its trail cut by an edge Instagram shows, and on Vertical no plain line stands in its arcs", () => {
+check("Ripple's glass, in each of its three faces, never has its trail cut by an edge Instagram shows, every word inside the safe area, and on Vertical no plain line stands where its arcs show", () => {
   for (const format of F.FORMATS) {
     const seen = F.intersect(format.crops);
     for (const axis of ["h", "v"]) {
-      for (const title of TITLES.slice(0, 160)) {
-        const scene = cover(title, "ripple", format.id, { rippleAxis: axis });
-        const glass = scene.ops.filter((op) => op.kind === "glass");
+      // The default over 160 titles, the other two over 60 each.
+      for (const [face, count] of GL.GLASS_FACES.map((f) => [f.id, f.id === GL.GLASS_FACE ? 160 : 60])) for (const title of TITLES.slice(0, count)) {
+        const scene = cover(title, "ripple", format.id, { rippleAxis: axis, rippleFace: face });
+        const glass = scene.ops.filter((op) => op.kind === "glass" && !op.sheet);
         assert.ok(glass.length >= 1, `${format.id} ${axis} "${title}": nothing through the glass`);
+        assert.equal(scene.truncated, false, `${face} ${format.id} ${axis} "${title}" was cut short`);
+        for (const { op, rect } of readableInk(scene)) {
+          assert.ok(inside(format.safe, rect), `${face} ${format.id} ${axis} "${title}": "${op.text}" outside the safe area`);
+          assert.ok(inside(scene.readable, rect, 1), `${face} ${format.id} ${axis} "${title}": "${op.text}" outside the area the scene reports`);
+        }
         for (const op of glass) {
           assert.ok(inside(seen, GL.glassReach(op, measurer), 1e-6), `${format.id} ${axis} "${title}": the trail of "${op.text}" is cut`);
           if (axis !== "v") continue;
-          // The arcs run up and down the word's whole width: no plain word's ink inside them.
-          const reach = GL.glassReach(op, measurer);
+          // The arcs run up and down the word's whole width: no plain word's ink where they show.
+          const reach = GL.glassArcsSeen(op, measurer);
           for (const { op: other, rect } of readableInk(scene)) {
-            if (other === op || other.kind === "glass") continue;
+            if (other === op || (other.kind === "glass" && !other.sheet)) continue;
             const across = rect.x < reach.x + reach.w && rect.x + rect.w > reach.x;
             const upDown = rect.y < reach.y + reach.h && rect.y + rect.h > reach.y;
             assert.ok(!(across && upDown), `${format.id} "${title}": "${other.text}" stands in the arcs of "${op.text}"`);
@@ -974,6 +1006,11 @@ check("whatever storage holds, the maker opens with something it understands", (
   assert.equal(D.readDesign(JSON.stringify({ rippleAxis: "v" })).rippleAxis, "v");
   for (const rippleAxis of ["x", 1, null, "V"]) assert.equal(D.readDesign(JSON.stringify({ rippleAxis })).rippleAxis, "h");
   assert.deepEqual(GL.GLASS_AXES.map((a) => a.name), ["Horizontal", "Vertical"]);
+  // Ripple's Lettering, the owner's three of 15 Nov, sans only: Mona Sans unless another was kept (a cover saved before the list opens in it).
+  assert.deepEqual(GL.GLASS_FACES.map((f) => [f.id, f.name]), [["glass-mona", "Mona Sans"], ["caps-anton", "Anton"], ["glass-unbounded", "Unbounded"]]);
+  assert.equal(D.DEFAULT_DESIGN.rippleFace, "glass-mona");
+  for (const rippleFace of ["caps-anton", "glass-unbounded"]) assert.equal(D.readDesign(JSON.stringify({ rippleFace })).rippleFace, rippleFace);
+  for (const rippleFace of ["heavy", "glass-archivo", "caps-playfairsc", "sans", 1, null]) assert.equal(D.readDesign(JSON.stringify({ rippleFace })).rippleFace, "glass-mona");
   assert.equal(D.readDesign(JSON.stringify({ text: "x".repeat(500) })).text.length, T.MAX_TITLE_LENGTH);
 });
 
@@ -3358,6 +3395,8 @@ console.log("placing");
     // Another type keeps nothing of it.
     assert.equal(S.textBoxRef(long.wrapRef, kept, S.wrapTypeOf({ style: "ripple" })), long.wrapRef);
     assert.notEqual(S.wrapTypeOf({ style: "ripple", rippleAxis: "h" }), S.wrapTypeOf({ style: "ripple", rippleAxis: "v" }));
+    assert.notEqual(S.wrapTypeOf({ style: "ripple", rippleFace: "glass-mona" }), S.wrapTypeOf({ style: "ripple", rippleFace: "caps-anton" }));
+    assert.equal(S.wrapTypeOf({ style: "ripple" }), S.wrapTypeOf({ style: "ripple", rippleFace: GL.GLASS_FACE }));
     assert.notEqual(S.wrapTypeOf({ style: "stickery", lettering: "goo" }), S.wrapTypeOf({ style: "stickery", lettering: "yesteryear" }));
     assert.notEqual(S.wrapTypeOf({ style: "renaissance", renaissanceLook: "niche" }), S.wrapTypeOf({ style: "renaissance", renaissanceLook: "travel" }));
     // Stickery's plain lines keep the sizes the box was made with as more is typed: "sweet after all" never grows or shrinks for a word typed after it.
@@ -5011,18 +5050,21 @@ check("Wave is painted as one fill of its letters in its colour, its wave and al
   }
 });
 
-check("Ripple's glass is the shader's; with no page to draw it on, its word is set as plain text in its colour where the text would be, at any scale", () => {
+check("Ripple's glass is the shader's; with no page to draw it on, its words (the plain lines through its sheet too) are set as plain text in their colour where the text would be, at any scale", () => {
   const scene = cover("How I *plan* my week", "ripple", "reel", COLOURS.blue);
-  const glass = scene.ops.find((op) => op.kind === "glass");
+  const glass = scene.ops.filter((op) => op.kind === "glass");
+  assert.deepEqual(glass.map((op) => [op.text, Boolean(op.sheet)]), [["HOW I", true], ["PLAN", false], ["MY WEEK", true]]);
   for (const scale of [1, 0.3]) {
     const ctx = recorder();
     paint(ctx, scene, { scale, font, grain: null });
     assert.equal(ctx.depth, 0);
-    const drawn = ctx.calls.filter((c) => c.kind === "fillText" && c.text === "plan");
-    assert.equal(drawn.length, 1);
-    assert.equal(drawn[0].style, glass.color);
-    assert.ok(near(drawn[0].at[0], glass.x * scale, 1e-6) && near(drawn[0].at[1], glass.y * scale, 1e-6));
-    assert.equal(drawn[0].font, font(glass.face, glass.size));
+    for (const op of glass) {
+      const drawn = ctx.calls.filter((c) => c.kind === "fillText" && c.text === op.text);
+      assert.equal(drawn.length, 1, op.text);
+      assert.equal(drawn[0].style, op.color);
+      assert.ok(near(drawn[0].at[0], op.x * scale, 1e-6) && near(drawn[0].at[1], op.y * scale, 1e-6), op.text);
+      assert.equal(drawn[0].font, font(op.face, op.size));
+    }
   }
 });
 

@@ -42,8 +42,19 @@ export function isGlassAxis(value: unknown): value is GlassAxis {
   return value === "h" || value === "v";
 }
 
-/** Inter Tight at its heaviest, the face the studies were made in. */
-export const GLASS_FACE: FaceId = "heavy";
+/** Mona Sans at its heaviest: the default, and what a cover saved before Ripple had a Lettering list opens in. */
+export const GLASS_FACE: FaceId = "glass-mona";
+
+/** The faces Ripple's letters may be set in (the owner's three, sans only, never a serif), by the name the Lettering list shows. */
+export const GLASS_FACES: readonly { id: FaceId; name: string }[] = [
+  { id: "glass-mona", name: "Mona Sans" },
+  { id: "caps-anton", name: "Anton" },
+  { id: "glass-unbounded", name: "Unbounded" },
+];
+
+export function isGlassFace(value: unknown): value is FaceId {
+  return GLASS_FACES.some((f) => f.id === value);
+}
 
 /**
  * Where the glass is in its motion: how strongly the flutes bend (`glass`),
@@ -79,7 +90,43 @@ export interface GlassOp {
   ground: string;
   axis: GlassAxis;
   at?: GlassMoment;
+  /**
+   * A plain word, seen through the same sheet of glass as the rippled one
+   * (the owner, 10 Nov: the rest "needs to blend in well visually with the
+   * rippled text, it cannot look disjointed"): the sheet's flutes, `pitch`
+   * pixels of the picture wide and lined up on the rippled word's middle
+   * (`grid`, along the bend), bending it `strength` as much, with no trail
+   * and no push. Absent: the rippled word itself.
+   */
+  sheet?: GlassSheet;
 }
+
+export interface GlassSheet {
+  pitch: number;
+  grid: number;
+  strength: number;
+  /**
+   * Vertical: a few faint arcs of its own, `trail` flutes long, as bright as
+   * `gain` of the rippled word's, and only on its side away from the rippled
+   * word (`side`: -1 above, 1 below), so the block ends in arcs top and
+   * bottom and none cross the gap; none at 0.
+   */
+  trail?: number;
+  gain?: number;
+  side?: number;
+}
+
+/**
+ * Vertical: how many faint arcs a plain line at the block's top or bottom
+ * throws, away from the rippled word, and how bright, of its: the block is
+ * one piece of slatted glass. (Horizontal's plain lines throw none: a short
+ * trail off a short line read as brackets round it.)
+ */
+export const LINE_ARCS = 2;
+export const LINE_ARCS_GAIN = 0.3;
+
+/** How strongly the sheet bends a plain word, of the rippled word's bend: as strongly, so the two read as one piece of glass (weaker read as flat words beside a glass one). */
+export const SHEET_STRENGTH = 1;
 
 /**
  * The flutes, as the owner picked them (the studies' B Contour; the
@@ -181,9 +228,28 @@ export function glassInk(op: Pick<GlassOp, "face" | "text" | "size" | "x" | "y">
 }
 
 /** Where the letters of the rippled word are drawn, pushed out and fringed: what must be read, and stay in the safe area. */
-export function glassReadable(op: Pick<GlassOp, "face" | "text" | "size" | "x" | "y" | "axis">, measurer: Pick<Measurer, "bounds">): Rect {
+export function glassReadable(op: Pick<GlassOp, "face" | "text" | "size" | "x" | "y" | "axis" | "sheet">, measurer: Pick<Measurer, "bounds">): Rect {
+  if (op.sheet) return sheetReadable(op, measurer);
   const ink = glassInk(op, measurer);
   return op.axis === "h" ? grow(ink, GLASS_PUSH * ink.w, GLASS_ACROSS * ink.h) : grow(ink, GLASS_ACROSS * ink.w, GLASS_PUSH * ink.h);
+}
+
+/** How far a plain line's fringe reaches past its letters through the sheet, per em of its size. */
+export const SHEET_FRINGE = GLASS_ACROSS / 2;
+
+/** A plain line through the sheet is not pushed out: only its fringe reaches past its ink. */
+function sheetReadable(op: Pick<GlassOp, "face" | "text" | "size" | "x" | "y">, measurer: Pick<Measurer, "bounds">): Rect {
+  const fringe = SHEET_FRINGE * op.size;
+  return grow(glassInk(op, measurer), fringe, fringe);
+}
+
+/** Whether the plain lines are seen through the sheet: only beside a rippled one. */
+const sheetsIn = (pieces: Piece[]) => SHEET_STRENGTH > 0 && pieces.some((p) => p.kind === "glass");
+
+/** A plain line drawn through the sheet as one op: its words joined, from its first word's start. */
+function sheetLine(line: Block["lines"][number]): Pick<GlassOp, "face" | "text" | "size" | "x" | "y"> {
+  const first = line.segments[0];
+  return { text: line.segments.map((s) => s.text).join(" "), face: first.face, size: first.size, x: first.x, y: line.baseline };
 }
 
 /**
@@ -192,8 +258,9 @@ export function glassReadable(op: Pick<GlassOp, "face" | "text" | "size" | "x" |
  * the safe area, but kept inside what every window shows, so no trail is
  * cut by the grid's edge.
  */
-export function glassReach(op: Pick<GlassOp, "face" | "text" | "size" | "x" | "y" | "axis">, measurer: Pick<Measurer, "bounds">): Rect {
+export function glassReach(op: Pick<GlassOp, "face" | "text" | "size" | "x" | "y" | "axis" | "sheet">, measurer: Pick<Measurer, "bounds">): Rect {
   const read = glassReadable(op, measurer);
+  if (op.sheet) return read;
   const f = FLUTES[op.axis];
   const trail = (f.fadeTo + 1) * f.pitch * op.size;
   return op.axis === "h" ? grow(read, trail, 0) : grow(read, 0, trail);
@@ -235,6 +302,21 @@ const GAP_HH = 0.14;
 /** Vertical: past its arcs, this much more of its size clear of a plain line. */
 const GAP_V = 0.06;
 
+/**
+ * How many flutes out a Vertical's arcs still show (fainter than a twelfth
+ * past it, their fade being the studies'): where a plain line stands clear
+ * of them. Past the arcs' whole run the plain lines floated off the word as
+ * captions (a review, 10 Nov), the gap under it larger than over it.
+ */
+export const ARCS_SEEN = 4.5;
+
+/** How far a Vertical's arcs show, about the rippled word: a plain line stands outside it. */
+export function glassArcsSeen(op: Pick<GlassOp, "face" | "text" | "size" | "x" | "y" | "axis" | "sheet">, measurer: Pick<Measurer, "bounds">): Rect {
+  const read = glassReadable(op, measurer);
+  if (op.sheet || op.axis !== "v") return read;
+  return grow(read, 0, ARCS_SEEN * FLUTES.v.pitch * op.size);
+}
+
 /** What the cover is made of: lines of plain words, or a rippled line. */
 type Piece = { kind: "plain"; paragraphs: Paragraph[] } | { kind: "glass"; text: string };
 
@@ -247,7 +329,12 @@ const wordText = (w: Word) => w.map((s) => s.text).join("");
  * kept. With nothing bold, the longest word ripples (the first, if two are
  * as long).
  */
-export function glassPieces(paragraphs: Paragraph[], measurer: Pick<Measurer, "width">): Piece[] {
+/** Ripple is set in capitals however the title was typed (the owner's rule): every word, rippled and plain, its emphasis kept. */
+export function capitals(paragraphs: Paragraph[]): Paragraph[] {
+  return paragraphs.map((p) => p.map((w) => w.map((s) => ({ ...s, text: s.text.toLocaleUpperCase() }))));
+}
+
+export function glassPieces(paragraphs: Paragraph[], measurer: Pick<Measurer, "width">, face: FaceId = GLASS_FACE): Piece[] {
   const bold = paragraphs.some((p) => p.some((w) => w.some((s) => s.emphasis)));
   let longest = [-1, -1];
   if (!bold) {
@@ -257,7 +344,7 @@ export function glassPieces(paragraphs: Paragraph[], measurer: Pick<Measurer, "w
         const text = wordText(w);
         // A word of no letter or figure (an emoji) is no word to see through the glass: as a shape alone, it loses its colours.
         if (!/[\p{L}\p{N}]/u.test(text)) return;
-        const width = measurer.width(GLASS_FACE, text);
+        const width = measurer.width(face, text);
         if (width > most + 1e-9) {
           most = width;
           longest = [pi, wi];
@@ -280,7 +367,7 @@ export function glassPieces(paragraphs: Paragraph[], measurer: Pick<Measurer, "w
       if (line.length) plain.push(line);
       line = [];
       closePlain();
-      for (const text of evenLines(run, measurer)) out.push({ kind: "glass", text });
+      for (const text of evenLines(run, measurer, face)) out.push({ kind: "glass", text });
       run = [];
     };
     p.forEach((w, wi) => {
@@ -298,10 +385,10 @@ export function glassPieces(paragraphs: Paragraph[], measurer: Pick<Measurer, "w
 }
 
 /** A run of bold words as lines through the glass: one, or if wider than `GLASS_LINE_EM`, as few as come under it, broken where the longest line is shortest. */
-function evenLines(words: string[], measurer: Pick<Measurer, "width">): string[] {
+function evenLines(words: string[], measurer: Pick<Measurer, "width">, face: FaceId): string[] {
   const n = words.length;
   const span: number[][] = Array.from({ length: n }, () => new Array<number>(n + 1).fill(0));
-  for (let a = 0; a < n; a += 1) for (let b = a + 1; b <= n; b += 1) span[a][b] = measurer.width(GLASS_FACE, words.slice(a, b).join(" "));
+  for (let a = 0; a < n; a += 1) for (let b = a + 1; b <= n; b += 1) span[a][b] = measurer.width(face, words.slice(a, b).join(" "));
   if (n < 2 || span[0][n] <= GLASS_LINE_EM) return [words.join(" ")];
   const lines = Math.min(n, Math.ceil(span[0][n] / GLASS_LINE_EM));
   // The narrowest widest line for the first b words in l lines, and where its last line starts.
@@ -329,15 +416,15 @@ function evenLines(words: string[], measurer: Pick<Measurer, "width">): string[]
 }
 
 /** The plain words' share of the rippled lines' size, by the title's own words (`PLAIN_SHARE`). */
-export function plainShare(pieces: Piece[], measurer: Pick<Measurer, "width" | "bounds">): number {
+export function plainShare(pieces: Piece[], measurer: Pick<Measurer, "width" | "bounds">, face: FaceId = GLASS_FACE): number {
   let rippled = 0;
   let plain = 0;
   for (const piece of pieces) {
     if (piece.kind === "glass") {
-      const b = measurer.bounds(GLASS_FACE, piece.text);
+      const b = measurer.bounds(face, piece.text);
       rippled = Math.max(rippled, b.left + b.right);
     } else {
-      for (const p of piece.paragraphs) for (const w of p) plain = Math.max(plain, measurer.width(GLASS_FACE, wordText(w)));
+      for (const p of piece.paragraphs) for (const w of p) plain = Math.max(plain, measurer.width(face, wordText(w)));
     }
   }
   if (!(rippled > 0) || !(plain > 0)) return PLAIN_SHARE;
@@ -360,8 +447,8 @@ interface Stack {
 function gapBetween(a: SetPiece, b: SetPiece, axis: GlassAxis, size: number): number {
   if (a.kind === "plain" && b.kind === "plain") return 0;
   if (axis === "h") return (a.kind === "glass" && b.kind === "glass" ? GAP_HH : GAP_H) * size;
-  // Vertical: a rippled line's arcs run up and down; a plain line stands clear of them, and two rippled lines' arcs never meet.
-  const arcs = (FLUTES.v.fadeTo + 0.5) * FLUTES.v.pitch * size;
+  // Vertical: a rippled line's arcs run up and down; a plain line stands clear of where they show, and two rippled lines' arcs never meet.
+  const arcs = ARCS_SEEN * FLUTES.v.pitch * size;
   return a.kind === "glass" && b.kind === "glass" ? 2 * arcs : arcs + GAP_V * size;
 }
 
@@ -382,20 +469,24 @@ const boxFor = (width: number) => width / 0.995 + 1e-6;
  * from the top in order, each line centred on `cx`; then the whole moved so
  * its readable part is centred on `cy`.
  */
-function stack(pieces: Piece[], size: number, share: number, width: number, cx: number, cy: number, axis: GlassAxis, palette: Palette, measurer: Measurer): Stack {
+function stack(pieces: Piece[], size: number, share: number, width: number, cx: number, cy: number, axis: GlassAxis, palette: Palette, measurer: Measurer, face: FaceId): Stack {
   const plainSize = share * size;
+  // Through the sheet, a plain line's fringe reaches past its letters: the lines are set that much narrower, so the fringe stays inside `width`.
+  const sheeted = sheetsIn(pieces);
+  const fringe = sheeted ? SHEET_FRINGE * plainSize : 0;
+  const box = boxFor(Math.max(0, width - 2 * fringe));
   const set: SetPiece[] = pieces.map((piece) => {
     if (piece.kind === "plain") {
       const block = flow(
         piece.paragraphs,
-        { face: GLASS_FACE, emphasisFace: GLASS_FACE, leading: PLAIN_LEADING, align: "center", box: { x: cx - boxFor(width) / 2, y: 0, w: boxFor(width), h: 1e6 }, maxSize: plainSize, minSize: plainSize, fixedSize: true },
+        { face: face, emphasisFace: face, leading: PLAIN_LEADING, align: "center", box: { x: cx - box / 2, y: 0, w: box, h: 1e6 }, maxSize: plainSize, minSize: plainSize, fixedSize: true },
         measurer,
       );
       return { kind: "plain", block };
     }
-    const b = measurer.bounds(GLASS_FACE, piece.text);
+    const b = measurer.bounds(face, piece.text);
     // Centred by its ink: the glass is centred on it, and its trail runs out evenly both ways.
-    const op: GlassOp = { kind: "glass", text: piece.text, face: GLASS_FACE, size, x: cx - ((b.right - b.left) / 2) * size, y: 0, color: palette.ink, ground: palette.bg, axis };
+    const op: GlassOp = { kind: "glass", text: piece.text, face: face, size, x: cx - ((b.right - b.left) / 2) * size, y: 0, color: palette.ink, ground: palette.bg, axis };
     return { kind: "glass", op, readable: glassReadable(op, measurer), reach: glassReach(op, measurer) };
   });
   // Down the page, each piece's ink its gap below the one before's: a plain line's own letters, not its face's whole height (a review:
@@ -417,10 +508,21 @@ function stack(pieces: Piece[], size: number, share: number, width: number, cx: 
     moved.push(shifted);
     y = bottom(shifted);
   });
-  const readable = union(moved.map((p) => (p.kind === "plain" ? p.block.bounds : p.readable)));
+  // A plain line through the sheet fringes a hair past its letters: read as part of it.
+  const plainRead = (block: Block) =>
+    sheeted ? union([grow(block.bounds, fringe, 0), ...block.lines.filter((l) => l.segments.length).map((l) => sheetReadable(sheetLine(l), measurer))]) : block.bounds;
+  const readable = union(moved.map((p) => (p.kind === "plain" ? plainRead(p.block) : p.readable)));
   const dy = cy - (readable.y + readable.h / 2);
   const placed = moved.map((p) => shiftPiece(p, dy));
   const glassReaches = placed.flatMap((p) => (p.kind === "glass" ? [p.reach] : []));
+  // On Vertical, the plain lines at the block's top and bottom throw faint arcs outward (`LINE_ARCS`): kept inside what every window shows too.
+  if (axis === "v" && glassReaches.length) {
+    const arcs = (LINE_ARCS + 1) * FLUTES.v.pitch * size;
+    const head = placed[0];
+    const foot = placed[placed.length - 1];
+    if (head.kind === "plain") glassReaches.push({ x: head.block.bounds.x, y: head.block.bounds.y - arcs, w: head.block.bounds.w, h: arcs });
+    if (foot.kind === "plain") glassReaches.push({ x: foot.block.bounds.x, y: foot.block.bounds.y + foot.block.bounds.h, w: foot.block.bounds.w, h: arcs });
+  }
   return { pieces: placed, readable: { ...readable, y: readable.y + dy }, reach: union([{ ...readable, y: readable.y + dy }, ...glassReaches]) };
 }
 
@@ -434,12 +536,13 @@ function shiftPiece(p: SetPiece, dy: number): SetPiece {
 }
 
 /** The narrowest the plain lines can be wrapped at `size` (the rippled lines' size), and the rippled lines' own width: no box is narrower. */
-function narrowest(pieces: Piece[], size: number, share: number, measurer: Measurer, axis: GlassAxis): number {
+function narrowest(pieces: Piece[], size: number, share: number, measurer: Measurer, axis: GlassAxis, face: FaceId): number {
   let most = 0;
+  const fringe = sheetsIn(pieces) ? SHEET_FRINGE * share * size : 0;
   for (const piece of pieces) {
-    if (piece.kind === "plain") most = Math.max(most, narrowestAt(piece.paragraphs, { face: GLASS_FACE, emphasisFace: GLASS_FACE, leading: PLAIN_LEADING, align: "center" }, measurer, share * size) * 0.995);
+    if (piece.kind === "plain") most = Math.max(most, narrowestAt(piece.paragraphs, { face: face, emphasisFace: face, leading: PLAIN_LEADING, align: "center" }, measurer, share * size) * 0.995 + 2 * fringe);
     else {
-      const op = { face: GLASS_FACE, text: piece.text, size, x: 0, y: 0, axis };
+      const op = { face: face, text: piece.text, size, x: 0, y: 0, axis };
       most = Math.max(most, glassReadable(op, measurer).w);
     }
   }
@@ -461,39 +564,58 @@ export interface GlassMade {
  * at, its plain lines wrapped to the box's width (never under its widest
  * word or its rippled lines, which are never broken).
  */
-export function ripple(paragraphs: Paragraph[], safe: Rect, seen: Rect, palette: Palette, measurer: Measurer, axis: GlassAxis, wrap: { width: number; ref: { size: number } } | null): GlassMade {
-  const pieces = glassPieces(paragraphs, measurer);
-  const share = plainShare(pieces, measurer);
+export function ripple(paragraphs: Paragraph[], safe: Rect, seen: Rect, palette: Palette, measurer: Measurer, axis: GlassAxis, wrap: { width: number; ref: { size: number } } | null, face: FaceId = GLASS_FACE): GlassMade {
+  const pieces = glassPieces(capitals(paragraphs), measurer, face);
+  const share = plainShare(pieces, measurer, face);
   const cx = safe.x + safe.w / 2;
   const cy = safe.y + safe.h / 2;
   if (!pieces.length) return { ops: [], readable: { x: cx, y: cy, w: 0, h: 0 } };
   const room = { x: seen.x + seen.w * 0.02, y: seen.y + seen.w * 0.02, w: seen.w * 0.96, h: seen.h - seen.w * 0.04 };
-  const opsOf = (st: Stack): GlassMade["ops"] =>
-    st.pieces.flatMap((p): GlassMade["ops"] =>
-      p.kind === "glass"
-        ? [p.op]
-        : p.block.lines.flatMap((line) => line.segments.map((s) => ({ kind: "text" as const, text: s.text, face: s.face, size: s.size, x: s.x, y: line.baseline, color: palette.ink }))),
-    );
+  const opsOf = (st: Stack): GlassMade["ops"] => {
+    const rippled = st.pieces.flatMap((p) => (p.kind === "glass" ? [p] : []));
+    const strength = SHEET_STRENGTH;
+    // The sheet's flutes are the nearest rippled line's: the same width, lined up on its middle.
+    const sheetFor = (y: number): GlassSheet | null => {
+      if (!rippled.length || strength <= 0) return null;
+      const near = rippled.reduce((best, p) => (Math.abs(p.readable.y + p.readable.h / 2 - y) < Math.abs(best.readable.y + best.readable.h / 2 - y) ? p : best));
+      const r = near.readable;
+      const sheet: GlassSheet = { pitch: FLUTES[axis].pitch * near.op.size, grid: axis === "h" ? r.x + r.w / 2 : r.y + r.h / 2, strength };
+      // On Vertical, a line above every rippled one throws its arcs up, one below them all down; one between two throws none.
+      if (axis !== "v") return sheet;
+      const above = rippled.every((p) => y < p.readable.y);
+      const below = rippled.every((p) => y > p.readable.y + p.readable.h);
+      return above || below ? { ...sheet, trail: LINE_ARCS, gain: LINE_ARCS_GAIN, side: above ? -1 : 1 } : sheet;
+    };
+    return st.pieces.flatMap((p): GlassMade["ops"] => {
+      if (p.kind === "glass") return [p.op];
+      return p.block.lines.flatMap((line): GlassMade["ops"] => {
+        const sheet = sheetFor(line.baseline);
+        if (!sheet || !line.segments.length) return line.segments.map((s) => ({ kind: "text" as const, text: s.text, face: s.face, size: s.size, x: s.x, y: line.baseline, color: palette.ink }));
+        // A line through the sheet as one: its trail, if any, off its two ends, never into its word spaces.
+        return [{ kind: "glass" as const, ...sheetLine(line), color: palette.ink, ground: palette.bg, axis, sheet }];
+      });
+    });
+  };
 
   if (wrap) {
     const size = wrap.ref.size;
-    const min = narrowest(pieces, size, share, measurer, axis);
+    const min = narrowest(pieces, size, share, measurer, axis, face);
     const width = Math.max(wrap.width, min);
-    const st = stack(pieces, size, share, width, cx, cy, axis, palette, measurer);
+    const st = stack(pieces, size, share, width, cx, cy, axis, palette, measurer, face);
     return { ops: opsOf(st), readable: st.readable, wrapped: { width, min } };
   }
 
   // As large as fits: every word inside the safe area (no plain word broken, no rippled line wider than it), and the glass's trail inside every window.
   // Every width grows with the size, so how large the widths allow is worked out at once; only the height (how the plain lines break) is searched for.
-  const perEm = narrowest(pieces, 1, share, measurer, axis);
+  const perEm = narrowest(pieces, 1, share, measurer, axis, face);
   let most = Math.min(MAX_GLASS_SIZE, safe.w / Math.max(1e-9, perEm));
   for (const piece of pieces) {
     if (piece.kind !== "glass") continue;
-    const reach = glassReach({ face: GLASS_FACE, text: piece.text, size: 1, x: 0, y: 0, axis }, measurer);
+    const reach = glassReach({ face: face, text: piece.text, size: 1, x: 0, y: 0, axis }, measurer);
     most = Math.min(most, room.w / Math.max(1e-9, reach.w));
   }
   const fits = (size: number): boolean => {
-    const st = stack(pieces, size, share, safe.w, cx, cy, axis, palette, measurer);
+    const st = stack(pieces, size, share, safe.w, cx, cy, axis, palette, measurer, face);
     if (st.readable.h > safe.h || st.readable.w > safe.w + 1e-6) return false;
     return st.reach.x >= room.x - 1e-6 && st.reach.x + st.reach.w <= room.x + room.w + 1e-6 && st.reach.y >= room.y - 1e-6 && st.reach.y + st.reach.h <= room.y + room.h + 1e-6;
   };
@@ -510,9 +632,9 @@ export function ripple(paragraphs: Paragraph[], safe: Rect, seen: Rect, palette:
   }
   const size = lo;
   // Set again at the width its words came to, as a text box at that width sets them: so the box starts exactly where the words are.
-  const first = stack(pieces, size, share, safe.w, cx, cy, axis, palette, measurer);
+  const first = stack(pieces, size, share, safe.w, cx, cy, axis, palette, measurer, face);
   const width = first.readable.w;
-  const st = stack(pieces, size, share, width, cx, cy, axis, palette, measurer);
+  const st = stack(pieces, size, share, width, cx, cy, axis, palette, measurer, face);
   return { ops: opsOf(st), readable: st.readable, ref: { size, width: st.readable.w } };
 }
 

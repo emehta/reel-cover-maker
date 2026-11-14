@@ -16,6 +16,13 @@ interface Props<T extends string> {
   value: T;
   options: readonly DropdownOption<T>[];
   onChange: (value: T) => void;
+  /**
+   * The chosen option shown on the button in the maker's own type, its own
+   * type kept for the list: for faces too wide to name on a half-width
+   * button (Ripple's Unbounded at its heaviest is half as wide again as the
+   * button's room).
+   */
+  plainButton?: boolean;
 }
 
 /** How far the list stands off its button, and off the window's edges, in pixels. */
@@ -67,7 +74,7 @@ function place(button: HTMLElement | null, list: HTMLElement | null): boolean {
  * against the window, not the panel, so a panel that scrolls never clips
  * it, and moves with its button when anything scrolls.
  */
-export function Dropdown<T extends string>({ label, value, options, onChange }: Props<T>) {
+export function Dropdown<T extends string>({ label, value, options, onChange, plainButton = false }: Props<T>) {
   const id = useId();
   const labelId = `${id}-label`;
   const buttonId = `${id}-button`;
@@ -200,7 +207,7 @@ export function Dropdown<T extends string>({ label, value, options, onChange }: 
         onClick={() => (open ? close(false) : show(selected))}
         onKeyDown={onButtonKey}
       >
-        <span className={styles.dropdownValue} style={current?.font ? { font: current.font } : undefined}>
+        <span className={styles.dropdownValue} style={current?.font && !plainButton ? { font: current.font } : undefined}>
           {current?.label}
         </span>
         <CaretDown size={14} weight="bold" aria-hidden="true" className={styles.dropdownCaret} />

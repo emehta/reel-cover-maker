@@ -55,7 +55,7 @@ import { lookOf, RENAISSANCE_LOOKS, renaissanceFaces } from "@/components/reel-c
 import { Shortcuts } from "@/components/reel-cover-maker/Shortcuts";
 import { TextField } from "@/components/reel-cover-maker/TextField";
 import { applyBackdrop, clearBackdrop } from "@/components/reel-cover-maker/theme";
-import { GLASS_AXES } from "@/components/reel-cover-maker/glass";
+import { GLASS_AXES, GLASS_FACES } from "@/components/reel-cover-maker/glass";
 import type { WaveVariantId } from "@/components/reel-cover-maker/wave";
 import { loadWaveFace, subscribeWaveFaces, WAVE_FACES, waveFaceData, waveFaceFailed, waveFacesVersion } from "@/components/reel-cover-maker/wave-faces";
 import { hasTitle, MAX_TITLE_LENGTH, PLACEHOLDER_TITLE } from "@/components/reel-cover-maker/title";
@@ -184,7 +184,7 @@ function sceneFor(input: CoverInput, loads: number): Scene {
   // Wave's letters arrive after the page (wave-faces): a cover set before its face had come is set again once it has.
   const wave = input.style === "wave" ? [input.waveFace, input.waveAnimation, input.waveFace ? waveFaceData(input.waveFace) !== null : false] : null;
   // Ripple's flutes are Ripple's alone.
-  const glass = input.style === "ripple" ? input.rippleAxis ?? null : null;
+  const glass = input.style === "ripple" ? [input.rippleAxis ?? null, input.rippleFace ?? null] : null;
   // A text box's width and the layout it is set again from.
   const wrap = input.wrap ? [input.wrap.width, input.wrap.ref] : null;
   const key = JSON.stringify([input.title, input.style, input.lettering, input.plainFace, input.pastyLettering, renaissance, wave, glass, input.hue, input.shade, input.hex ?? null, input.ground, text, input.format, input.seed, input.photo, wrap, loads]);
@@ -518,7 +518,7 @@ export default function ReelCoverMaker() {
   const title = filled ? design.text : PLACEHOLDER_TITLE;
   const format = formatById(design.format);
 
-  const faces = facesFor(design.plainFace, letteringFace(design.lettering), ...renaissanceFaces(design.renaissanceLook));
+  const faces = facesFor(design.plainFace, letteringFace(design.lettering), ...renaissanceFaces(design.renaissanceLook), design.rippleFace);
   const loads = useSyncExternalStore(subscribeFonts, () => fontsSnapshot(title, faces), () => -1);
   const method = useSyncExternalStore<SaveMethod>(subscribeTouch, currentSaveMethod, () => "download");
   const apple = useSyncExternalStore(subscribeNothing, isApple, () => true);
@@ -548,6 +548,7 @@ export default function ReelCoverMaker() {
     // Wave's still is its animation stopped mid-wave: the one picked for it, whether or not it is animated.
     waveAnimation: animationOf({ style: "wave", animations: d.animations }) as WaveVariantId,
     rippleAxis: d.rippleAxis,
+    rippleFace: d.rippleFace,
     hue: d.hue,
     shade: d.shade,
     hex: d.hex,
@@ -605,7 +606,7 @@ export default function ReelCoverMaker() {
     design.style === "stickery" ? input.textColour : null,
     design.style === "renaissance" ? [design.renaissanceLook, input.scriptColour] : null,
     design.style === "wave" ? [design.waveFace, input.waveAnimation] : null,
-    design.style === "ripple" ? design.rippleAxis : null,
+    design.style === "ripple" ? [design.rippleAxis, design.rippleFace] : null,
     design.format,
     design.seed,
     loads,
@@ -757,7 +758,8 @@ export default function ReelCoverMaker() {
   const plainFace = design.plainFace;
   const funkyFace = letteringFace(design.lettering);
   const { renaissanceLook } = design;
-  useEffect(() => requestFonts(title, facesFor(plainFace, funkyFace, ...renaissanceFaces(renaissanceLook))), [title, plainFace, funkyFace, renaissanceLook]);
+  const rippleFace = design.rippleFace;
+  useEffect(() => requestFonts(title, facesFor(plainFace, funkyFace, ...renaissanceFaces(renaissanceLook), rippleFace)), [title, plainFace, funkyFace, renaissanceLook, rippleFace]);
   // Wave's face fetched once the page is up, for its thumbnail as well as its cover; asked again if the last try failed and it is picked again.
   useEffect(() => {
     void loadWaveFace(waveFace);
@@ -1228,13 +1230,23 @@ export default function ReelCoverMaker() {
                 onChange={(waveFace) => update({ waveFace }, "alone")}
               />
             ) : design.style === "ripple" ? (
-              // Which way the flutes run: the two studies the owner picked from.
-              <Dropdown
-                label="Direction"
-                value={design.rippleAxis}
-                options={GLASS_AXES.map((a) => ({ value: a.id, label: a.name }))}
-                onChange={(rippleAxis) => update({ rippleAxis }, "alone")}
-              />
+              <>
+                {/* Each face named in itself in the list; on the button, beside Direction, in the maker's own type (Unbounded at its heaviest would not fit). */}
+                <Dropdown
+                  label="Lettering"
+                  value={design.rippleFace}
+                  options={GLASS_FACES.map((f) => ({ value: f.id, label: f.name, font: fontCss(f.id, 17) }))}
+                  onChange={(rippleFace) => update({ rippleFace }, "alone")}
+                  plainButton
+                />
+                {/* Which way the flutes run: the two studies the owner picked from. */}
+                <Dropdown
+                  label="Direction"
+                  value={design.rippleAxis}
+                  options={GLASS_AXES.map((a) => ({ value: a.id, label: a.name }))}
+                  onChange={(rippleAxis) => update({ rippleAxis }, "alone")}
+                />
+              </>
             ) : design.style === "pasty" || design.style === "pasty-flat" ? (
               <Dropdown
                 label="Lettering"

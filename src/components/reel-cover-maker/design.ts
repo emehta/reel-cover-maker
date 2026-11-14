@@ -16,9 +16,9 @@
 
 import { animationsFor, offers, speedOf, type AnimationId } from "@/components/reel-cover-maker/animate";
 import { parseHex } from "@/components/reel-cover-maker/colour";
-import { DEFAULT_GLASS_AXIS, isGlassAxis, type GlassAxis } from "@/components/reel-cover-maker/glass";
+import { DEFAULT_GLASS_AXIS, GLASS_FACE, isGlassAxis, isGlassFace, type GlassAxis } from "@/components/reel-cover-maker/glass";
 import { DEFAULT_FORMAT, isFormatId, type FormatId } from "@/components/reel-cover-maker/formats";
-import { DEFAULT_PLAIN_FACE, isPlainFaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
+import { DEFAULT_PLAIN_FACE, isPlainFaceId, type FaceId, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { DEFAULT_COLOUR, isGround, isTextMode, type Ground, type TextMode } from "@/components/reel-cover-maker/palettes";
 import { DEFAULT_ADJUST, DEFAULT_FRAME, readAdjust, readFrame, type PhotoAdjust, type PhotoFrame } from "@/components/reel-cover-maker/photo";
 import { HOME, readPlace, type Place } from "@/components/reel-cover-maker/place";
@@ -50,6 +50,8 @@ export interface Design {
   waveFace: WaveFaceId;
   /** Ripple's flutes: upright (Horizontal) or level (Vertical). */
   rippleAxis: GlassAxis;
+  /** Ripple's letters' face. */
+  rippleFace: FaceId;
   hue: number;
   shade: number;
   /** A colour typed as a hex code, used exactly; null while the sliders' own colour is the colour. Moving a slider lets it go. */
@@ -99,6 +101,7 @@ export const DEFAULT_DESIGN: Design = {
   renaissanceLook: DEFAULT_RENAISSANCE_LOOK,
   waveFace: DEFAULT_WAVE_FACE,
   rippleAxis: DEFAULT_GLASS_AXIS,
+  rippleFace: GLASS_FACE,
   hue: DEFAULT_COLOUR.hue,
   shade: DEFAULT_COLOUR.shade,
   hex: null,
@@ -170,6 +173,7 @@ export function readDesign(raw: string | null): Design {
     renaissanceLook: isRenaissanceLookId(stored.renaissanceLook) ? stored.renaissanceLook : DEFAULT_DESIGN.renaissanceLook,
     waveFace: isWaveFaceId(stored.waveFace) ? stored.waveFace : DEFAULT_DESIGN.waveFace,
     rippleAxis: isGlassAxis(stored.rippleAxis) ? stored.rippleAxis : DEFAULT_DESIGN.rippleAxis,
+    rippleFace: isGlassFace(stored.rippleFace) ? stored.rippleFace : DEFAULT_DESIGN.rippleFace,
     hue: number(stored.hue, 0, 360) ?? DEFAULT_DESIGN.hue,
     shade: number(stored.shade, 0, 1) ?? DEFAULT_DESIGN.shade,
     hex: hexCode(stored.hex),

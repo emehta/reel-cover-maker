@@ -114,10 +114,23 @@ npm run build   # the static site, in out/
   its horizontal trail ended at 8 flutes (I Tight), kept on the
   `codex/ripple-studies` branch (`experiments/ripple-studies/index.html`
   is the approved page): change the look there and here together, never
-  here alone. Each run of bold words is one line through the glass (never
-  broken); with nothing bold, the longest word; the plain words around
-  it are Inter Tight 900 (`heavy`) at `PLAIN_SHARE` of its size, in the
-  order typed, a Vertical's lines clear of its arcs. Flute widths and the
+  here alone. Everything is set in capitals however it was typed (the
+  owner's rule, 15 Nov; `capitals`). Each run of bold words goes through
+  the glass, broken evenly at its spaces where it runs wider than
+  `GLASS_LINE_EM` of its own em; with nothing bold, the longest word. Its
+  **Lettering** is the owner's three of 15 Nov, sans only, never a serif
+  (`GLASS_FACES`): Mona Sans 900, the default, Anton and Unbounded 900. The
+  list names each in itself, the button in the maker's own type
+  (`plainButton`: Unbounded is half as wide again as the button's room).
+  The plain words are the same face at `PLAIN_SHARE` of its size, in the
+  order typed, seen through the rippled word's own sheet of glass
+  (`GlassOp.sheet`: its flutes, lined up on it, as strong) so they belong
+  to it rather than sit flat on top ("it cannot look disjointed"). On
+  Vertical the block's top and bottom lines throw two faint arcs outward
+  (`LINE_ARCS`); on Horizontal they throw none, as a trail there read as
+  brackets round the line. Plain lines are set a fringe narrower
+  (`SHEET_FRINGE`) so their colours stay inside the box, and on Vertical
+  stand clear of the arcs that show (`ARCS_SEEN`). Flute widths and the
   blur are in em of the word (`FLUTES`, `REFERENCE_INK`), so any word at
   any size is the studies' look, but for the letters' own bend through
   each flute, half the studies' (`letterBend`; the echoes keep theirs): at

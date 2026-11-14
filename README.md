@@ -128,12 +128,18 @@ on a label's row.
     Lines are as large as the cover allows, each centred by its ink, and let
     down only as far as keeps a descender clear of the line under it.
   - **Ripple**: the bold word seen through fluted glass, on a line of its
-    own, large, the rest of the title set plainly above and below it (with
-    nothing bold, the longest word). Its **Direction** is Horizontal, upright
+    own, large, the rest of the title smaller above and below it (with
+    nothing bold, the longest word), all in capitals however it was typed.
+    Its **Lettering** is Mona Sans (the default), Anton or Unbounded, each at
+    its heaviest. The smaller words are in the same face and seen through
+    the same glass, its flutes lined up with the bold word's, so the title
+    reads as one piece rather than a word under glass with labels round it.
+    Its **Direction** is Horizontal, upright
     flutes that push the word's ends out and leave a trail of crescents
     running out past its first and last letters, each thinner and fainter
     than the one before; or Vertical, level slats, every letter throwing
-    arcs both up and down. The light comes apart at every edge it bends,
+    arcs both up and down, and the lines above and below throwing faint arcs
+    of their own outward. The light comes apart at every edge it bends,
     warm one way and blue the other, as through real glass: the owner's
     picks from the ripple studies of 9 November (B Contour, its trail ended
     sooner, I Tight). Letters lighter than the ground split it into the
@@ -600,9 +606,8 @@ as outlines, with their advances and kerning, at every width where they
 change course; in between, every point moves in a straight line, so any
 width is read exactly. The page draws them as filled outlines.
 
-The web typefaces are Pinyon Script, Inter Tight (at its heaviest, Ripple's
-too) and Space Mono, and Stickery's and Renaissance's own (Playfair Display SC, Anton, Big
-Shoulders, Luxurious Script and the rest), from Google Fonts under the SIL
+The web typefaces are Pinyon Script, Inter Tight and Space Mono, Stickery's and Renaissance's own (Playfair Display SC, Anton, Big
+Shoulders, Luxurious Script and the rest) and Ripple's (Mona Sans and Unbounded, with Anton), from Google Fonts under the SIL
 Open Font License, served from the page's own origin. The stroke fonts' licences are in
 `src/components/reel-cover-maker/strokes/LICENSE.md`, and Wave's faces' in
 `src/components/reel-cover-maker/wave-faces/LICENSE.md`.

@@ -11,7 +11,7 @@
 
 import { DEFAULT_PLAIN_FACE, type FaceId, type FunkyFaceId, type Measurer, type PlainFaceId } from "@/components/reel-cover-maker/faces";
 import { formatById, intersect, type FormatId, type Rect } from "@/components/reel-cover-maker/formats";
-import { DEFAULT_GLASS_AXIS, ripple, type GlassAxis, type GlassOp } from "@/components/reel-cover-maker/glass";
+import { DEFAULT_GLASS_AXIS, GLASS_FACE, ripple, type GlassAxis, type GlassOp } from "@/components/reel-cover-maker/glass";
 import { printedWord, printReach, printSeed, loopBounds, type Loop } from "@/components/reel-cover-maker/ink";
 import { DEFAULT_RENAISSANCE_LOOK, renaissance, type RenaissanceLookId } from "@/components/reel-cover-maker/renaissance";
 import { flow, narrowestAt, type Block } from "@/components/reel-cover-maker/layout";
@@ -309,7 +309,7 @@ export function wrapTypeOf(input: CoverInput): string {
           : input.style === "wave"
             ? [input.waveFace ?? DEFAULT_WAVE_FACE]
             : input.style === "ripple"
-              ? [input.rippleAxis ?? DEFAULT_GLASS_AXIS]
+              ? [input.rippleAxis ?? DEFAULT_GLASS_AXIS, input.rippleFace ?? GLASS_FACE]
               : [];
   return JSON.stringify([input.style, ...type]);
 }
@@ -418,6 +418,8 @@ export interface CoverInput {
   waveAnimation?: WaveVariantId;
   /** Ripple's flutes: upright (Horizontal, the default) or level (Vertical). */
   rippleAxis?: GlassAxis;
+  /** Ripple's letters' face. */
+  rippleFace?: FaceId;
   /** A photo behind the letters, in place of the plain ground. */
   photo?: boolean;
   /** Set as a text box: the words wrapped to a width, at the size the style chose for them (from that layout's `wrapRef`). */
@@ -2295,7 +2297,7 @@ export function buildScene(input: CoverInput, measurer: Measurer): Scene {
       case "stickery":
         return stickery(paragraphs, safe, palette, measurer, seed, input.lettering ?? DEFAULT_LETTERING, input.plainFace ?? DEFAULT_PLAIN_FACE, input.textColour ?? null, wrap);
       case "ripple":
-        return ripple(paragraphs, safe, intersect(format.crops), palette, measurer, input.rippleAxis ?? DEFAULT_GLASS_AXIS, wrap);
+        return ripple(paragraphs, safe, intersect(format.crops), palette, measurer, input.rippleAxis ?? DEFAULT_GLASS_AXIS, wrap, input.rippleFace ?? GLASS_FACE);
       case "mono":
         return mono(paragraphs, safe, palette, measurer, wrap);
       case "wave":

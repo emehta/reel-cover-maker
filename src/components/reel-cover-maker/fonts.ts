@@ -13,6 +13,8 @@
 
 import {
   Anton,
+  Mona_Sans,
+  Unbounded,
   Archivo_Narrow,
   Big_Shoulders,
   Crimson_Pro,
@@ -39,7 +41,7 @@ import { contours, simplify, type Loop } from "@/components/reel-cover-maker/ink
 const pinyon = Pinyon_Script({ weight: "400", subsets: ["latin"] });
 const spaceMono = Space_Mono({ weight: "400", subsets: ["latin"] });
 
-/** Variable, so it sets Stickery's plain words, Ripple's heavy letters and the maker's own controls at any weight. */
+/** Variable, so it sets Stickery's plain words and the maker's own controls at any weight. */
 export const interTight = Inter_Tight({ subsets: ["latin"], variable: "--rcm-font-ui" });
 
 // Stickery's plain faces, one weight each, so a choice loads one file a script.
@@ -63,10 +65,14 @@ const anton = Anton({ weight: "400", subsets: ["latin"] });
 const bigShoulders = Big_Shoulders({ weight: "900", subsets: ["latin"] });
 const luxurious = Luxurious_Script({ weight: "400", subsets: ["latin"] });
 
+// Ripple's letterings besides Anton, each at its heaviest. Mona Sans is the default, so Ripple's thumbnail asks for it on every visit;
+// Unbounded is fetched only once it is picked.
+const mona = Mona_Sans({ weight: "900", subsets: ["latin"] });
+const unbounded = Unbounded({ weight: "900", subsets: ["latin"], preload: false });
+
 const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }> = {
   script: { family: pinyon.style.fontFamily, weight: 400, italic: false },
   sans: { family: interTight.style.fontFamily, weight: 600, italic: false },
-  heavy: { family: interTight.style.fontFamily, weight: 900, italic: false },
   mono: { family: spaceMono.style.fontFamily, weight: 400, italic: false },
   "plain-outfit": { family: outfit.style.fontFamily, weight: 300, italic: false },
   "plain-jost": { family: jost.style.fontFamily, weight: 300, italic: false },
@@ -83,6 +89,8 @@ const FACES: Record<FaceId, { family: string; weight: number; italic: boolean }>
   "caps-anton": { family: anton.style.fontFamily, weight: 400, italic: false },
   "caps-bigshoulders": { family: bigShoulders.style.fontFamily, weight: 900, italic: false },
   "script-luxurious": { family: luxurious.style.fontFamily, weight: 400, italic: false },
+  "glass-mona": { family: mona.style.fontFamily, weight: 900, italic: false },
+  "glass-unbounded": { family: unbounded.style.fontFamily, weight: 900, italic: false },
 };
 
 /** The CSS font for a face at a size in pixels, as a canvas reads it. */
@@ -155,15 +163,26 @@ export function subscribeFonts(listener: () => void): () => void {
   };
 }
 
+/**
+ * A title's characters as covers may draw them: as typed, and in capitals, which Ripple, Renaissance and Wave set it in
+ * (a capital can live in another file from its small letter: "ÿ" is Latin, "Ÿ" Latin Extended).
+ */
+const drawnText = (title: string) => {
+  const caps = title.toLocaleUpperCase();
+  return caps === title ? title : title + caps;
+};
+
 /** -1 while a character of `title` is still loading in one of `faces`, else a number that changes each time a face arrives. */
 export function fontsSnapshot(title: string, faces: readonly FaceId[]): number {
-  for (const face of faces) if (fontGate(face).snapshot(title) < 0) return -1;
+  const text = drawnText(title);
+  for (const face of faces) if (fontGate(face).snapshot(text) < 0) return -1;
   return version;
 }
 
 /** Ask each of `faces` for whatever of `title` (and the Latin letters) it has not been asked for. */
 export function requestFonts(title: string, faces: readonly FaceId[]): void {
-  for (const face of faces) fontGate(face).request(title);
+  const text = drawnText(title);
+  for (const face of faces) fontGate(face).request(text);
 }
 
 /** Text is measured at this size and scaled, which canvas text does in proportion. */

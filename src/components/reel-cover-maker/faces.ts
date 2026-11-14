@@ -10,12 +10,11 @@ import type { Loop } from "@/components/reel-cover-maker/ink";
 /**
  * The faces every cover may need: loaded up front. Inkblot's script is
  * printed from its outlines (ink.ts), never drawn as text but where it
- * cannot be traced; `heavy` is Inter Tight at its heaviest, Ripple's (the
- * same file as `sans`, which is variable).
+ * cannot be traced.
  */
-export type CoreFaceId = "script" | "sans" | "heavy" | "mono";
+export type CoreFaceId = "script" | "sans" | "mono";
 
-export const CORE_FACE_IDS: readonly CoreFaceId[] = ["script", "sans", "heavy", "mono"];
+export const CORE_FACE_IDS: readonly CoreFaceId[] = ["script", "sans", "mono"];
 
 /**
  * The faces Stickery may set its plain words in: the owner's four (Outfit
@@ -71,7 +70,10 @@ export type FunkyFaceId = "funky-yesteryear" | "funky-leckerli" | "funky-damion"
 export type CapsFaceId = "caps-playfairsc" | "caps-anton" | "caps-bigshoulders";
 export type ScriptFaceId = "script" | "script-luxurious";
 
-export type FaceId = CoreFaceId | PlainFaceId | FunkyFaceId | CapsFaceId | Exclude<ScriptFaceId, "script">;
+/** Ripple's own faces, Mona Sans and Unbounded; its third, Anton, is the capitals Renaissance already loads. */
+export type GlassFaceId = "glass-mona" | "glass-unbounded";
+
+export type FaceId = CoreFaceId | PlainFaceId | FunkyFaceId | CapsFaceId | Exclude<ScriptFaceId, "script"> | GlassFaceId;
 
 /** A face's vertical extent, in em. All positive: ascent and cap above the baseline, descent below it. */
 export interface FaceMetrics {

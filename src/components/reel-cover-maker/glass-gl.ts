@@ -57,6 +57,8 @@ uniform vec2 uCentreP;
 uniform float uScale, uResP;
 // How strongly the glass bends the letters themselves, of the studies' (the echoes as they were).
 uniform float uLetterBend;
+// A plain word through the sheet: no trail (uTrail 0), and where the sheet's flute lines fall from the word's middle (uOff).
+uniform float uTrail, uOff, uTrailGain, uTrailSide;
 out vec4 outColor;
 
 float field(float a, float b) {
@@ -68,7 +70,7 @@ float cover(float d, float s) { return 1.0 / (1.0 + exp(1.702 * d / s)); }
 // One flute: where it looks into the ink, wavelength by wavelength.
 vec3 flute(float k, float u, float a, float b) {
   float s = uS;
-  float c = k * uPitch;
+  float c = k * uPitch - uOff;
   float ac = abs(c);
   float r = ac / uHalf;
   float sig = mix(uSigma0, uSigma1, clamp(abs(s), 0.0, 1.0));
@@ -90,7 +92,9 @@ vec3 flute(float k, float u, float a, float b) {
   // and fringe all through the motion. (A column with no ink has no letter
   // half width; one with ink has at least half a pixel.)
   float between = uSides > 0.5 && uLocal > 0.5 && span.y < 0.25 ? 1.0 : 0.0;
-  float echo = step(0.5 * uPitch, outer) * (1.0 - between);
+  float echo = step(0.5 * uPitch, outer) * (1.0 - between) * uTrail;
+  // A plain line's arcs on one side only (-1 above, 1 below; 0 both).
+  if (uTrailSide != 0.0 && sign(c) != uTrailSide) echo = 0.0;
   float far = clamp(outer / max(0.001, (uEchoes + 0.5) * uPitch), 0.0, 1.0);
   // Over the letters each flute shows the word moved out a little, more
   // toward the ends.
@@ -131,7 +135,7 @@ vec3 flute(float k, float u, float a, float b) {
   // uFadeTo flutes out.
   float gone = clamp(outer / max(0.001, (uFadeTo + 0.5) * uPitch), 0.0, 1.0);
   float fade = pow(1.0 - gone, 1.0 + 1.4 * uEchoFade);
-  float bright = mix(1.0, fade * clamp(s, 0.0, 1.0), echo);
+  float bright = mix(1.0, fade * clamp(s, 0.0, 1.0) * uTrailGain, echo);
   // The glass splits the light a little across too, about the middle, so
   // the letters' flat tops and bottoms are fringed without being reshaped.
   float splitB = uKappaB * bend * b * uDisp;
@@ -167,7 +171,7 @@ void main() {
   vec2 q = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) - uCentre;
   float a = uAxis < 0.5 ? q.x : q.y;
   float b = uAxis < 0.5 ? q.y : q.x;
-  float f = a / uPitch;
+  float f = (a + uOff) / uPitch;
   float k = floor(f + 0.5);
   float u = f - k;
   vec3 col = flute(k, u, a, b);
@@ -216,7 +220,7 @@ const NAMES = [
   "uEchoes", "uFadeTo", "uEchoAnchor", "uEchoStep", "uEchoFade", "uEchoSoft", "uBow", "uBowOut", "uReachNow",
   "uFace", "uKappaOut", "uKappaFan", "uKappaB", "uDisp", "uFlash", "uS", "uV",
   "uFmax", "uSoftSplit", "uSoftMax", "uSigma0", "uSigma1", "uExposure", "uToneNorm",
-  "uSpanL", "uSpanR", "uInk", "uGround", "uGroundSrgb", "uLight", "uContrast", "uLift", "uExtent", "uW", "uSdf", "uSdfRect", "uCentreP", "uScale", "uResP", "uLetterBend",
+  "uSpanL", "uSpanR", "uInk", "uGround", "uGroundSrgb", "uLight", "uContrast", "uLift", "uExtent", "uW", "uSdf", "uSdfRect", "uCentreP", "uScale", "uResP", "uLetterBend", "uTrail", "uOff", "uTrailGain", "uTrailSide",
 ];
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
@@ -330,7 +334,7 @@ const LARGEST = 640;
 
 /** Words made ready, the most recent last. A frame of the motion draws the same word at the same size again and again. */
 const prepared = new Map<string, PreparedWord>();
-const KEEP = 12;
+const KEEP = 64;
 
 let maskCanvas: HTMLCanvasElement | null = null;
 let probe: CanvasRenderingContext2D | null = null;
@@ -388,7 +392,7 @@ function inkBox(op: GlassOp, size: number, font: (face: FaceId, size: number) =>
 function prepare(op: GlassOp, size: number, font: (face: FaceId, size: number) => string): PreparedWord | null {
   watchFonts();
   // Keyed by which fonts had arrived too: a word drawn in a fallback while its face was on its way is made again once it is here.
-  const key = JSON.stringify([op.text, op.face, size.toFixed(4), op.axis, fontsArrived]);
+  const key = JSON.stringify([op.text, op.face, size.toFixed(4), op.axis, fontsArrived, op.sheet ? 1 + (op.sheet.trail ?? 0) + (op.sheet.pitch / op.size).toFixed(4) : 0]);
   const kept = prepared.get(key);
   if (kept) {
     prepared.delete(key);
@@ -430,7 +434,7 @@ function prepare(op: GlassOp, size: number, font: (face: FaceId, size: number) =
   const f = FLUTES[op.axis];
   const pitch = f.pitch * size;
   // Room for the glass in the layer: the word pushed out and fringed, and its trail, along the bend; its fringe across.
-  const along = Math.ceil(0.08 * (op.axis === "h" ? inkW : inkH) + (f.fadeTo + 1) * pitch + 4);
+  const along = Math.ceil(0.08 * (op.axis === "h" ? inkW : inkH) + (op.sheet ? ((op.sheet.trail ?? 0) > 0 ? ((op.sheet.trail ?? 0) + 1) * (op.sheet.pitch * size) / op.size : 0) : (f.fadeTo + 1) * pitch) + 4);
   const across = Math.ceil(0.04 * (op.axis === "h" ? inkH : inkW) + 4);
   const padX = op.axis === "h" ? along : across;
   const padY = op.axis === "h" ? across : along;
@@ -519,10 +523,19 @@ function render(op: GlassOp, word: PreparedWord, size: number, frac: { x: number
   one("uResP", word.w);
   one("uAxis", op.axis === "h" ? 0 : 1);
   one("uHalf", (op.axis === "h" ? word.half.x : word.half.y) * k);
-  one("uPitch", f.pitch * size);
+  const sheet = op.sheet;
+  const pitch = sheet ? sheet.pitch * (size / op.size) : f.pitch * size;
+  one("uPitch", pitch);
+  const lineTrail = sheet?.trail ?? 0;
+  one("uTrail", sheet ? (lineTrail > 0 ? 1 : 0) : 1);
+  one("uTrailGain", sheet ? sheet.gain ?? 0 : 1);
+  one("uTrailSide", sheet?.side ?? 0);
+  // The word's ink middle along the bend, from the sheet's flute line through the rippled word's middle, in this layer's pixels.
+  const middle = op.axis === "h" ? op.x + (cx - tx) * (op.size / size) : op.y + (cy - ty) * (op.size / size);
+  one("uOff", sheet ? (middle - sheet.grid) * (size / op.size) : 0);
   one("uCore", 0);
   one("uEdge", 1);
-  one("uFan", f.fan);
+  one("uFan", sheet ? 0 : f.fan);
   one("uFanPow", f.fanPow);
   one("uLocal", f.local ? 1 : 0);
   one("uSides", f.sides ? 1 : 0);
@@ -532,7 +545,7 @@ function render(op: GlassOp, word: PreparedWord, size: number, frac: { x: number
   one("uCurve", f.curve);
   one("uBendFloor", f.bendFloor);
   one("uEchoes", f.echoes);
-  one("uFadeTo", f.fadeTo);
+  one("uFadeTo", lineTrail > 0 ? lineTrail : f.fadeTo);
   one("uEchoAnchor", f.echoAnchor);
   one("uEchoStep", f.echoStep);
   one("uEchoFade", f.echoFade);
@@ -546,7 +559,7 @@ function render(op: GlassOp, word: PreparedWord, size: number, frac: { x: number
   one("uKappaB", f.kappaB);
   one("uDisp", at.colour);
   one("uFlash", 0.35);
-  one("uS", at.glass);
+  one("uS", at.glass * (sheet ? sheet.strength : 1));
   one("uV", at.speed);
   one("uFmax", f.fmax * px);
   one("uSoftSplit", 0.022);
