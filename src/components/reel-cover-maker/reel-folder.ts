@@ -1,7 +1,8 @@
 /**
  * The Reels folder, remembered: the browser keeps the folder the owner
  * opened (a handle, never its files) in IndexedDB, so the next visit asks
- * only to allow it again, with no picker. The browser.
+ * only to allow it again, with no picker. Talks to the browser, so it is not
+ * tested in node; the decisions are in `reel-video.ts`.
  */
 
 const DB = "reel-cover-maker-video";

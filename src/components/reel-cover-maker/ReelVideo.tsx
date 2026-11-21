@@ -11,6 +11,8 @@ import {
   pickReel,
   readMessage,
   readSaved,
+  reelsMessage,
+  sameReels,
   SAVE_DIR,
   SAVE_FILES,
   servesFile,
@@ -21,7 +23,7 @@ import {
 
 /** The reel opened last, so the next visit opens it again. */
 const LAST_KEY = "reel-cover-maker:video-reel";
-/** How often the open reel's folder is looked at for a new version of the reel, which Claude writes as it works. */
+/** How often the Reels folder is looked at for a reel added or taken away, and the open reel for a new version, which Claude writes as it works. */
 const WATCH_MS = 2500;
 
 type View =
@@ -55,6 +57,19 @@ async function linksOf(dir: FileSystemDirectoryHandle, prefix: string, out: Reco
     if (entry.kind === "directory") await linksOf(entry as FileSystemDirectoryHandle, `${prefix}${entry.name}/`, out);
     else out[`${prefix}${entry.name}`] = URL.createObjectURL(await (entry as FileSystemFileHandle).getFile());
   }
+}
+
+/** The reels in a folder: the folder itself if it is one reel, else each folder in it holding a reel's page. */
+async function findReels(folder: FileSystemDirectoryHandle): Promise<Map<string, FileSystemDirectoryHandle>> {
+  const found = new Map<string, FileSystemDirectoryHandle>();
+  if (await hasFile(folder, [PAGE_DIR, PAGE_FILE])) found.set(folder.name, folder);
+  else
+    for (const entry of await entriesOf(folder)) {
+      if (entry.kind !== "directory" || !servesFile(entry.name)) continue;
+      const dir = entry as FileSystemDirectoryHandle;
+      if (await hasFile(dir, [PAGE_DIR, PAGE_FILE])) found.set(entry.name, dir);
+    }
+  return found;
 }
 
 /** When the reel's page was last written: a new version from Claude is opened in its place. */
@@ -138,15 +153,8 @@ export default function ReelVideo({ active }: { active: boolean }) {
   const openFolder = useCallback(
     async (folder: FileSystemDirectoryHandle) => {
       root.current = folder;
-      const found = new Map<string, FileSystemDirectoryHandle>();
       // The folder picked may be one reel itself, or the Reels folder of them all.
-      if (await hasFile(folder, [PAGE_DIR, PAGE_FILE])) found.set(folder.name, folder);
-      else
-        for (const entry of await entriesOf(folder)) {
-          if (entry.kind !== "directory" || !servesFile(entry.name)) continue;
-          const dir = entry as FileSystemDirectoryHandle;
-          if (await hasFile(dir, [PAGE_DIR, PAGE_FILE])) found.set(entry.name, dir);
-        }
+      const found = await findReels(folder);
       reels.current = found;
       list.current = sortReels([...found.keys()]);
       const name = pickReel(list.current, lastReel());
@@ -207,22 +215,43 @@ export default function ReelVideo({ active }: { active: boolean }) {
     return () => window.removeEventListener("message", onMessage);
   }, [openReel]);
 
-  // While Video is showing, the reel's folder is looked at every few seconds: a new version Claude has written opens in
-  // place, where it was playing.
+  // While Video is showing, the Reels folder is looked at every few seconds. A reel Claude adds joins the list (and
+  // opens, if there was none); one taken away leaves it. A new version of the open reel opens in place, where it was
+  // playing.
   useEffect(() => {
-    if (!active || view.kind !== "open") return;
+    if (!active || (view.kind !== "open" && view.kind !== "empty")) return;
     let busy = false;
     const look = async () => {
-      const name = current.current;
-      const dir = name ? reels.current.get(name) : undefined;
-      if (busy || !name || !dir || document.hidden) return;
+      const folder = root.current;
+      if (busy || !folder || document.hidden) return;
       busy = true;
       try {
+        const found = await findReels(folder);
+        const now = sortReels([...found.keys()]);
+        if (!sameReels(now, list.current)) {
+          reels.current = found;
+          list.current = now;
+          const shown = current.current;
+          if (!now.length) {
+            setView({ kind: "empty" });
+            return;
+          }
+          if (view.kind === "empty" || !shown || !found.has(shown)) {
+            await openReel(pickReel(now, lastReel()) ?? now[0].name);
+            return;
+          }
+          frame.current?.contentWindow?.postMessage(reelsMessage(now), "*");
+        }
+        const name = current.current;
+        const dir = name ? reels.current.get(name) : undefined;
+        if (view.kind !== "open" || !name || !dir) return;
         const pageTime = await pageStamp(dir);
         if (pageTime && stamp.current && pageTime !== stamp.current) {
           stamp.current = pageTime;
           await openReel(name, reelVideo(frame.current)?.currentTime);
         }
+      } catch {
+        // The folder could not be read this time (moved, or not allowed): the next look tries again.
       } finally {
         busy = false;
       }

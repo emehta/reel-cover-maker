@@ -277,16 +277,19 @@ npm run build   # the static site, in out/
   runs that page in an iframe from a blob, its files handed over as blob
   links and what was saved first (`embedPage`, `reel-video.ts`, pure and
   tested). The reel's page is Claude's (it lives in the reel's folder, not
-  here) and draws its own three columns in Reelic's tokens under
-  `data-embed`: the list of reels on the left (the open one marked, another
+  here) and draws its own three columns in Reelic's tokens (`data-embed`
+  adds the left one): the list of reels on the left (the open one marked, another
   opened by a press), the phone with its bar under it in the middle (the
   reel's moments are dots on the timeline, only to jump to: the owner
   asked, 21 Nov, never to move them here), and one Sound effects or Music
   card on the right that scrolls as a whole. There are no notes for Claude
   in Reelic (the owner, 21 Nov: they say what they want in the terminal).
   The page writes back only `reelic/picks.json`, through `postMessage`.
-  While Video shows, `ReelVideo` looks at the reel's folder every 2.5 s and
-  opens a newer `preview/index.html` in place, where it was playing.
+  While Video shows, `ReelVideo` looks at the Reels folder every 2.5 s: a
+  reel added or taken away is sent to the page's list (`reelsMessage`, only
+  when the list changed), the first reel opens if there was none, and a
+  newer `preview/index.html` of the open reel opens in place, where it was
+  playing.
   The cover stays mounted and drawn under Video, and its keys and paste act
   only on Cover. `?playtest=1` exposes `reelicOpen(folder)` so a headless
   check can hand it a private folder.

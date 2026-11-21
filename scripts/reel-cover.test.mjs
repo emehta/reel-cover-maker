@@ -5155,8 +5155,26 @@ check("Video names reels by their folder and lists the newest first", () => {
   assert.equal(RV.pickReel([], null), null);
 });
 
+check("Video sends the reel's page its list again only when a reel is added to the folder or taken away", () => {
+  const before = RV.sortReels(["2026-11-20-first-half"]);
+  assert.equal(RV.sameReels(before, RV.sortReels(["2026-11-20-first-half"])), true);
+  const after = RV.sortReels(["2026-11-20-first-half", "2026-11-23-reading-2"]);
+  assert.equal(RV.sameReels(before, after), false);
+  assert.equal(RV.sameReels(after, RV.sortReels(["2026-11-23-reading-2"])), false);
+  assert.deepEqual(RV.reelsMessage(after), {
+    reelic: 1,
+    type: "reels",
+    reels: [
+      { name: "2026-11-23-reading-2", title: "Reading 2, 23 Nov 2026" },
+      { name: "2026-11-20-first-half", title: "First half, 20 Nov 2026" },
+    ],
+  });
+  // What Reelic sends the page is not something the page may send back.
+  assert.equal(RV.readMessage(RV.reelsMessage(after)), null);
+});
+
 check("Video hands the reel's page its files before anything of its own runs, and nothing can end that script", () => {
-  const boot = { files: { "reel.mp4": "blob:x/1" }, saved: { notes: "</script><b> " }, reels: [], reel: "r" };
+  const boot = { files: { "reel.mp4": "blob:x/1" }, saved: { picks: { music: "</script><b> " } }, reels: [], reel: "r" };
   const page = RV.embedPage("<!DOCTYPE html><title>Reel</title><script>run()</script>", boot);
   assert.ok(page.startsWith("<!doctype html>"));
   assert.equal((page.match(/<!doctype/gi) || []).length, 1);

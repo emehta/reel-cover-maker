@@ -51,6 +51,16 @@ export function sortReels(names: readonly string[]): ReelEntry[] {
     .map((name) => ({ name, title: reelTitle(name) }));
 }
 
+/** Whether two lists name the same reels in the same order: the page's list is sent again only when it changed. */
+export function sameReels(a: readonly ReelEntry[], b: readonly ReelEntry[]): boolean {
+  return a.length === b.length && a.every((r, i) => r.name === b[i].name);
+}
+
+/** What Reelic sends the reel's page when a reel is added to the folder or taken away, for its list. */
+export function reelsMessage(reels: readonly ReelEntry[]): { reelic: 1; type: "reels"; reels: ReelEntry[] } {
+  return { reelic: 1, type: "reels", reels: reels.map((r) => ({ name: r.name, title: r.title })) };
+}
+
 /** The reel to open: the one opened last if it is still there, else the newest. */
 export function pickReel(reels: readonly ReelEntry[], last: string | null): string | null {
   if (last && reels.some((r) => r.name === last)) return last;

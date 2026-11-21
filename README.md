@@ -29,7 +29,8 @@ on a label's row.
 **Cover or Video**, in the middle of the header. Video is for the owner's
 own reels, on their Mac: press **Open Reels folder**, pick the Reels folder
 in Movies, and the newest reel plays with its graphics and sounds. On the
-left, your reels, newest first: press one to open it. The reel's moments
+left, your reels, newest first: press one to open it. A reel Claude makes
+while Reelic is open joins the list by itself. The reel's moments
 are dots on the timeline under the phone: press one to jump there. On the
 right, its sound effects or music. Tell Claude what to change in the
 terminal; when Claude makes a new version, it opens by itself where you
