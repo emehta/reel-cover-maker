@@ -26,6 +26,15 @@ away. No scrollbar shows anywhere, and nothing scrolls sideways.
 Everything is one of three heights: a field, a button, or a small button
 on a label's row.
 
+**Cover or Video**, in the middle of the header. Video is for the owner's
+own reels, on their Mac: press **Open Reels folder**, pick the Reels folder
+in Movies, and the newest reel plays with its graphics and sounds. On the
+left, which reel, its moments (press one to play from it, the arrows move
+it a tenth of a second earlier or later, the eye turns it off) and notes;
+on the right, its sound effects or music. Everything stays on the Mac: the
+reel is read from the folder, and what is changed is saved back into it.
+It needs Chrome or Arc.
+
 - **Type the text.** It is set as large as the cover allows. A line break
   you type is kept.
 - **Add a photo** in the right column, if you want one behind it:

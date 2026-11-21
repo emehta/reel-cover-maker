@@ -266,6 +266,25 @@ npm run build   # the static site, in out/
   scrolls with the cover sticky; under 900, one column. **No scrollbar
   shows anywhere** (the owner's ask): every scroller hides its bar, the
   page's too (`globals.css`).
+- **Video, beside Cover** (the owner's ask, 21 Nov: "Cover" or "Video" across
+  the top, Reelic's look). The switch sits in the middle of the header (a
+  grid, so neither side moves it); the mode is kept in this browser and in
+  `?view=video`. Video plays the reel Claude cut on the owner's Mac, and
+  nothing of it is in this repo or uploaded: `ReelVideo.tsx` opens the Reels
+  folder (`~/Movies/Reels`) with the File System Access API (Chrome or Arc;
+  the handle is kept in IndexedDB by `reel-folder.ts`, so a later visit only
+  asks to allow it again), finds each reel by its `preview/index.html`, and
+  runs that page in an iframe from a blob, its files handed over as blob
+  links and what was saved first (`embedPage`, `reel-video.ts`, pure and
+  tested). The reel's page is Claude's (it lives in the reel's folder, not
+  here) and draws its own three columns in Reelic's tokens under
+  `data-embed`: Reel, Moments and Notes for Claude on the left, the phone
+  in the middle, Sound effects or Music on the right. It writes back only
+  through `postMessage`, and only `reelic/picks.json`, `edits.json` and
+  `notes.md` inside that reel's folder (`readMessage` refuses anything
+  else), which Claude reads there. The cover stays mounted and drawn under
+  Video, and its keys and paste act only on Cover. `?playtest=1` exposes
+  `reelicOpen(folder)` so a headless check can hand it a private folder.
 - **The shortcuts are behind a ?** at the top right (`Shortcuts.tsx`, the
   owner's ask, 7 Oct), not at the foot of the left card: a card opened by
   the button or by ? (never while typing), closed by either again, by

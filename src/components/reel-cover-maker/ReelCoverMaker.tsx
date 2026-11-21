@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowCounterClockwise, ArrowUUpLeft, ArrowUUpRight, Check, DeviceMobile, DownloadSimple, Moon, Shuffle, Sparkle, Sun } from "@phosphor-icons/react";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { sliderColour, slidersFor } from "@/components/reel-cover-maker/colour";
@@ -429,7 +430,46 @@ function GridMask({ format }: { format: Format }) {
   );
 }
 
+/** Video, loaded only once it is first opened, so a cover's first load carries none of it. */
+const ReelVideo = dynamic(() => import("@/components/reel-cover-maker/ReelVideo"), { ssr: false });
+
+/** Cover or Video, across the top: the one opened last, or the one a link names (`?view=video`). */
+type Mode = "cover" | "video";
+const MODE_KEY = "reel-cover-maker:mode";
+
+function loadMode(): Mode {
+  try {
+    const named = new URLSearchParams(window.location.search).get("view");
+    if (named === "video" || named === "cover") return named;
+    return localStorage.getItem(MODE_KEY) === "video" ? "video" : "cover";
+  } catch {
+    return "cover";
+  }
+}
+
+function keepMode(mode: Mode) {
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+    const url = new URL(window.location.href);
+    if (mode === "video") url.searchParams.set("view", "video");
+    else url.searchParams.delete("view");
+    window.history.replaceState(window.history.state, "", url);
+  } catch {
+    // Not kept: Cover opens next time.
+  }
+}
+
 export default function ReelCoverMaker() {
+  const [mode, setModeState] = useState<Mode>(loadMode);
+  /** Video stays as it was once opened, so going back to it never starts the reel over. */
+  const [videoOpened, setVideoOpened] = useState(mode === "video");
+  const modeRef = useRef(mode);
+  const setMode = (next: Mode) => {
+    modeRef.current = next;
+    setModeState(next);
+    if (next === "video") setVideoOpened(true);
+    keepMode(next);
+  };
   const [design, setDesign] = useState<Design>(loadDesign);
   /** The design as last set, for a change made from a callback that began before it (a photo still loading). */
   const designRef = useRef(design);
@@ -799,6 +839,7 @@ export default function ReelCoverMaker() {
   // A picture pasted anywhere on the page is taken as the photo; pasted text goes where it always went.
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
+      if (modeRef.current !== "cover") return;
       const file = [...(event.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
       if (!file) return;
       event.preventDefault();
@@ -1132,7 +1173,7 @@ export default function ReelCoverMaker() {
   // Cmd or Ctrl and S saves the cover rather than the page; Z undoes (with Shift, redoes, as Ctrl and Y does), in the Text field too.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.altKey || !(event.metaKey || event.ctrlKey)) return;
+      if (event.defaultPrevented || event.altKey || !(event.metaKey || event.ctrlKey) || modeRef.current !== "cover") return;
       const key = event.key.toLowerCase();
       if ((event.code === "KeyS" || key === "s") && !event.shiftKey) {
         event.preventDefault();
@@ -1168,12 +1209,21 @@ export default function ReelCoverMaker() {
           <img className={styles.mark} src={icon.src} alt="" width={24} height={24} />
           {APP_NAME}
         </h1>
-        <div className={styles.actions}>
-          <Shortcuts apple={apple} saveLabel={saveLabel} />
+        {/* Cover or Video (the owner's ask, 21 Nov): the switch in the middle of the header, so neither side moves it. */}
+        <div className={`${styles.segments} ${styles.modeSwitch}`} role="radiogroup" aria-label="Make a cover or watch a video">
+          {(["cover", "video"] as const).map((m) => (
+            <label key={m} className={styles.segment}>
+              <input type="radio" name="rcm-mode" className={styles.radio} value={m} checked={mode === m} onChange={() => setMode(m)} />
+              {m === "cover" ? "Cover" : "Video"}
+            </label>
+          ))}
         </div>
+        <div className={styles.actions}>{mode === "cover" && <Shortcuts apple={apple} saveLabel={saveLabel} />}</div>
       </header>
 
-      <div className={styles.main}>
+      {videoOpened && <ReelVideo active={mode === "video"} />}
+
+      <div className={styles.main} hidden={mode !== "cover"}>
         <div className={styles.panel}>
           <TextField
             id="rcm-title"

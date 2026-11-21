@@ -100,9 +100,10 @@
 /* Header: the name, and the one thing to do once the cover is right. */
 
 .header {
-  display: flex;
+  /* The name at the left, Cover or Video in the middle whatever is either side, the shortcuts at the right. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   /* In line with the cards' edges under it. */
   padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 12px
@@ -139,8 +140,63 @@
 .actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
   min-width: 0;
+}
+
+/* Cover or Video: a segmented control a button high, its two choices small buttons. */
+.modeSwitch {
+  --rcm-segments: 2;
+  width: 184px;
+  height: var(--rcm-h-button);
+}
+
+.modeSwitch .segment {
+  height: var(--rcm-h-mini);
+}
+
+/* Video: the reel's own page, filling what the header leaves. */
+.main[hidden],
+.videoMain[hidden] {
+  display: none;
+}
+
+.videoMain {
+  position: relative;
+  flex: 1;
+  min-height: 520px;
+}
+
+.videoFrame {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--rcm-bg);
+}
+
+.videoEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  color: var(--rcm-muted);
+  text-align: center;
+}
+
+.videoLead {
+  max-width: 340px;
+  min-height: 21px;
+  margin: 0;
+  color: var(--rcm-text);
+  font-size: 15px;
 }
 
 .save {

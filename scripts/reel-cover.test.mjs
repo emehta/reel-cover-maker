@@ -38,6 +38,7 @@ const { createFontGate } = await import("@/components/reel-cover-maker/font-gate
 const { prepaintScript } = await import("@/components/reel-cover-maker/theme");
 const AN = await import("@/components/reel-cover-maker/animate");
 const VID = await import("@/components/reel-cover-maker/video");
+const RV = await import("@/components/reel-cover-maker/reel-video");
 const WO = await import("@/components/reel-cover-maker/write-on");
 const INKM = await import("@/components/reel-cover-maker/ink");
 const RUN = await import("@/components/reel-cover-maker/ink-run");
@@ -5139,6 +5140,50 @@ check("Wave's face is kept with the design (anything else read as Mona Sans), an
     }
     for (const cell of Object.values(data.kern.cells)) assert.equal(cell.length, samples);
   }
+});
+
+// Video: a reel folder's name as the list shows it, newest first, and what the reel's page may ask.
+check("Video names reels by their folder and lists the newest first", () => {
+  assert.equal(RV.reelTitle("2026-11-20-first-half"), "First half, 20 Nov 2026");
+  assert.equal(RV.reelTitle("2026-12-01"), "1 Dec 2026");
+  assert.equal(RV.reelTitle("2026-13-01-odd"), "2026 13 01 odd");
+  assert.equal(RV.reelTitle("loose_takes"), "Loose takes");
+  const reels = RV.sortReels(["2026-11-20-first-half", "2026-11-22-second-half", "2026-11-21", "2026-11-21"]);
+  assert.deepEqual(reels.map((r) => r.name), ["2026-11-22-second-half", "2026-11-21", "2026-11-20-first-half"]);
+  assert.equal(RV.pickReel(reels, "2026-11-21"), "2026-11-21");
+  assert.equal(RV.pickReel(reels, "gone"), "2026-11-22-second-half");
+  assert.equal(RV.pickReel([], null), null);
+});
+
+check("Video hands the reel's page its files before anything of its own runs, and nothing can end that script", () => {
+  const boot = { files: { "reel.mp4": "blob:x/1" }, saved: { notes: "</script><b> " }, reels: [], reel: "r" };
+  const page = RV.embedPage("<!DOCTYPE html><title>Reel</title><script>run()</script>", boot);
+  assert.ok(page.startsWith("<!doctype html>"));
+  assert.equal((page.match(/<!doctype/gi) || []).length, 1);
+  const first = page.indexOf("<script>"), end = page.indexOf("</script>");
+  assert.ok(first >= 0 && end > first && end < page.indexOf("<title>"));
+  const code = page.slice(first + 8, end);
+  const win = {}, root = { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+  new Function("document", "window", code)({ documentElement: root }, win);
+  assert.deepEqual(win.REELIC, boot);
+  assert.equal(root.attrs["data-embed"], "");
+});
+
+check("Video saves only its own three files into a reel's folder, and reads them back forgivingly", () => {
+  assert.deepEqual(RV.readMessage({ reelic: 1, type: "save", name: "notes.md", text: "hi" }), { type: "save", name: "notes.md", text: "hi" });
+  assert.deepEqual(RV.readMessage({ reelic: 1, type: "save", name: "edits.json", text: "{}", reload: 12.5 }), { type: "save", name: "edits.json", text: "{}", reload: 12.5 });
+  assert.equal(RV.readMessage({ reelic: 1, type: "save", name: "../index.html", text: "x" }), null);
+  assert.equal(RV.readMessage({ reelic: 1, type: "save", name: "notes.md", text: 5 }), null);
+  assert.equal(RV.readMessage({ reelic: 1, type: "save", name: "notes.md", text: "x".repeat(600 * 1024) }), null);
+  assert.deepEqual(RV.readMessage({ reelic: 1, type: "save", name: "picks.json", text: "{}", reload: -1 }), { type: "save", name: "picks.json", text: "{}" });
+  assert.equal(RV.readMessage({ type: "save", name: "notes.md", text: "x" }), null);
+  assert.equal(RV.readMessage({ reelic: 1, type: "open", name: "a/b" }), null);
+  assert.deepEqual(RV.readMessage({ reelic: 1, type: "open", name: "2026-11-21" }), { type: "open", name: "2026-11-21" });
+  assert.equal(RV.readMessage(null), null);
+  assert.deepEqual(RV.readSaved({ "picks.json": '{"music":"d-tom-groove"}', "edits.json": "not json", "notes.md": "" }), { picks: { music: "d-tom-groove" }, notes: "" });
+  assert.deepEqual(RV.readSaved({ "edits.json": "[1]" }), {});
+  assert.equal(RV.servesFile(".DS_Store"), false);
+  assert.equal(RV.servesFile("reel.mp4"), true);
 });
 
 check("the pre-paint script is one valid script", () => {
