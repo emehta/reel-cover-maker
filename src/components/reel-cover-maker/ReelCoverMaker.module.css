@@ -145,14 +145,20 @@
   min-width: 0;
 }
 
-/* Cover or Video: a segmented control a button high, its two choices small buttons. */
-.modeSwitch {
+/*
+ * Cover or Video: a segmented control a button high, its two choices small
+ * buttons, centred in it. Two classes, so `.segments` (later in this file,
+ * a field high) never wins the height: it once did, and the choices sat at
+ * the top of a box too tall for them.
+ */
+.segments.modeSwitch {
   --rcm-segments: 2;
   width: 184px;
   height: var(--rcm-h-button);
+  align-items: center;
 }
 
-.modeSwitch .segment {
+.segments.modeSwitch .segment {
   height: var(--rcm-h-mini);
 }
 

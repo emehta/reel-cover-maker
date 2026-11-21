@@ -278,19 +278,15 @@ npm run build   # the static site, in out/
   links and what was saved first (`embedPage`, `reel-video.ts`, pure and
   tested). The reel's page is Claude's (it lives in the reel's folder, not
   here) and draws its own three columns in Reelic's tokens under
-  `data-embed`: Reel and Notes for Claude on the left, the phone with its
-  bar under it in the middle (the reel's moments are dots on the timeline,
-  only to jump to: the owner asked, 21 Nov, never to move them here), and
-  one Sound effects or Music card on the right that scrolls as a whole. It
-  writes back only through `postMessage`: `picks.json`, and notes sent or
-  taken back (`note-add`, `note-delete`), which Reelic applies to
-  `reelic/notes.json` as the file is now (`applyNoteOp`), so a Seen, Done
-  or reply Claude wrote meanwhile is kept and a note Claude has seen cannot
-  be deleted. While Video shows, `ReelVideo` looks at the reel's folder
-  every 2.5 s: a changed `notes.json` is handed to the page (Claude's marks
-  appear), and a newer `preview/index.html` is opened in place where it
-  was playing (never while a note is half written). Notes reach Claude by a
-  UserPromptSubmit hook on the owner's Mac (`~/Movies/Reels/.reelic/`).
+  `data-embed`: the list of reels on the left (the open one marked, another
+  opened by a press), the phone with its bar under it in the middle (the
+  reel's moments are dots on the timeline, only to jump to: the owner
+  asked, 21 Nov, never to move them here), and one Sound effects or Music
+  card on the right that scrolls as a whole. There are no notes for Claude
+  in Reelic (the owner, 21 Nov: they say what they want in the terminal).
+  The page writes back only `reelic/picks.json`, through `postMessage`.
+  While Video shows, `ReelVideo` looks at the reel's folder every 2.5 s and
+  opens a newer `preview/index.html` in place, where it was playing.
   The cover stays mounted and drawn under Video, and its keys and paste act
   only on Cover. `?playtest=1` exposes `reelicOpen(folder)` so a headless
   check can hand it a private folder.

@@ -5,27 +5,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { allow, allowed, entriesOf, folderPicker, hasFile, keepFolder, loadFolder, readText, writeText } from "@/components/reel-cover-maker/reel-folder";
 import {
-  applyNoteOp,
   embedPage,
-  notesFile,
   PAGE_DIR,
   PAGE_FILE,
   pickReel,
   readMessage,
-  readNotes,
   readSaved,
   SAVE_DIR,
   SAVE_FILES,
   servesFile,
   sortReels,
-  type NoteOp,
   type ReelEntry,
   type SaveFile,
 } from "@/components/reel-cover-maker/reel-video";
 
 /** The reel opened last, so the next visit opens it again. */
 const LAST_KEY = "reel-cover-maker:video-reel";
-/** How often the open reel's folder is looked at for Claude's marks on the notes and for a new version of the reel. */
+/** How often the open reel's folder is looked at for a new version of the reel, which Claude writes as it works. */
 const WATCH_MS = 2500;
 
 type View =
@@ -85,16 +81,6 @@ function reelVideo(frame: HTMLIFrameElement | null): HTMLVideoElement | null {
   }
 }
 
-/** Whether a note is being written in the reel's page. */
-function drafting(frame: HTMLIFrameElement | null): boolean {
-  try {
-    const box = frame?.contentDocument?.getElementById("noteText") as HTMLTextAreaElement | null | undefined;
-    return typeof box?.value === "string" && box.value.trim() !== "";
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Video, beside Cover: the reels in the Reels folder, each played in its own
  * page in Reelic's look. The page is the reel's (`preview/index.html`, the
@@ -109,12 +95,8 @@ export default function ReelVideo({ active }: { active: boolean }) {
   const links = useRef<string[]>([]);
   const frame = useRef<HTMLIFrameElement>(null);
   const loading = useRef(0);
-  /** The open reel's notes file as last read or written, and its page's stamp, to tell what changed. */
-  const notesText = useRef<string | undefined>(undefined);
+  /** When the open reel's page was written, to tell a new version. */
   const stamp = useRef(0);
-  /** Writes to the notes file one after another, each on what the one before left. */
-  const writing = useRef<Promise<void>>(Promise.resolve());
-
   const forgetLinks = () => {
     for (const url of links.current) URL.revokeObjectURL(url);
     links.current = [];
@@ -145,7 +127,6 @@ export default function ReelVideo({ active }: { active: boolean }) {
       forgetLinks();
       links.current = [...Object.values(files), src];
       current.current = name;
-      notesText.current = texts["notes.json"];
       stamp.current = pageTime;
       keepLast(name);
       setView({ kind: "open", src });
@@ -207,30 +188,7 @@ export default function ReelVideo({ active }: { active: boolean }) {
 
   useEffect(() => forgetLinks, []);
 
-  /** The notes as the folder has them now, handed to the reel's page. */
-  const sendNotes = useCallback((text: string | undefined) => {
-    frame.current?.contentWindow?.postMessage({ reelic: 1, type: "notes", notes: readNotes(text) }, "*");
-  }, []);
-
-  /** A note sent or taken back: applied to the file as it is now, so Claude's marks made meanwhile are kept. */
-  const changeNotes = useCallback(
-    (dir: FileSystemDirectoryHandle, op: NoteOp) => {
-      writing.current = writing.current.then(async () => {
-        const now = await readText(dir, [SAVE_DIR, "notes.json"]);
-        const text = notesFile(applyNoteOp(readNotes(now), op));
-        try {
-          await writeText(dir, SAVE_DIR, "notes.json", text);
-          notesText.current = text;
-        } catch {
-          // Not written (the folder was not allowed): the page shows the folder's notes, without this one.
-        }
-        sendNotes(notesText.current);
-      });
-    },
-    [sendNotes],
-  );
-
-  // What the reel's page asks: its picks saved, a note sent or taken back, or another reel opened.
+  // What the reel's page asks: its sound picks saved, or another reel opened.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (!frame.current || event.source !== frame.current.contentWindow) return;
@@ -243,15 +201,14 @@ export default function ReelVideo({ active }: { active: boolean }) {
       const name = current.current;
       const dir = name ? reels.current.get(name) : undefined;
       if (!dir) return;
-      if (message.type === "save") void writeText(dir, SAVE_DIR, message.name, message.text).catch(() => undefined);
-      else changeNotes(dir, message);
+      void writeText(dir, SAVE_DIR, message.name, message.text).catch(() => undefined);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [openReel, changeNotes]);
+  }, [openReel]);
 
-  // While Video is showing, the folder is looked at every few seconds: Claude's Seen, Done and replies reach the notes,
-  // and a new version of the reel opens in place, where it was playing.
+  // While Video is showing, the reel's folder is looked at every few seconds: a new version Claude has written opens in
+  // place, where it was playing.
   useEffect(() => {
     if (!active || view.kind !== "open") return;
     let busy = false;
@@ -262,16 +219,9 @@ export default function ReelVideo({ active }: { active: boolean }) {
       busy = true;
       try {
         const pageTime = await pageStamp(dir);
-        // Never while a note is being written: it opens once the note is sent.
-        if (pageTime && stamp.current && pageTime !== stamp.current && !drafting(frame.current)) {
+        if (pageTime && stamp.current && pageTime !== stamp.current) {
           stamp.current = pageTime;
           await openReel(name, reelVideo(frame.current)?.currentTime);
-          return;
-        }
-        const text = await readText(dir, [SAVE_DIR, "notes.json"]);
-        if (text !== notesText.current) {
-          notesText.current = text;
-          sendNotes(text);
         }
       } finally {
         busy = false;
@@ -279,7 +229,7 @@ export default function ReelVideo({ active }: { active: boolean }) {
     };
     const timer = window.setInterval(() => void look(), WATCH_MS);
     return () => window.clearInterval(timer);
-  }, [active, view.kind, openReel, sendNotes]);
+  }, [active, view.kind, openReel]);
 
   // Back to Cover: the reel stops where it is.
   useEffect(() => {
