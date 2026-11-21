@@ -29,11 +29,15 @@ on a label's row.
 **Cover or Video**, in the middle of the header. Video is for the owner's
 own reels, on their Mac: press **Open Reels folder**, pick the Reels folder
 in Movies, and the newest reel plays with its graphics and sounds. On the
-left, which reel, its moments (press one to play from it, the arrows move
-it a tenth of a second earlier or later, the eye turns it off) and notes;
-on the right, its sound effects or music. Everything stays on the Mac: the
-reel is read from the folder, and what is changed is saved back into it.
-It needs Chrome or Arc.
+left, which reel and your notes for Claude: pause where something should
+change, write it in the box at the foot and press Send (or Enter). A note
+is tied to that moment of the reel, or to the whole of it, and shows Sent,
+then Seen once Claude has read it, then Done with Claude's reply. The
+reel's moments are dots on the timeline under the phone: press one to jump
+there. On the right, its sound effects or music. When Claude makes a new
+version, it opens by itself where you were. Everything stays on the Mac:
+the reel is read from the folder, and what is changed is saved back into
+it. It needs Chrome or Arc.
 
 - **Type the text.** It is set as large as the cover allows. A line break
   you type is kept.

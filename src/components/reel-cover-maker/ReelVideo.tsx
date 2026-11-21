@@ -5,22 +5,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "@/components/reel-cover-maker/ReelCoverMaker.module.css";
 import { allow, allowed, entriesOf, folderPicker, hasFile, keepFolder, loadFolder, readText, writeText } from "@/components/reel-cover-maker/reel-folder";
 import {
+  applyNoteOp,
   embedPage,
+  notesFile,
   PAGE_DIR,
   PAGE_FILE,
   pickReel,
   readMessage,
+  readNotes,
   readSaved,
   SAVE_DIR,
   SAVE_FILES,
   servesFile,
   sortReels,
+  type NoteOp,
   type ReelEntry,
   type SaveFile,
 } from "@/components/reel-cover-maker/reel-video";
 
 /** The reel opened last, so the next visit opens it again. */
 const LAST_KEY = "reel-cover-maker:video-reel";
+/** How often the open reel's folder is looked at for Claude's marks on the notes and for a new version of the reel. */
+const WATCH_MS = 2500;
 
 type View =
   | { kind: "starting" }
@@ -55,6 +61,40 @@ async function linksOf(dir: FileSystemDirectoryHandle, prefix: string, out: Reco
   }
 }
 
+/** When the reel's page was last written: a new version from Claude is opened in its place. */
+async function pageStamp(dir: FileSystemDirectoryHandle): Promise<number> {
+  try {
+    const page = await dir.getDirectoryHandle(PAGE_DIR);
+    return (await (await page.getFileHandle(PAGE_FILE)).getFile()).lastModified;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The reel's video, in the page's own window: `instanceof` is never true
+ * across windows (each has its own HTMLVideoElement), so it is known by its
+ * tag.
+ */
+function reelVideo(frame: HTMLIFrameElement | null): HTMLVideoElement | null {
+  try {
+    const video = frame?.contentDocument?.getElementById("v");
+    return video?.tagName === "VIDEO" ? (video as HTMLVideoElement) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a note is being written in the reel's page. */
+function drafting(frame: HTMLIFrameElement | null): boolean {
+  try {
+    const box = frame?.contentDocument?.getElementById("noteText") as HTMLTextAreaElement | null | undefined;
+    return typeof box?.value === "string" && box.value.trim() !== "";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Video, beside Cover: the reels in the Reels folder, each played in its own
  * page in Reelic's look. The page is the reel's (`preview/index.html`, the
@@ -69,6 +109,11 @@ export default function ReelVideo({ active }: { active: boolean }) {
   const links = useRef<string[]>([]);
   const frame = useRef<HTMLIFrameElement>(null);
   const loading = useRef(0);
+  /** The open reel's notes file as last read or written, and its page's stamp, to tell what changed. */
+  const notesText = useRef<string | undefined>(undefined);
+  const stamp = useRef(0);
+  /** Writes to the notes file one after another, each on what the one before left. */
+  const writing = useRef<Promise<void>>(Promise.resolve());
 
   const forgetLinks = () => {
     for (const url of links.current) URL.revokeObjectURL(url);
@@ -89,9 +134,10 @@ export default function ReelVideo({ active }: { active: boolean }) {
         const text = await readText(dir, [SAVE_DIR, file]);
         if (text !== undefined) texts[file] = text;
       }
+      const pageTime = await pageStamp(dir);
       if (run !== loading.current || html === undefined) {
         for (const url of Object.values(files)) URL.revokeObjectURL(url);
-        if (html === undefined) setView({ kind: "failed" });
+        if (html === undefined && run === loading.current) setView({ kind: "failed" });
         return;
       }
       const doc = embedPage(html, { files, saved: readSaved(texts), reels: list.current, reel: name, ...(resume === undefined ? {} : { resume }) });
@@ -99,6 +145,8 @@ export default function ReelVideo({ active }: { active: boolean }) {
       forgetLinks();
       links.current = [...Object.values(files), src];
       current.current = name;
+      notesText.current = texts["notes.json"];
+      stamp.current = pageTime;
       keepLast(name);
       setView({ kind: "open", src });
     } catch {
@@ -159,7 +207,30 @@ export default function ReelVideo({ active }: { active: boolean }) {
 
   useEffect(() => forgetLinks, []);
 
-  // What the reel's page asks: a file saved into the reel's folder (and the page built again for an edit), or another reel.
+  /** The notes as the folder has them now, handed to the reel's page. */
+  const sendNotes = useCallback((text: string | undefined) => {
+    frame.current?.contentWindow?.postMessage({ reelic: 1, type: "notes", notes: readNotes(text) }, "*");
+  }, []);
+
+  /** A note sent or taken back: applied to the file as it is now, so Claude's marks made meanwhile are kept. */
+  const changeNotes = useCallback(
+    (dir: FileSystemDirectoryHandle, op: NoteOp) => {
+      writing.current = writing.current.then(async () => {
+        const now = await readText(dir, [SAVE_DIR, "notes.json"]);
+        const text = notesFile(applyNoteOp(readNotes(now), op));
+        try {
+          await writeText(dir, SAVE_DIR, "notes.json", text);
+          notesText.current = text;
+        } catch {
+          // Not written (the folder was not allowed): the page shows the folder's notes, without this one.
+        }
+        sendNotes(notesText.current);
+      });
+    },
+    [sendNotes],
+  );
+
+  // What the reel's page asks: its picks saved, a note sent or taken back, or another reel opened.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (!frame.current || event.source !== frame.current.contentWindow) return;
@@ -171,26 +242,48 @@ export default function ReelVideo({ active }: { active: boolean }) {
       }
       const name = current.current;
       const dir = name ? reels.current.get(name) : undefined;
-      if (!name || !dir) return;
-      void writeText(dir, SAVE_DIR, message.name, message.text)
-        .catch(() => undefined)
-        .then(() => {
-          if (message.reload !== undefined) void openReel(name, message.reload);
-        });
+      if (!dir) return;
+      if (message.type === "save") void writeText(dir, SAVE_DIR, message.name, message.text).catch(() => undefined);
+      else changeNotes(dir, message);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [openReel]);
+  }, [openReel, changeNotes]);
+
+  // While Video is showing, the folder is looked at every few seconds: Claude's Seen, Done and replies reach the notes,
+  // and a new version of the reel opens in place, where it was playing.
+  useEffect(() => {
+    if (!active || view.kind !== "open") return;
+    let busy = false;
+    const look = async () => {
+      const name = current.current;
+      const dir = name ? reels.current.get(name) : undefined;
+      if (busy || !name || !dir || document.hidden) return;
+      busy = true;
+      try {
+        const pageTime = await pageStamp(dir);
+        // Never while a note is being written: it opens once the note is sent.
+        if (pageTime && stamp.current && pageTime !== stamp.current && !drafting(frame.current)) {
+          stamp.current = pageTime;
+          await openReel(name, reelVideo(frame.current)?.currentTime);
+          return;
+        }
+        const text = await readText(dir, [SAVE_DIR, "notes.json"]);
+        if (text !== notesText.current) {
+          notesText.current = text;
+          sendNotes(text);
+        }
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = window.setInterval(() => void look(), WATCH_MS);
+    return () => window.clearInterval(timer);
+  }, [active, view.kind, openReel, sendNotes]);
 
   // Back to Cover: the reel stops where it is.
   useEffect(() => {
-    if (active) return;
-    try {
-      const video = frame.current?.contentDocument?.getElementById("v");
-      if (video instanceof HTMLVideoElement) video.pause();
-    } catch {
-      // Not reachable: it is paused when it is next seen.
-    }
+    if (!active) reelVideo(frame.current)?.pause();
   }, [active]);
 
   /** Opens the folder kept from before, once allowed again; or, asked for another (none, or nothing in it), the picker. */

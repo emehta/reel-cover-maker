@@ -5169,21 +5169,47 @@ check("Video hands the reel's page its files before anything of its own runs, an
   assert.equal(root.attrs["data-embed"], "");
 });
 
-check("Video saves only its own three files into a reel's folder, and reads them back forgivingly", () => {
-  assert.deepEqual(RV.readMessage({ reelic: 1, type: "save", name: "notes.md", text: "hi" }), { type: "save", name: "notes.md", text: "hi" });
-  assert.deepEqual(RV.readMessage({ reelic: 1, type: "save", name: "edits.json", text: "{}", reload: 12.5 }), { type: "save", name: "edits.json", text: "{}", reload: 12.5 });
+check("Video saves only picks and notes into a reel's folder, and reads them back forgivingly", () => {
+  assert.deepEqual(RV.SAVE_FILES, ["picks.json", "notes.json"]);
+  assert.deepEqual(RV.readMessage({ reelic: 1, type: "save", name: "picks.json", text: "{}" }), { type: "save", name: "picks.json", text: "{}" });
+  assert.equal(RV.readMessage({ reelic: 1, type: "save", name: "notes.json", text: "{}" }), null);
   assert.equal(RV.readMessage({ reelic: 1, type: "save", name: "../index.html", text: "x" }), null);
-  assert.equal(RV.readMessage({ reelic: 1, type: "save", name: "notes.md", text: 5 }), null);
-  assert.equal(RV.readMessage({ reelic: 1, type: "save", name: "notes.md", text: "x".repeat(600 * 1024) }), null);
-  assert.deepEqual(RV.readMessage({ reelic: 1, type: "save", name: "picks.json", text: "{}", reload: -1 }), { type: "save", name: "picks.json", text: "{}" });
-  assert.equal(RV.readMessage({ type: "save", name: "notes.md", text: "x" }), null);
+  assert.equal(RV.readMessage({ reelic: 1, type: "save", name: "picks.json", text: "x".repeat(600 * 1024) }), null);
+  assert.equal(RV.readMessage({ type: "save", name: "picks.json", text: "x" }), null);
   assert.equal(RV.readMessage({ reelic: 1, type: "open", name: "a/b" }), null);
   assert.deepEqual(RV.readMessage({ reelic: 1, type: "open", name: "2026-11-21" }), { type: "open", name: "2026-11-21" });
   assert.equal(RV.readMessage(null), null);
-  assert.deepEqual(RV.readSaved({ "picks.json": '{"music":"d-tom-groove"}', "edits.json": "not json", "notes.md": "" }), { picks: { music: "d-tom-groove" }, notes: "" });
-  assert.deepEqual(RV.readSaved({ "edits.json": "[1]" }), {});
+  assert.deepEqual(RV.readSaved({ "picks.json": '{"music":"d-tom-groove"}' }), { picks: { music: "d-tom-groove" } });
+  assert.deepEqual(RV.readSaved({ "picks.json": "[1]", "notes.json": "not json" }), { notes: [] });
   assert.equal(RV.servesFile(".DS_Store"), false);
   assert.equal(RV.servesFile("reel.mp4"), true);
+});
+
+check("Video's notes: a new note is only ever new, and what Claude marked survives the page's writes", () => {
+  const note = { id: "n1", t: 42.5, text: "Slower here", sent: "2026-11-21T08:00:00Z" };
+  assert.deepEqual(RV.readMessage({ reelic: 1, type: "note-add", note }), { type: "note-add", note });
+  assert.deepEqual(RV.readMessage({ reelic: 1, type: "note-add", note: { ...note, t: null } }).note.t, null);
+  for (const bad of [{ ...note, seen: "x" }, { ...note, reply: "done" }, { ...note, text: "  " }, { ...note, t: -1 }, { ...note, id: "../x" }, { ...note, text: "x".repeat(5000) }])
+    assert.equal(RV.readMessage({ reelic: 1, type: "note-add", note: bad }), null, JSON.stringify(bad).slice(0, 60));
+  assert.deepEqual(RV.readMessage({ reelic: 1, type: "note-delete", id: "n1" }), { type: "note-delete", id: "n1" });
+  assert.equal(RV.readMessage({ reelic: 1, type: "note-delete", id: "a b" }), null);
+
+  // Claude marked n1 seen and replied while the page sent n2: both survive, in order.
+  const disk = RV.notesFile([{ ...note, seen: "2026-11-21T08:01:00Z", reply: "Slowed to 0.8x" }]);
+  const after = RV.applyNoteOp(RV.readNotes(disk), { type: "note-add", note: { ...note, id: "n2", text: "And here" } });
+  assert.deepEqual(after.map((n) => n.id), ["n1", "n2"]);
+  assert.equal(after[0].reply, "Slowed to 0.8x");
+  assert.equal(RV.applyNoteOp(after, { type: "note-add", note: { ...note, id: "n2", text: "again" } }).length, 2);
+  // A note Claude has seen stays; one not yet seen can be taken back.
+  assert.deepEqual(RV.applyNoteOp(after, { type: "note-delete", id: "n1" }).map((n) => n.id), ["n1", "n2"]);
+  assert.deepEqual(RV.applyNoteOp(after, { type: "note-delete", id: "n2" }).map((n) => n.id), ["n1"]);
+  assert.deepEqual(RV.unseen(after).map((n) => n.id), ["n2"]);
+
+  // Read back forgivingly: a bare list, duplicates and junk left out.
+  assert.deepEqual(RV.readNotes(JSON.stringify([note, note, { id: 3 }, null])).map((n) => n.id), ["n1"]);
+  assert.deepEqual(RV.readNotes("{oops"), []);
+  assert.deepEqual(RV.readNotes(undefined), []);
+  assert.ok(RV.notesFile([note]).endsWith("}\n"));
 });
 
 check("the pre-paint script is one valid script", () => {
